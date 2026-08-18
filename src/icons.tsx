@@ -1,0 +1,95 @@
+import type { SVGProps } from "react";
+
+type P = SVGProps<SVGSVGElement> & { size?: number };
+
+const Base = ({ size = 18, children, ...rest }: P) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none"
+    stroke="currentColor" strokeWidth={1.9} strokeLinecap="round" strokeLinejoin="round"
+    aria-hidden="true" {...rest}>
+    {children}
+  </svg>
+);
+
+export const ICross = (p: P) => (
+  <Base {...p}><path d="M9 3h6v6h6v6h-6v6H9v-6H3V9h6z" /></Base>
+);
+export const IRegister = (p: P) => (
+  <Base {...p}><rect x="3" y="10" width="18" height="10" rx="1.5" /><path d="M6 10V6.5A1.5 1.5 0 0 1 7.5 5h9A1.5 1.5 0 0 1 18 6.5V10" /><path d="M7 14h4M7 17h7" /><path d="M16.5 14v.01M16.5 17v.01" /></Base>
+);
+export const IDash = (p: P) => (
+  <Base {...p}><rect x="3" y="3" width="8" height="5.5" rx="1" /><rect x="3" y="12" width="8" height="9" rx="1" /><rect x="13" y="3" width="8" height="9" rx="1" /><rect x="13" y="15.5" width="8" height="5.5" rx="1" /></Base>
+);
+export const IBox = (p: P) => (
+  <Base {...p}><path d="M12 3 3.5 7.2v9.6L12 21l8.5-4.2V7.2z" /><path d="M3.5 7.2 12 11.4l8.5-4.2M12 11.4V21" /></Base>
+);
+export const IRx = (p: P) => (
+  <Base {...p}><path d="M6 3h9.5A2.5 2.5 0 0 1 18 5.5V21H8a2 2 0 0 1-2-2z" /><path d="M9.5 8h3a1.75 1.75 0 0 1 0 3.5h-3V8v6.5M12.5 11.5 15 15" /><path d="M15 3v2.5" /></Base>
+);
+export const IHistory = (p: P) => (
+  <Base {...p}><path d="M3.5 8A9 9 0 1 1 3 12" /><path d="M3 4v4h4" /><path d="M12 8v4l3 2" /></Base>
+);
+export const ISearch = (p: P) => (
+  <Base {...p}><circle cx="10.5" cy="10.5" r="6.5" /><path d="m20 20-4.4-4.4" /></Base>
+);
+export const IScan = (p: P) => (
+  <Base {...p}><path d="M3 7V5a2 2 0 0 1 2-2h2M17 3h2a2 2 0 0 1 2 2v2M21 17v2a2 2 0 0 1-2 2h-2M7 21H5a2 2 0 0 1-2-2v-2" /><path d="M7 8v8M10.5 8v8M14 8v8M17 8v8" /></Base>
+);
+export const IPlus = (p: P) => (<Base {...p}><path d="M12 5v14M5 12h14" /></Base>);
+export const IMinus = (p: P) => (<Base {...p}><path d="M5 12h14" /></Base>);
+export const ITrash = (p: P) => (
+  <Base {...p}><path d="M4 7h16M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" /><path d="M6.5 7 7.5 20h9L17.5 7" /><path d="M10 11v5M14 11v5" /></Base>
+);
+export const IX = (p: P) => (<Base {...p}><path d="m6 6 12 12M18 6 6 18" /></Base>);
+export const IAlert = (p: P) => (
+  <Base {...p}><path d="M12 3.5 22 20H2z" /><path d="M12 10v4M12 17v.01" /></Base>
+);
+export const IBell = (p: P) => (
+  <Base {...p}><path d="M18 9a6 6 0 1 0-12 0c0 5-2 6-2 6h16s-2-1-2-6" /><path d="M10 19a2.2 2.2 0 0 0 4 0" /></Base>
+);
+export const IPrint = (p: P) => (
+  <Base {...p}><path d="M7 8V3h10v5" /><rect x="3" y="8" width="18" height="9" rx="1.5" /><path d="M7 14h10v7H7z" /></Base>
+);
+export const IPause = (p: P) => (
+  <Base {...p}><path d="M9 5v14M15 5v14" /></Base>
+);
+export const IRecall = (p: P) => (
+  <Base {...p}><path d="M4 9a8 8 0 1 1-1 5" /><path d="M4 4v5h5" /></Base>
+);
+export const ICheck = (p: P) => (<Base {...p}><path d="m4.5 12.5 5 5L19.5 7" /></Base>);
+export const IChevD = (p: P) => (<Base {...p}><path d="m6 9 6 6 6-6" /></Base>);
+export const ICash = (p: P) => (
+  <Base {...p}><rect x="2.5" y="6" width="19" height="12" rx="2" /><circle cx="12" cy="12" r="2.6" /><path d="M6 12v.01M18 12v.01" /></Base>
+);
+export const ICard = (p: P) => (
+  <Base {...p}><rect x="2.5" y="5" width="19" height="14" rx="2" /><path d="M2.5 10h19M6.5 15h4" /></Base>
+);
+export const IShield = (p: P) => (
+  <Base {...p}><path d="M12 3 5 5.5v6C5 16 8 19.5 12 21c4-1.5 7-5 7-9.5v-6z" /><path d="m9 11.5 2.2 2.2L15.5 9.5" /></Base>
+);
+export const IPill = (p: P) => (
+  <Base {...p}><rect x="3.2" y="8.6" width="17.6" height="6.8" rx="3.4" transform="rotate(-45 12 12)" /><path d="m8.5 8.5 7 7" /></Base>
+);
+export const IFlask = (p: P) => (
+  <Base {...p}><path d="M10 3h4M10.5 3v6L5 19a1.6 1.6 0 0 0 1.4 2.4h11.2A1.6 1.6 0 0 0 19 19L13.5 9V3" /><path d="M7.5 15h9" /></Base>
+);
+export const IDownload = (p: P) => (
+  <Base {...p}><path d="M12 4v11M7.5 10.5 12 15l4.5-4.5" /><path d="M4 19h16" /></Base>
+);
+export const IEdit = (p: P) => (
+  <Base {...p}><path d="M4 20h4.5L20 8.5a2.1 2.1 0 0 0-3-3L5.5 17z" /><path d="m14.5 7 3 3" /></Base>
+);
+export const ICart = (p: P) => (
+  <Base {...p}><path d="M3 4h2.5l2.2 11.2a1.5 1.5 0 0 0 1.5 1.2h7.8a1.5 1.5 0 0 0 1.5-1.2L20 8H6.2" /><circle cx="9.5" cy="20" r="1.4" /><circle cx="16.5" cy="20" r="1.4" /></Base>
+);
+export const ISpark = (p: P) => (
+  <Base {...p}><path d="M12 2.5 14 9.5l7 2.5-7 2.5-2 7-2-7-7-2.5 7-2.5z" /></Base>
+);
+export const ITrendUp = (p: P) => (
+  <Base {...p}><path d="m3 17 6-6 4 4 8-8" /><path d="M15 7h6v6" /></Base>
+);
+export const ITrendDown = (p: P) => (
+  <Base {...p}><path d="m3 7 6 6 4-4 8 8" /><path d="M15 17h6v-6" /></Base>
+);
+export const IClock = (p: P) => (
+  <Base {...p}><circle cx="12" cy="12" r="8.5" /><path d="M12 7.5V12l3 2" /></Base>
+);

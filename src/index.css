@@ -1,1 +1,107 @@
 @import "tailwindcss";
+
+@theme {
+  --font-display: "Space Grotesk", "IBM Plex Sans", sans-serif;
+  --font-body: "IBM Plex Sans", system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, monospace;
+
+  --color-paper: #eef3f0;
+  --color-card: #fbfdfc;
+  --color-ink: #12251f;
+  --color-inksoft: #44564f;
+  --color-mist: #d9e4de;
+
+  --color-pine-50: #eff6f2;
+  --color-pine-100: #dcebe3;
+  --color-pine-200: #b9d7c9;
+  --color-pine-300: #8fbfa9;
+  --color-pine-400: #5da184;
+  --color-pine-500: #3b8668;
+  --color-pine-600: #256b54;
+  --color-pine-700: #175544;
+  --color-pine-800: #0f4437;
+  --color-pine-900: #0b3329;
+  --color-pine-950: #062019;
+
+  --color-honey-100: #faeed3;
+  --color-honey-300: #f0cf8a;
+  --color-honey-500: #e0a63c;
+  --color-honey-700: #a06d14;
+
+  --color-brick-100: #f8e2dc;
+  --color-brick-300: #e8a493;
+  --color-brick-500: #c24a2e;
+  --color-brick-700: #97341d;
+
+  --shadow-lift: 0 1px 2px rgba(18, 37, 31, 0.06), 0 8px 24px -12px rgba(18, 37, 31, 0.25);
+  --shadow-pop: 0 12px 40px -12px rgba(6, 32, 25, 0.45);
+}
+
+body {
+  font-family: var(--font-body);
+  color: var(--color-ink);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ---- ambient layered background ---- */
+.ambient {
+  background-color: var(--color-paper);
+  background-image:
+    radial-gradient(1100px 520px at 88% -8%, rgba(37, 107, 84, 0.10), transparent 62%),
+    radial-gradient(820px 460px at -6% 108%, rgba(224, 166, 60, 0.09), transparent 60%),
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='30' height='30' viewBox='0 0 30 30'%3E%3Cpath d='M13 9h4v4h4v4h-4v4h-4v-4H9v-4h4z' fill='%230f4437' fill-opacity='0.045'/%3E%3C/svg%3E");
+}
+
+.num { font-family: var(--font-mono); font-variant-numeric: tabular-nums; letter-spacing: -0.01em; }
+
+/* ---- slim scrollbars ---- */
+.scroll-slim { scrollbar-width: thin; scrollbar-color: #b9d7c9 transparent; }
+.scroll-slim::-webkit-scrollbar { width: 8px; height: 8px; }
+.scroll-slim::-webkit-scrollbar-thumb { background: #b9d7c9; border-radius: 8px; }
+.scroll-slim::-webkit-scrollbar-thumb:hover { background: #8fbfa9; }
+
+/* ---- keyframes ---- */
+@keyframes fadeUp { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes toastIn { from { opacity: 0; transform: translateX(24px) scale(0.96); } to { opacity: 1; transform: translateX(0) scale(1); } }
+@keyframes popIn { 0% { transform: scale(0.86); } 55% { transform: scale(1.05); } 100% { transform: scale(1); } }
+@keyframes barGrow { from { transform: scaleY(0); } to { transform: scaleY(1); } }
+@keyframes growW { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+@keyframes pulseDot { 0%, 100% { opacity: 1; transform: scale(1); } 50% { opacity: 0.45; transform: scale(0.72); } }
+@keyframes scanSweep { 0% { transform: translateX(-110%); } 100% { transform: translateX(220%); } }
+@keyframes shake { 0%,100%{transform:translateX(0)} 25%{transform:translateX(-4px)} 75%{transform:translateX(4px)} }
+
+.anim-fade-up { animation: fadeUp 0.35s cubic-bezier(0.22, 1, 0.36, 1) both; }
+.anim-toast { animation: toastIn 0.28s cubic-bezier(0.22, 1, 0.36, 1) both; }
+.anim-pop { animation: popIn 0.3s cubic-bezier(0.22, 1, 0.36, 1) both; }
+.anim-bar { transform-origin: bottom; animation: barGrow 0.7s cubic-bezier(0.22, 1, 0.36, 1) both; }
+.anim-grow-w { transform-origin: left; animation: growW 0.8s cubic-bezier(0.22, 1, 0.36, 1) both; }
+.anim-pulse-dot { animation: pulseDot 1.6s ease-in-out infinite; }
+.anim-shake { animation: shake 0.3s ease-in-out; }
+
+.scan-chip { position: relative; overflow: hidden; }
+.scan-chip::after {
+  content: ""; position: absolute; top: 0; bottom: 0; width: 40%;
+  background: linear-gradient(90deg, transparent, rgba(143, 190, 169, 0.35), transparent);
+  animation: scanSweep 2.4s ease-in-out infinite;
+}
+
+/* ---- receipt ---- */
+.receipt-dash { border-top: 2px dashed #b9c4be; }
+.barcode-stripes {
+  background: repeating-linear-gradient(90deg, #12251f 0 2px, transparent 2px 4px, #12251f 4px 7px, transparent 7px 9px, #12251f 9px 10px, transparent 10px 14px);
+}
+
+.hover-cell { transition: opacity 0.2s ease; }
+tbody tr:hover .hover-cell { opacity: 1 !important; }
+
+#print-root { display: none; }
+
+@media print {
+  body * { visibility: hidden; }
+  #print-root {
+    display: block; position: absolute; top: 0; left: 50%; transform: translateX(-50%);
+    width: 330px; visibility: visible;
+  }
+  #print-root * { visibility: visible; }
+  #receipt-print { border: none !important; box-shadow: none !important; }
+}
