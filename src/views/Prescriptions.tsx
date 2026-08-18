@@ -208,6 +208,38 @@ function RxCard({ rx, ghost, overlay }: { rx: Prescription; ghost?: boolean; ove
             ⚑ {rx.note}
           </p>
         )}
+        {rx.insurance && (
+          <div className={cx("mt-1.5 rounded-md border px-2 py-1.5",
+            rx.insurance.status === "verified" ? "bg-pine-100/70 border-pine-300/60" :
+            rx.insurance.status === "rejected" ? "bg-brick-100/70 border-brick-300/60" :
+            "bg-mist/50 border-mist")}>
+            <div className="flex items-center justify-between gap-2">
+              <span className={cx("flex items-center gap-1 text-[10px] font-bold",
+                rx.insurance.status === "verified" ? "text-pine-700" :
+                rx.insurance.status === "rejected" ? "text-brick-700" : "text-inksoft")}>
+                <IShield size={10} />
+                {rx.insurance.plan}
+                {rx.insurance.status === "verified" && <ICheck size={10} />}
+              </span>
+              <span className={cx("num text-[9px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded",
+                rx.insurance.status === "verified" ? "bg-pine-700 text-pine-50" :
+                rx.insurance.status === "rejected" ? "bg-brick-600 text-brick-100 anim-pulse-dot" :
+                "bg-ink text-paper")}>
+                {rx.insurance.status}
+              </span>
+            </div>
+            <p className="num text-[9px] text-inksoft mt-0.5">member {rx.insurance.memberId}</p>
+            {rx.insurance.status === "pending" && (
+              <button onClick={() => dispatch({ type: "VERIFY_RX", id: rx.id })}
+                className="mt-1 w-full py-1 rounded bg-ink text-paper text-[10px] font-bold hover:bg-pine-900 transition active:scale-95">
+                Run eligibility check
+              </button>
+            )}
+            {rx.insurance.status === "rejected" && (
+              <p className="text-[9px] font-semibold text-brick-700 mt-0.5">Eligibility failed — collect cash or re-verify member id</p>
+            )}
+          </div>
+        )}
       </div>
 
       {/* mini pipeline */}

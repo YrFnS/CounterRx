@@ -13,12 +13,14 @@ import Inventory from "./views/Inventory";
 import Prescriptions from "./views/Prescriptions";
 import History from "./views/History";
 import {
-  ICross, IRegister, IDash, IBox, IRx, IHistory, IBell, IAlert, IChevD, IRecall, IScan, IDownload, IUpload,
+  ICross, IRegister, IDash, IBox, IRx, IHistory, IBell, IAlert, IChevD, IRecall, IScan, IDownload, IUpload, IUsers,
 } from "./icons";
+import Customers from "./views/Customers";
 
 const TITLES: Record<View, { title: string; sub: string }> = {
   register: { title: "Register · Terminal 01", sub: "Scan, sell, dispense — one lane" },
   dashboard: { title: "Store pulse", sub: "Live figures from the POS ledger" },
+  customers: { title: "Customer book", sub: "Loyalty balances, visit history, preferences" },
   inventory: { title: "Inventory & batches", sub: "Stock on hand, expiry windows, reorder points" },
   prescriptions: { title: "Prescription queue", sub: "Pharmacist workflow · drop-off to dispense" },
   history: { title: "Sales ledger", sub: "Every receipt this terminal has printed" },
@@ -27,6 +29,7 @@ const TITLES: Record<View, { title: string; sub: string }> = {
 const NAV: { id: View; label: string; icon: ReactNode; key: string }[] = [
   { id: "register", label: "Register", icon: <IRegister size={17} />, key: "F1" },
   { id: "dashboard", label: "Dashboard", icon: <IDash size={17} />, key: "F3" },
+  { id: "customers", label: "Customers", icon: <IUsers size={17} />, key: "F7" },
   { id: "inventory", label: "Inventory", icon: <IBox size={17} />, key: "F4" },
   { id: "prescriptions", label: "Prescriptions", icon: <IRx size={17} />, key: "F5" },
   { id: "history", label: "Sales ledger", icon: <IHistory size={17} />, key: "F6" },
@@ -46,7 +49,7 @@ function Shell() {
   /* global keyboard shortcuts */
   useEffect(() => {
     const h = (e: KeyboardEvent) => {
-      const map: Record<string, View> = { F1: "register", F3: "dashboard", F4: "inventory", F5: "prescriptions", F6: "history" };
+      const map: Record<string, View> = { F1: "register", F3: "dashboard", F4: "inventory", F5: "prescriptions", F6: "history", F7: "customers" };
       if (map[e.key]) { e.preventDefault(); dispatch({ type: "GO", view: map[e.key] }); return; }
       if (e.key === "F2") {
         e.preventDefault();
@@ -173,6 +176,7 @@ function Shell() {
         <main className="flex-1 min-h-0">
           {state.view === "register" && <Register />}
           {state.view === "dashboard" && <Dashboard />}
+          {state.view === "customers" && <Customers />}
           {state.view === "inventory" && <Inventory />}
           {state.view === "prescriptions" && <Prescriptions />}
           {state.view === "history" && <History />}

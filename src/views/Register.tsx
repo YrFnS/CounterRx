@@ -1,11 +1,11 @@
 import { useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { usePos, money, relTime } from "../store";
-import { CATEGORIES, TAX_RATE, daysUntil, stockOf, nearestExpiry } from "../data";
+import { CATEGORIES, TAX_RATE, daysUntil, stockOf, nearestExpiry, bulkPct } from "../data";
 import type { CategoryId, Product } from "../data";
 import { cx, Badge, Empty } from "../ui";
 import {
-  ISearch, IScan, IPlus, IMinus, ITrash, IPause, IRecall, IX, ICart, IPill, IChevD, ISpark, IEdit, ITag,
+  ISearch, IScan, IPlus, IMinus, ITrash, IPause, IRecall, IX, ICart, IPill, IChevD, ISpark, IEdit, ITag, IUsers,
 } from "../icons";
 
 type SortKey = "name" | "price" | "stock";
@@ -178,6 +178,8 @@ export default function Register() {
           )}
         </div>
 
+        <CustomerAttach />
+
         {state.held.length > 0 && (
           <div className="px-4 py-2.5 bg-honey-100/60 border-b border-honey-300/50">
             <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-honey-700 mb-1.5">Parked sales · {state.held.length}</p>
@@ -210,7 +212,14 @@ export default function Register() {
                   <p className="text-[13px] font-semibold text-ink leading-tight truncate">{p.name}</p>
                   <p className="text-[11px] text-inksoft truncate">{p.form} · {money(p.price)} ea</p>
                 </div>
-                <span className="num text-[13px] font-bold text-ink shrink-0">{money(p.price * line.qty)}</span>
+                <span className="num text-[13px] font-bold text-ink shrink-0 flex items-center gap-1.5">
+                  {!p.rx && bulkPct(line.qty) > 0 && (
+                    <span className="num text-[9px] font-bold px-1.5 py-0.5 rounded bg-honey-100 border border-honey-300/60 text-honey-700">
+                      bulk −{bulkPct(line.qty)}%
+                    </span>
+                  )}
+                  {money((line.priceOverride ?? p.price) * line.qty)}
+                </span>
               </div>
               <div className="flex items-center justify-between mt-2">
                 <div className="flex items-center gap-1">
@@ -354,6 +363,99 @@ function QuickPicks({ items, onAdd }: { items: { p: Product; sold: number }[]; o
           </button>
         ))}
       </div>
+    </div>
+  );
+}
+
+/* Customer attach — walk-in by default, searchable book + inline quick-add */
+function CustomerAttach() {
+  const { state, dispatch } = usePos();
+  const [open, setOpen] = useState(false);
+  const [q, setQ] = useState("");
+  const [adding, setAdding] = useState(false);
+  const [name, setName] = useState("");
+  const [phone, setPhone] = useState("");
+
+  const customer = state.customers.find((c) => c.id === state.saleCustomerId) ?? null;
+  const needle = q.trim().toLowerCase();
+  const matches = state.customers
+    .filter((c) => !needle || c.name.toLowerCase().includes(needle) || c.phone.replace(/\D/g, "").includes(needle.replace(/\D/g, "")))
+    .slice(0, 5);
+
+  const attach = (id: string | null) => {
+    dispatch({ type: "SET_SALE_CUSTOMER", id });
+    setOpen(false); setQ(""); setAdding(false);
+  };
+
+  return (
+    <div className="relative px-4 pt-3">
+      <button onClick={() => setOpen(!open)}
+        className={cx("w-full flex items-center gap-2 px-2.5 py-2 rounded-lg border transition-all duration-200",
+          customer
+            ? "border-honey-300 bg-honey-100/60 hover:border-honey-400"
+            : "border-mist bg-paper hover:border-pine-300")}>
+        <span className={cx("grid place-items-center w-6 h-6 rounded-md shrink-0", customer ? "bg-honey-500 text-pine-950" : "bg-mist text-inksoft")}>
+          <IUsers size={12} />
+        </span>
+        <span className="flex-1 text-left min-w-0">
+          <span className={cx("block text-xs font-bold truncate", customer ? "text-honey-800" : "text-inksoft")}>
+            {customer ? customer.name : "Walk-in customer"}
+          </span>
+          <span className="block text-[9px] font-semibold uppercase tracking-[0.12em] text-inksoft">
+            {customer ? `${customer.points} pts · tap to change` : "tap to attach · earn pts"}
+          </span>
+        </span>
+        {customer ? (
+          <span onClick={(e) => { e.stopPropagation(); attach(null); }}
+            className="p-1 rounded text-inksoft hover:text-brick-700 hover:bg-brick-100 transition" aria-label="Detach customer">
+            <IX size={11} />
+          </span>
+        ) : (
+          <IChevD size={12} className={cx("text-inksoft transition-transform duration-200", open && "rotate-180")} />
+        )}
+      </button>
+
+      {open && !customer && (
+        <div className="anim-pop absolute left-4 right-4 top-full mt-1.5 z-30 bg-card border border-mist rounded-xl shadow-pop p-2.5">
+          <div className="relative">
+            <ISearch size={12} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-inksoft" />
+            <input autoFocus value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search name or phone…"
+              className="w-full pl-7.5 pl-8 pr-2 py-1.5 rounded-md border border-mist text-xs focus:border-pine-500 focus:outline-none transition" />
+          </div>
+          <div className="mt-1.5 space-y-1 max-h-40 overflow-y-auto scroll-slim">
+            {matches.map((c) => (
+              <button key={c.id} onClick={() => attach(c.id)}
+                className="w-full flex items-center justify-between px-2 py-1.5 rounded-md hover:bg-pine-50 transition text-left">
+                <span className="text-xs font-semibold text-ink truncate">{c.name}</span>
+                <span className="num text-[10px] text-inksoft shrink-0 ml-2">{c.phone} · {c.points} pts</span>
+              </button>
+            ))}
+            {matches.length === 0 && <p className="px-2 py-2 text-[11px] text-inksoft">No match in the book.</p>}
+          </div>
+          <div className="mt-1.5 pt-1.5 border-t border-mist">
+            {!adding ? (
+              <button onClick={() => setAdding(true)}
+                className="w-full flex items-center justify-center gap-1.5 py-1.5 rounded-md border border-dashed border-pine-300 text-[11px] font-bold text-pine-700 hover:bg-pine-50 transition">
+                <IPlus size={11} /> Quick-add new customer
+              </button>
+            ) : (
+              <div className="anim-fade-up space-y-1.5">
+                <input autoFocus value={name} onChange={(e) => setName(e.target.value)} placeholder="Full name *"
+                  className="w-full px-2 py-1.5 rounded-md border border-mist text-xs focus:border-pine-500 focus:outline-none transition" />
+                <input value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="Phone *"
+                  className="num w-full px-2 py-1.5 rounded-md border border-mist text-xs focus:border-pine-500 focus:outline-none transition" />
+                <button disabled={name.trim().length < 2 || phone.replace(/\D/g, "").length < 7}
+                  onClick={() => { dispatch({ type: "ADD_CUSTOMER", name, phone }); setOpen(false); setName(""); setPhone(""); }}
+                  className={cx("w-full py-1.5 rounded-md text-[11px] font-bold transition",
+                    name.trim().length >= 2 && phone.replace(/\D/g, "").length >= 7
+                      ? "bg-pine-700 text-pine-50 hover:bg-pine-600" : "bg-mist text-inksoft cursor-not-allowed")}>
+                  Add & attach
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

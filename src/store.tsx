@@ -1,14 +1,16 @@
 import { createContext, useContext, useEffect, useMemo, useReducer } from "react";
 import type { ReactNode, Dispatch } from "react";
 import {
-  makeProducts, makePrescriptions, makeTransactions, TAX_RATE, CASHIER,
-  stockOf, nearestExpiry, allocFEFO, newBatchCode, daysUntil,
+  makeProducts, makePrescriptions, makeTransactions, makeCustomers, TAX_RATE, CASHIER,
+  stockOf, nearestExpiry, allocFEFO, fefoBatches, newBatchCode, daysUntil,
+  bulkPct, REDEEM_CHUNK_PTS, REDEEM_CHUNK_VALUE,
 } from "./data";
 import type {
-  Product, Transaction, Prescription, HeldSale, TxLine, PayMethod, PaymentLeg, RxStatus, Batch,
+  Product, Transaction, Prescription, Customer, AuditEntry, AuditKind,
+  HeldSale, TxLine, PayMethod, PaymentLeg, RxStatus, Batch,
 } from "./data";
 
-export type View = "register" | "dashboard" | "inventory" | "prescriptions" | "history";
+export type View = "register" | "dashboard" | "customers" | "inventory" | "prescriptions" | "history";
 export type InventoryPreset = "all" | "low" | "expiring";
 
 export interface Toast { id: number; kind: "success" | "warn" | "error" | "info"; msg: string; }
@@ -19,6 +21,10 @@ interface State {
   prescriptions: Prescription[];
   cart: { productId: string; qty: number; note?: string; priceOverride?: number }[];
   held: HeldSale[];
+  customers: Customer[];
+  audit: AuditEntry[];
+  saleCustomerId: string | null;
+  redeemPoints: number;
   view: View;
   invPreset: InventoryPreset;
   payOpen: boolean;
@@ -44,9 +50,14 @@ type Action =
   | { type: "RESTOCK"; productId: string; amount: number; batch: string; expiry: string }
   | { type: "SET_NOTE"; productId: string; note: string }
   | { type: "SET_PRICE"; productId: string; price: number | null }
+  | { type: "SET_SALE_CUSTOMER"; id: string | null }
+  | { type: "ADD_CUSTOMER"; name: string; phone: string; email?: string; notes?: string }
+  | { type: "SET_REDEEM"; points: number }
+  | { type: "VERIFY_RX"; id: string }
+  | { type: "COUNT_APPLY"; entries: { productId: string; counted: number }[] }
   | { type: "REMIND_RX"; id: string }
   | { type: "NEW_REFILL"; rxId: string }
-  | { type: "RESTORE"; products: Product[]; transactions: Transaction[]; prescriptions: Prescription[] }
+  | { type: "RESTORE"; products: Product[]; transactions: Transaction[]; prescriptions: Prescription[]; customers?: Customer[]; audit?: AuditEntry[] }
   | { type: "ADD_PRODUCT"; product: Product }
   | { type: "REFUND_TX"; txId: string; reason: string }
   | { type: "RX_STATUS"; id: string; status: RxStatus }
@@ -57,26 +68,41 @@ type Action =
 
 let toastSeq = 1;
 let heldSeq = 1;
+let auditSeq = 100;
 
-const seed = (): Pick<State, "products" | "transactions" | "prescriptions"> => {
+const seed = (): Pick<State, "products" | "transactions" | "prescriptions" | "customers" | "audit"> => {
   const now = Date.now();
   const products = makeProducts(now);
-  return { products, transactions: makeTransactions(products, now), prescriptions: makePrescriptions(now) };
+  const customers = makeCustomers(now);
+  const transactions = makeTransactions(products, now);
+  /* link ~40% of seeded sales to loyalty customers (deterministic) */
+  transactions.forEach((t, i) => { if (!t.refundOf && i % 3 === 0) t.customerId = customers[i % customers.length].id; });
+  return {
+    products, transactions, customers,
+    prescriptions: makePrescriptions(now),
+    audit: [{ id: auditSeq++, at: now - 36 * 60_000, actor: "system", kind: "system", detail: "Ledger initialized — demo dataset v4" }],
+  };
 };
 
-const LS_KEY = "counterrx:v3";
+const LS_KEY = "counterrx:v4";
 
 function load(): State {
   const base: State = {
-    ...seed(), cart: [], held: [], view: "register", invPreset: "all",
+    ...seed(), cart: [], held: [], saleCustomerId: null, redeemPoints: 0,
+    view: "register", invPreset: "all",
     payOpen: false, receipt: null, toasts: [], flashId: null, flashKey: 0,
   };
   try {
     const raw = localStorage.getItem(LS_KEY);
     if (raw) {
       const saved = JSON.parse(raw) as Partial<State>;
-      if (saved.products && saved.transactions && saved.prescriptions) {
-        return { ...base, products: saved.products, transactions: saved.transactions, prescriptions: saved.prescriptions };
+      if (saved.products && saved.transactions && saved.prescriptions && saved.customers) {
+        return {
+          ...base,
+          products: saved.products, transactions: saved.transactions,
+          prescriptions: saved.prescriptions, customers: saved.customers,
+          audit: saved.audit ?? [],
+        };
       }
     }
   } catch { /* corrupted storage — fall back to seed */ }
@@ -85,7 +111,7 @@ function load(): State {
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
 
-function cartTotals(state: State, discountPct: number) {
+export function cartTotals(state: State, discountPct: number) {
   const lines: TxLine[] = state.cart.map((c) => {
     const p = state.products.find((x) => x.id === c.productId)!;
     const overridden = c.priceOverride !== undefined && c.priceOverride > 0 && c.priceOverride !== p.price;
@@ -98,13 +124,25 @@ function cartTotals(state: State, discountPct: number) {
     };
   });
   const subtotal = round2(lines.reduce((s, l) => s + l.price * l.qty, 0));
+  /* bulk tiers apply per non-Rx line */
+  const bulkSavings = round2(lines.reduce((s, l) => s + (l.rx ? 0 : (l.price * l.qty * bulkPct(l.qty)) / 100), 0));
   const discount = round2((subtotal * discountPct) / 100);
-  const tax = round2((subtotal - discount) * TAX_RATE);
-  return { lines, subtotal, discount, tax, total: round2(subtotal - discount + tax) };
+  /* loyalty redemption — chunks of 100 pts = $5, capped by the payable balance */
+  const payable = Math.max(0, subtotal - bulkSavings - discount);
+  const loyaltyDeduct = round2(Math.min((state.redeemPoints / REDEEM_CHUNK_PTS) * REDEEM_CHUNK_VALUE, payable));
+  const tax = round2((payable - loyaltyDeduct) * TAX_RATE);
+  return {
+    lines, subtotal, bulkSavings, discount, loyaltyDeduct, tax,
+    total: round2(payable - loyaltyDeduct + tax),
+  };
 }
 
 function withToast(s: State, kind: Toast["kind"], msg: string): State {
   return { ...s, toasts: [...s.toasts.slice(-3), { id: toastSeq++, kind, msg }] };
+}
+
+function withAudit(s: State, kind: AuditKind, detail: string): State {
+  return { ...s, audit: [{ id: auditSeq++, at: Date.now(), actor: CASHIER, kind, detail }, ...s.audit].slice(0, 250) };
 }
 
 function reducer(state: State, a: Action): State {
@@ -145,7 +183,7 @@ function reducer(state: State, a: Action): State {
       return { ...state, cart: state.cart.filter((c) => c.productId !== a.productId) };
 
     case "CLEAR_CART":
-      return { ...state, cart: [], payOpen: false };
+      return { ...state, cart: [], payOpen: false, redeemPoints: 0 };
 
     case "HOLD_SALE": {
       if (state.cart.length === 0) return state;
@@ -191,6 +229,14 @@ function reducer(state: State, a: Action): State {
       });
       const primary = a.payments[0];
       const singleCash = a.payments.length === 1 && primary.method === "cash";
+      /* loyalty: earn 1 pt/$1, spend redeemed points */
+      const pointsEarned = Math.floor(t.total);
+      const customer = state.customers.find((c) => c.id === state.saleCustomerId) ?? null;
+      const customers = customer
+        ? state.customers.map((c) => (c.id === customer.id
+            ? { ...c, points: Math.max(0, c.points + pointsEarned - state.redeemPoints) }
+            : c))
+        : state.customers;
       const tx: Transaction = {
         id: `T-${Date.now().toString(36).toUpperCase().slice(-6)}`,
         at: Date.now(), lines: t.lines,
@@ -199,14 +245,24 @@ function reducer(state: State, a: Action): State {
         payments: a.payments.length > 1 ? a.payments : undefined,
         tendered: singleCash ? (a.tendered ?? primary.amount) : undefined,
         change: singleCash ? round2((a.tendered ?? primary.amount) - t.total) : undefined,
+        customerId: customer?.id,
+        bulkSavings: t.bulkSavings > 0 ? t.bulkSavings : undefined,
+        loyaltyDeduct: t.loyaltyDeduct > 0 ? t.loyaltyDeduct : undefined,
+        pointsEarned: customer ? pointsEarned : undefined,
+        pointsRedeemed: state.redeemPoints > 0 ? state.redeemPoints : undefined,
       };
       const tenderLabel = a.payments.length > 1
         ? `split ${a.payments.map((p) => p.method).join(" + ")}`
         : primary.method;
-      return withToast(
-        { ...state, products, transactions: [tx, ...state.transactions], cart: [], payOpen: false, receipt: tx },
-        "success", `Payment captured — ${tx.id} · $${t.total.toFixed(2)} · ${tenderLabel}`,
-      );
+      const ptsLabel = customer ? ` · +${pointsEarned}${state.redeemPoints ? ` / −${state.redeemPoints} pts` : ""} pts` : "";
+      let next: State = {
+        ...state, products, customers,
+        transactions: [tx, ...state.transactions],
+        cart: [], payOpen: false, receipt: tx,
+        saleCustomerId: null, redeemPoints: 0,
+      };
+      next = withAudit(next, "sale", `${tx.id} · $${t.total.toFixed(2)} · ${tenderLabel}${customer ? ` · ${customer.name}` : ""}`);
+      return withToast(next, "success", `Payment captured — ${tx.id} · $${t.total.toFixed(2)} · ${tenderLabel}${ptsLabel}`);
     }
 
     case "OPEN_RECEIPT":
@@ -224,10 +280,9 @@ function reducer(state: State, a: Action): State {
           ? x.batches.filter((bb) => bb.batch !== a.batch)
           : x.batches.map((bb) => (bb.batch === a.batch ? { ...bb, qty: newQty } : bb)),
       });
-      return withToast(
-        { ...state, products }, delta >= 0 ? "success" : "warn",
-        `${p.name} · ${a.batch} set to ${newQty} (${delta >= 0 ? "+" : ""}${delta}) — ${a.reason}`,
-      );
+      const next = withAudit({ ...state, products }, "stock", `${a.reason} — ${p.name} · ${a.batch} ${delta >= 0 ? "+" : ""}${delta} → ${newQty}`);
+      return withToast(next, delta >= 0 ? "success" : "warn",
+        `${p.name} · ${a.batch} set to ${newQty} (${delta >= 0 ? "+" : ""}${delta}) — ${a.reason}`);
     }
 
     case "RESTOCK": {
@@ -235,7 +290,8 @@ function reducer(state: State, a: Action): State {
       if (!p) return state;
       const lot: Batch = { batch: a.batch, expiry: a.expiry, qty: a.amount };
       const products = state.products.map((x) => (x.id === a.productId ? { ...x, batches: [...x.batches, lot] } : x));
-      return withToast({ ...state, products }, "success", `Received +${a.amount} × ${p.name} → lot ${a.batch} (exp ${a.expiry})`);
+      const next = withAudit({ ...state, products }, "stock", `Received +${a.amount} × ${p.name} → lot ${a.batch} (exp ${a.expiry})`);
+      return withToast(next, "success", `Received +${a.amount} × ${p.name} → lot ${a.batch} (exp ${a.expiry})`);
     }
 
     case "SET_NOTE": {
@@ -253,7 +309,72 @@ function reducer(state: State, a: Action): State {
         c.productId === a.productId ? { ...c, priceOverride: a.price === null ? undefined : round2(a.price) } : c);
       return a.price === null
         ? withToast({ ...state, cart }, "info", `${p.name} back to list price ${money(p.price)}`)
-        : withToast({ ...state, cart }, "success", `${p.name} overridden to ${money(round2(a.price))} (list ${money(p.price)})`);
+        : withToast(
+            withAudit({ ...state, cart }, "money", `Price override — ${p.name} → ${money(round2(a.price))} (list ${money(p.price)})`),
+            "success", `${p.name} overridden to ${money(round2(a.price))} (list ${money(p.price)})`);
+    }
+
+    case "SET_SALE_CUSTOMER":
+      return { ...state, saleCustomerId: a.id, redeemPoints: 0 };
+
+    case "ADD_CUSTOMER": {
+      const name = a.name.trim();
+      const phone = a.phone.trim();
+      if (!name || !phone) return state;
+      const existing = state.customers.find((c) => c.phone.replace(/\D/g, "") === phone.replace(/\D/g, ""));
+      if (existing) {
+        return withToast(
+          { ...state, saleCustomerId: existing.id, redeemPoints: 0 },
+          "info", `${existing.name} already on file — attached to this sale`);
+      }
+      const id = `C-${String(state.customers.length + 1).padStart(3, "0")}`;
+      const c: Customer = { id, name, phone, email: a.email?.trim() || undefined, notes: a.notes?.trim() || undefined, createdAt: Date.now(), points: 0 };
+      return withToast(
+        withAudit({ ...state, customers: [c, ...state.customers], saleCustomerId: id, redeemPoints: 0 }, "system", `Customer created — ${name} (${id})`),
+        "success", `${name} added to the book — earning points from this sale`);
+    }
+
+    case "SET_REDEEM":
+      return { ...state, redeemPoints: Math.max(0, Math.round(a.points)) };
+
+    case "VERIFY_RX": {
+      const rx = state.prescriptions.find((x) => x.id === a.id);
+      if (!rx?.insurance) return state;
+      /* simulated PBM adjudication — member ids ending in 9 fail eligibility */
+      const ok = !/9$/.test(rx.insurance.memberId);
+      const status = ok ? "verified" as const : "rejected" as const;
+      const prescriptions = state.prescriptions.map((x) =>
+        x.id === a.id ? { ...x, insurance: { ...x.insurance!, status } } : x);
+      const next = withAudit(
+        { ...state, prescriptions }, "rx",
+        `${rx.id} claim ${status} — ${rx.insurance.plan} · ${rx.insurance.memberId}`);
+      return ok
+        ? withToast(next, "success", `${rx.id} · ${rx.insurance.plan} claim verified ✓`)
+        : withToast(next, "error", `${rx.id} claim rejected by ${rx.insurance.plan} — check member eligibility`);
+    }
+
+    case "COUNT_APPLY": {
+      let units = 0, skus = 0;
+      const products = state.products.map((p) => {
+        const e = a.entries.find((x) => x.productId === p.id);
+        if (!e) return p;
+        const delta = e.counted - stockOf(p);
+        if (delta === 0) return p;
+        skus++; units += delta;
+        const sorted = fefoBatches(p);
+        const first = sorted[0];
+        if (!first) {
+          return { ...p, batches: [{ batch: newBatchCode(), expiry: new Date(Date.now() + 365 * 86_400_000).toISOString().slice(0, 10), qty: e.counted }] };
+        }
+        const newQty = Math.max(0, first.qty + delta);
+        const rest = sorted.slice(1);
+        return { ...p, batches: newQty > 0 ? [{ ...first, qty: newQty }, ...rest] : rest };
+      });
+      if (skus === 0) return withToast(state, "info", "Count sheet clean — no variances");
+      const next = withAudit(
+        { ...state, products }, "stock",
+        `Physical count applied — ${skus} SKUs, ${units >= 0 ? "+" : ""}${units} units variance`);
+      return withToast(next, "success", `Count applied — ${skus} variance${skus === 1 ? "" : "s"}, ${units >= 0 ? "+" : ""}${units} units`);
     }
 
     case "REMIND_RX": {
@@ -280,11 +401,16 @@ function reducer(state: State, a: Action): State {
       );
     }
 
-    case "RESTORE":
-      return withToast(
-        { ...state, products: a.products, transactions: a.transactions, prescriptions: a.prescriptions, cart: [], held: [], receipt: null, payOpen: false },
-        "success", `Backup restored — ${a.products.length} products · ${a.transactions.length} receipts`,
-      );
+    case "RESTORE": {
+      const next = withAudit(
+        {
+          ...state, products: a.products, transactions: a.transactions,
+          prescriptions: a.prescriptions, customers: a.customers ?? state.customers,
+          audit: a.audit ?? state.audit,
+          cart: [], held: [], receipt: null, payOpen: false, saleCustomerId: null, redeemPoints: 0,
+        }, "system", `Backup restored — ${a.products.length} products · ${a.transactions.length} receipts`);
+      return withToast(next, "success", `Backup restored — ${a.products.length} products · ${a.transactions.length} receipts`);
+    }
 
     case "REFUND_TX": {
       const orig = state.transactions.find((t) => t.id === a.txId);
@@ -318,15 +444,14 @@ function reducer(state: State, a: Action): State {
         method: orig.method, cashier: CASHIER, refundOf: orig.id, reason: a.reason,
       };
       const transactions = [refund, ...state.transactions.map((t) => (t.id === orig.id ? { ...t, refundedAt: Date.now() } : t))];
-      return withToast(
-        { ...state, products, transactions },
-        "success", `${orig.id} refunded — ${money(-orig.total)} returned, stock restored to lots`,
-      );
+      const next = withAudit({ ...state, products, transactions }, "money",
+        `Refund ${refund.id} of ${orig.id} — ${money(-orig.total)} · ${a.reason}`);
+      return withToast(next, "success", `${orig.id} refunded — ${money(-orig.total)} returned, stock restored to lots`);
     }
 
     case "ADD_PRODUCT":
       return withToast(
-        { ...state, products: [a.product, ...state.products] },
+        withAudit({ ...state, products: [a.product, ...state.products] }, "stock", `New SKU — ${a.product.name} (${a.product.sku})`),
         "success", `${a.product.name} added to catalog`,
       );
 
@@ -337,15 +462,14 @@ function reducer(state: State, a: Action): State {
         a.status === "verifying" ? `${rx.id} moved to pharmacist review` :
         a.status === "ready" ? `${rx.id} ready for pickup` :
         a.status === "dispensed" ? `${rx.id} dispensed — logged` : `${rx.id} reopened`;
-      return withToast(
-        {
-          ...state,
-          prescriptions: state.prescriptions.map((x) => (x.id === a.id
-            ? { ...x, status: a.status, dispensedAt: a.status === "dispensed" ? (x.dispensedAt ?? Date.now()) : x.dispensedAt }
-            : x)),
-        },
-        "success", msg,
-      );
+      let next: State = {
+        ...state,
+        prescriptions: state.prescriptions.map((x) => (x.id === a.id
+          ? { ...x, status: a.status, dispensedAt: a.status === "dispensed" ? (x.dispensedAt ?? Date.now()) : x.dispensedAt }
+          : x)),
+      };
+      if (a.status === "dispensed") next = withAudit(next, "rx", `${rx.id} dispensed — ${rx.patient} · ${rx.qty} × ${rx.productId}`);
+      return withToast(next, "success", msg);
     }
 
     case "RX_TO_CART": {
@@ -373,7 +497,10 @@ function reducer(state: State, a: Action): State {
 
     case "RESET": {
       localStorage.removeItem(LS_KEY);
-      return { ...state, ...seed(), cart: [], held: [], receipt: null, payOpen: false };
+      return {
+        ...state, ...seed(), cart: [], held: [], receipt: null, payOpen: false,
+        saleCustomerId: null, redeemPoints: 0,
+      };
     }
 
     default:
@@ -399,10 +526,11 @@ export function PosProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     try {
       localStorage.setItem(LS_KEY, JSON.stringify({
-        products: state.products, transactions: state.transactions.slice(0, 400), prescriptions: state.prescriptions,
+        products: state.products, transactions: state.transactions.slice(0, 400),
+        prescriptions: state.prescriptions, customers: state.customers, audit: state.audit,
       }));
     } catch { /* storage full — ignore */ }
-  }, [state.products, state.transactions, state.prescriptions]);
+  }, [state.products, state.transactions, state.prescriptions, state.customers, state.audit]);
 
   const value = useMemo<Ctx>(() => {
     const product = (id: string) => state.products.find((p) => p.id === id);

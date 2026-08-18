@@ -1,11 +1,11 @@
 import { useMemo, useState } from "react";
 import type { ReactNode } from "react";
 import { createPortal } from "react-dom";
-import { usePos, money } from "./store";
-import { TAX_RATE, STORE } from "./data";
+import { usePos, money, cartTotals } from "./store";
+import { TAX_RATE, STORE, REDEEM_CHUNK_PTS, REDEEM_CHUNK_VALUE } from "./data";
 import type { PayMethod, PaymentLeg, Transaction } from "./data";
 import { Modal, cx } from "./ui";
-import { ICash, ICard, IShield, IX, IPrint, ICheck, ISplit } from "./icons";
+import { ICash, ICard, IShield, IX, IPrint, ICheck, ISplit, IUsers, IStar } from "./icons";
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
 
@@ -18,16 +18,12 @@ export function PaymentModal() {
   const [discountPct, setDiscountPct] = useState(0);
   const [tendered, setTendered] = useState("");
 
-  const t = useMemo(() => {
-    const lines = state.cart.map((c) => {
-      const p = product(c.productId)!;
-      return { name: p.name, qty: c.qty, price: p.price, total: c.qty * p.price };
-    });
-    const subtotal = round2(lines.reduce((s, l) => s + l.total, 0));
-    const discount = round2((subtotal * discountPct) / 100);
-    const tax = round2((subtotal - discount) * TAX_RATE);
-    return { lines, subtotal, discount, tax, total: round2(subtotal - discount + tax) };
-  }, [state.cart, discountPct, product]);
+  const t = useMemo(() => cartTotals(state, discountPct), [state, discountPct]);
+  const customer = state.customers.find((c) => c.id === state.saleCustomerId) ?? null;
+  /* redeemable chunks: 100 pts = $5, capped by payable balance */
+  const payableNow = Math.max(0, t.subtotal - t.bulkSavings - t.discount);
+  const maxChunks = customer ? Math.min(Math.floor(customer.points / REDEEM_CHUNK_PTS), Math.floor(payableNow / REDEEM_CHUNK_VALUE)) : 0;
+  const redeeming = state.redeemPoints > 0;
 
   const tenderedNum = parseFloat(tendered) || 0;
   const change = round2(tenderedNum - t.total);
@@ -78,6 +74,7 @@ export function PaymentModal() {
 
           <div className="mt-4 space-y-1.5 text-sm">
             <Row k="Subtotal" v={money(t.subtotal)} />
+            {t.bulkSavings > 0 && <Row k={<span className="text-honey-700 font-semibold">Bulk-tier savings</span>} v={<span className="text-honey-700">−{money(t.bulkSavings)}</span>} />}
             <div className="flex items-center justify-between py-0.5">
               <span className="text-inksoft">Discount</span>
               <span className="flex items-center gap-1">
@@ -91,18 +88,40 @@ export function PaymentModal() {
                 <span className="num text-brick-700 font-semibold ml-1">−{money(t.discount)}</span>
               </span>
             </div>
+            {t.loyaltyDeduct > 0 && <Row k={<span className="text-pine-700 font-semibold">Points redeemed · {state.redeemPoints} pts</span>} v={<span className="text-pine-700">−{money(t.loyaltyDeduct)}</span>} />}
             <Row k={`Tax (${(TAX_RATE * 100).toFixed(0)}%)`} v={money(t.tax)} />
             <div className="receipt-dash pt-2 mt-2">
               <Row k={<span className="font-semibold text-ink">Total</span>} v={<span className="font-bold text-pine-800">{money(t.total)}</span>} />
             </div>
           </div>
 
+          {customer && (
+            <div className="mt-3 rounded-lg border border-honey-300/60 bg-honey-100/50 px-3 py-2.5 anim-fade-up">
+              <div className="flex items-center justify-between gap-2">
+                <p className="text-xs font-bold text-honey-800 flex items-center gap-1.5 min-w-0">
+                  <IUsers size={13} className="shrink-0" /> <span className="truncate">{customer.name}</span>
+                  <span className="num shrink-0 text-[10px] font-semibold text-honey-700">· {customer.points} pts · earns +{Math.floor(t.total)}</span>
+                </p>
+              </div>
+              {maxChunks > 0 && (
+                <button onClick={() => dispatch({ type: "SET_REDEEM", points: redeeming ? 0 : maxChunks * REDEEM_CHUNK_PTS })}
+                  className={cx("mt-2 w-full flex items-center justify-between px-2.5 py-2 rounded-md border text-xs font-bold transition-all",
+                    redeeming
+                      ? "border-pine-600 bg-pine-700 text-pine-50"
+                      : "border-honey-400 bg-card text-honey-700 hover:bg-honey-100")}>
+                  <span className="flex items-center gap-1.5"><IStar size={12} /> {redeeming ? `Redeeming ${state.redeemPoints} pts` : `Redeem ${maxChunks * REDEEM_CHUNK_PTS} pts`}</span>
+                  <span className="num">{redeeming ? `−${money(t.loyaltyDeduct)} ✓` : `−${money(maxChunks * REDEEM_CHUNK_VALUE)}`}</span>
+                </button>
+              )}
+            </div>
+          )}
+
           {t.lines.length > 0 && (
             <div className="mt-4 max-h-28 overflow-y-auto scroll-slim text-xs space-y-1 pr-1">
               {t.lines.map((l) => (
                 <div key={l.name} className="flex justify-between text-inksoft">
                   <span className="truncate pr-2">{l.qty} × {l.name}</span>
-                  <span className="num shrink-0">{money(l.total)}</span>
+                  <span className="num shrink-0">{money(l.price * l.qty)}</span>
                 </div>
               ))}
             </div>
@@ -254,6 +273,8 @@ function Row({ k, v }: { k: ReactNode; v: ReactNode }) {
 /* ---------------- Receipt ---------------- */
 
 function ReceiptBody({ tx }: { tx: Transaction }) {
+  const { state } = usePos();
+  const customerName = state.customers.find((c) => c.id === tx.customerId)?.name;
   return (
     <div className="bg-white border border-mist rounded-lg p-5 num text-[12px] text-ink leading-relaxed">
       <div className="text-center">
@@ -269,6 +290,9 @@ function ReceiptBody({ tx }: { tx: Transaction }) {
       <div className="flex justify-between"><span>Receipt</span><span className="font-semibold">{tx.id}</span></div>
       <div className="flex justify-between"><span>Date</span><span>{new Date(tx.at).toLocaleString("en-US", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}</span></div>
       <div className="flex justify-between"><span>Cashier</span><span>{tx.cashier}</span></div>
+      {customerName && (
+        <div className="flex justify-between"><span>Customer</span><span>{customerName}</span></div>
+      )}
       <div className="receipt-dash my-3" />
       {tx.lines.map((l) => (
         <div key={l.productId} className="mb-1.5">
@@ -291,7 +315,9 @@ function ReceiptBody({ tx }: { tx: Transaction }) {
       ))}
       <div className="receipt-dash my-3" />
       <div className="flex justify-between"><span>Subtotal</span><span>{money(tx.subtotal)}</span></div>
+      {tx.bulkSavings && tx.bulkSavings > 0 && <div className="flex justify-between"><span>Bulk-tier savings</span><span>−{money(tx.bulkSavings)}</span></div>}
       {tx.discount > 0 && <div className="flex justify-between"><span>Discount</span><span>−{money(tx.discount)}</span></div>}
+      {tx.loyaltyDeduct && tx.loyaltyDeduct > 0 && <div className="flex justify-between"><span>Points · {tx.pointsRedeemed} pts</span><span>−{money(tx.loyaltyDeduct)}</span></div>}
       <div className="flex justify-between"><span>Tax 8%</span><span>{money(tx.tax)}</span></div>
       <div className="flex justify-between font-bold text-[14px] mt-1"><span>TOTAL</span><span>{money(tx.total)}</span></div>
       <div className="receipt-dash my-3" />
@@ -301,6 +327,9 @@ function ReceiptBody({ tx }: { tx: Transaction }) {
           <span>{money(pg.amount)}</span>
         </div>
       ))}
+      {tx.pointsEarned !== undefined && (
+        <div className="flex justify-between font-semibold"><span>Loyalty earned</span><span>+{tx.pointsEarned} pts</span></div>
+      )}
       {tx.tendered !== undefined && (
         <>
           <div className="flex justify-between"><span>Cash</span><span>{money(tx.tendered)}</span></div>

@@ -3,7 +3,8 @@ import type { ReactNode } from "react";
 import { usePos, money, clockTime, relTime } from "../store";
 import type { PayMethod, Transaction } from "../data";
 import { cx, Badge, Empty, Modal } from "../ui";
-import { IHistory, ISearch, ICash, ICard, IShield, IPill, IX, IRecall, ICalendar, IDownload } from "../icons";
+import { IHistory, ISearch, ICash, ICard, IShield, IPill, IX, IRecall, ICalendar, IDownload, IReport } from "../icons";
+import type { AuditKind } from "../data";
 
 const REFUND_REASONS = ["Customer return", "Wrong item dispensed", "Damaged goods", "Pricing error", "Duplicate charge"];
 
@@ -13,6 +14,7 @@ export default function History() {
   const [q, setQ] = useState("");
   const [refunding, setRefunding] = useState<Transaction | null>(null);
   const [shiftOpen, setShiftOpen] = useState(false);
+  const [auditOpen, setAuditOpen] = useState(false);
 
   const rows = useMemo(() => {
     const needle = q.trim().toLowerCase();
@@ -57,6 +59,10 @@ export default function History() {
           <button onClick={() => setShiftOpen(true)}
             className="flex items-center gap-1.5 px-3.5 py-2 rounded-lg bg-ink text-paper text-xs font-bold hover:bg-pine-900 transition active:scale-95 shadow-lift">
             <ICalendar size={14} /> Shift summary
+          </button>
+          <button onClick={() => setAuditOpen(true)}
+            className="flex items-center gap-1.5 px-3.5 py-2 rounded-lg border border-mist bg-card text-xs font-bold text-ink hover:border-pine-400 hover:bg-pine-50 transition active:scale-95">
+            <IReport size={14} /> Audit trail
           </button>
         </div>
       </div>

@@ -86,6 +86,11 @@ export interface Transaction {
   refundedAt?: number;   // original sale was refunded
   refundOf?: string;     // this record is the refund of the given sale
   reason?: string;
+  customerId?: string;
+  bulkSavings?: number;      // quantity-tier savings across lines
+  loyaltyDeduct?: number;    // value of redeemed points
+  pointsEarned?: number;
+  pointsRedeemed?: number;
 }
 
 export type RxStatus = "new" | "verifying" | "ready" | "dispensed";
@@ -95,7 +100,28 @@ export interface Prescription {
   daysSupply?: number;      // days of therapy in this fill — drives refill radar
   dispensedAt?: number;     // set when moved to dispensed
   remindedAt?: number;      // last refill reminder sent
+  insurance?: { plan: string; memberId: string; status: "pending" | "verified" | "rejected" };
 }
+
+export interface Customer {
+  id: string; name: string; phone: string; email?: string;
+  createdAt: number; notes?: string;
+  points: number;           // loyalty balance — 1 pt per $1, 100 pts redeems $5
+}
+
+export type AuditKind = "sale" | "stock" | "money" | "rx" | "system";
+export interface AuditEntry { id: number; at: number; actor: string; kind: AuditKind; detail: string; }
+
+/* bulk-pricing tiers — per non-Rx line, by quantity */
+export const BULK_TIERS: { min: number; pct: number }[] = [
+  { min: 6, pct: 10 },
+  { min: 3, pct: 5 },
+];
+export const bulkPct = (qty: number) => BULK_TIERS.find((t) => qty >= t.min)?.pct ?? 0;
+
+/* loyalty rules */
+export const REDEEM_CHUNK_PTS = 100;
+export const REDEEM_CHUNK_VALUE = 5;
 
 export interface HeldSale { id: string; label: string; at: number; items: { productId: string; qty: number; note?: string }[]; }
 
@@ -166,14 +192,28 @@ export function makePrescriptions(now: number): Prescription[] {
   const d = 24 * h;
   return [
     { id: "RX-2481", patient: "Marta Kessler", age: 34, productId: "amx500", qty: 2, prescriber: "Dr. I. Bello", status: "new", createdAt: now - 14 * m, note: "Take 1 capsule every 8h after food" },
-    { id: "RX-2480", patient: "Daniel Osei", age: 61, productId: "atv20", qty: 2, prescriber: "Dr. R. Vance", status: "verifying", createdAt: now - 52 * m, note: "Refill — check interaction with amlodipine", daysSupply: 30 },
+    { id: "RX-2480", patient: "Daniel Osei", age: 61, productId: "atv20", qty: 2, prescriber: "Dr. R. Vance", status: "verifying", createdAt: now - 52 * m, note: "Refill — check interaction with amlodipine", daysSupply: 30, insurance: { plan: "BlueCross PBM", memberId: "XCB-9917-31", status: "pending" } },
     { id: "RX-2479", patient: "Priya Nair", age: 45, productId: "met500", qty: 4, prescriber: "Dr. S. Adeyemi", status: "ready", createdAt: now - 2.1 * h, daysSupply: 90 },
     { id: "RX-2478", patient: "Tom Alvarez", age: 8, productId: "salb", qty: 1, prescriber: "Dr. I. Bello", status: "ready", createdAt: now - 3.4 * h, note: "Guardian pickup — mother" },
-    { id: "RX-2477", patient: "Grace Lin", age: 52, productId: "insg", qty: 2, prescriber: "Dr. S. Adeyemi", status: "verifying", createdAt: now - 5.2 * h, note: "Cold-chain — keep refrigerated", daysSupply: 28 },
+    { id: "RX-2477", patient: "Grace Lin", age: 52, productId: "insg", qty: 2, prescriber: "Dr. S. Adeyemi", status: "verifying", createdAt: now - 5.2 * h, note: "Cold-chain — keep refrigerated", daysSupply: 28, insurance: { plan: "Aetna Rx", memberId: "AET-8830-19", status: "pending" } },
     { id: "RX-2476", patient: "Samuel Eze", age: 29, productId: "azi250", qty: 1, prescriber: "Dr. R. Vance", status: "dispensed", createdAt: now - 8.6 * h, dispensedAt: now - 8.6 * h, daysSupply: 6 },
     /* maintenance fills from earlier this month — feed the refill radar */
-    { id: "RX-2441", patient: "Helen Okafor", age: 67, productId: "atv20", qty: 2, prescriber: "Dr. R. Vance", status: "dispensed", createdAt: now - 29 * d, dispensedAt: now - 29 * d, daysSupply: 30, note: "Monthly maintenance — auto-refill allowed" },
-    { id: "RX-2436", patient: "Victor Adeyemi", age: 58, productId: "met500", qty: 4, prescriber: "Dr. S. Adeyemi", status: "dispensed", createdAt: now - 33 * d, dispensedAt: now - 33 * d, daysSupply: 30 },
+    { id: "RX-2441", patient: "Helen Okafor", age: 67, productId: "atv20", qty: 2, prescriber: "Dr. R. Vance", status: "dispensed", createdAt: now - 29 * d, dispensedAt: now - 29 * d, daysSupply: 30, note: "Monthly maintenance — auto-refill allowed", insurance: { plan: "BlueCross PBM", memberId: "XCB-4471-02", status: "verified" } },
+    { id: "RX-2436", patient: "Victor Adeyemi", age: 58, productId: "met500", qty: 4, prescriber: "Dr. S. Adeyemi", status: "dispensed", createdAt: now - 33 * d, dispensedAt: now - 33 * d, daysSupply: 30, insurance: { plan: "MediPlan Rx", memberId: "MPX-2210-44", status: "verified" } },
+  ];
+}
+
+export function makeCustomers(now: number): Customer[] {
+  const d = 86_400_000;
+  return [
+    { id: "C-001", name: "Helen Okafor", phone: "(555) 201-8834", email: "helen.o@mail.com", createdAt: now - 212 * d, notes: "Prefers 90-day fills", points: 342 },
+    { id: "C-002", name: "Victor Adeyemi", phone: "(555) 318-0021", createdAt: now - 156 * d, points: 218 },
+    { id: "C-003", name: "Marta Kessler", phone: "(555) 774-2910", email: "mkessler@mail.com", createdAt: now - 98 * d, notes: "Penicillin allergy on file", points: 126 },
+    { id: "C-004", name: "Daniel Osei", phone: "(555) 402-5519", createdAt: now - 74 * d, points: 94 },
+    { id: "C-005", name: "Priya Nair", phone: "(555) 909-1147", email: "priya.n@mail.com", createdAt: now - 41 * d, points: 265 },
+    { id: "C-006", name: "Grace Lin", phone: "(555) 655-7702", createdAt: now - 23 * d, notes: "Insulin — cold chain pickup", points: 71 },
+    { id: "C-007", name: "Tom Alvarez", phone: "(555) 130-4486", createdAt: now - 9 * d, notes: "Guardian: mother (pickup)", points: 18 },
+    { id: "C-008", name: "Ruth Bello", phone: "(555) 887-3320", createdAt: now - 2 * d, points: 6 },
   ];
 }
 

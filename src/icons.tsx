@@ -138,6 +138,24 @@ export const ISend = (p: P) => (
     <path d="M20.5 3.5 8.9 13.1" />
   </Base>
 );
+export const IUsers = (p: P) => (
+  <Base {...p}>
+    <circle cx="9" cy="8" r="3.2" />
+    <path d="M3.5 19c.6-3.2 2.8-5 5.5-5s4.9 1.8 5.5 5" />
+    <path d="M15.5 5.2a3.2 3.2 0 1 1 .9 6.3M17.2 13.6c1.9.5 3 1.9 3.3 4" />
+  </Base>
+);
+export const IStar = (p: P) => (
+  <Base {...p}>
+    <path d="m12 3.5 2.4 5 5.6.7-4.1 3.8 1.1 5.5L12 15.8l-5 2.7 1.1-5.5L4 9.2l5.6-.7z" />
+  </Base>
+);
+export const IBoard = (p: P) => (
+  <Base {...p}>
+    <rect x="5" y="4" width="14" height="17" rx="2" />
+    <path d="M9 2.8h6v3H9zM8.5 10.5h7M8.5 14h7M8.5 17.5h4" />
+  </Base>
+);
 export const IClock = (p: P) => (
   <Base {...p}><circle cx="12" cy="12" r="8.5" /><path d="M12 7.5V12l3 2" /></Base>
 );
