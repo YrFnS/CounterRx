@@ -17,7 +17,7 @@ interface State {
   products: Product[];
   transactions: Transaction[];
   prescriptions: Prescription[];
-  cart: { productId: string; qty: number; note?: string }[];
+  cart: { productId: string; qty: number; note?: string; priceOverride?: number }[];
   held: HeldSale[];
   view: View;
   invPreset: InventoryPreset;
@@ -43,6 +43,10 @@ type Action =
   | { type: "ADJUST_BATCH"; productId: string; batch: string; newQty: number; reason: string }
   | { type: "RESTOCK"; productId: string; amount: number; batch: string; expiry: string }
   | { type: "SET_NOTE"; productId: string; note: string }
+  | { type: "SET_PRICE"; productId: string; price: number | null }
+  | { type: "REMIND_RX"; id: string }
+  | { type: "NEW_REFILL"; rxId: string }
+  | { type: "RESTORE"; products: Product[]; transactions: Transaction[]; prescriptions: Prescription[] }
   | { type: "ADD_PRODUCT"; product: Product }
   | { type: "REFUND_TX"; txId: string; reason: string }
   | { type: "RX_STATUS"; id: string; status: RxStatus }
@@ -84,7 +88,14 @@ const round2 = (n: number) => Math.round(n * 100) / 100;
 function cartTotals(state: State, discountPct: number) {
   const lines: TxLine[] = state.cart.map((c) => {
     const p = state.products.find((x) => x.id === c.productId)!;
-    return { productId: p.id, name: p.name, form: p.form, qty: c.qty, price: p.price, rx: p.rx, note: c.note };
+    const overridden = c.priceOverride !== undefined && c.priceOverride > 0 && c.priceOverride !== p.price;
+    return {
+      productId: p.id, name: p.name, form: p.form, qty: c.qty,
+      price: overridden ? c.priceOverride! : p.price,
+      rx: p.rx, note: c.note,
+      override: overridden || undefined,
+      listPrice: overridden ? p.price : undefined,
+    };
   });
   const subtotal = round2(lines.reduce((s, l) => s + l.price * l.qty, 0));
   const discount = round2((subtotal * discountPct) / 100);
@@ -235,6 +246,46 @@ function reducer(state: State, a: Action): State {
       };
     }
 
+    case "SET_PRICE": {
+      const p = state.products.find((x) => x.id === a.productId);
+      if (!p) return state;
+      const cart = state.cart.map((c) =>
+        c.productId === a.productId ? { ...c, priceOverride: a.price === null ? undefined : round2(a.price) } : c);
+      return a.price === null
+        ? withToast({ ...state, cart }, "info", `${p.name} back to list price ${money(p.price)}`)
+        : withToast({ ...state, cart }, "success", `${p.name} overridden to ${money(round2(a.price))} (list ${money(p.price)})`);
+    }
+
+    case "REMIND_RX": {
+      const rx = state.prescriptions.find((x) => x.id === a.id);
+      if (!rx) return state;
+      return withToast(
+        { ...state, prescriptions: state.prescriptions.map((x) => (x.id === a.id ? { ...x, remindedAt: Date.now() } : x)) },
+        "info", `Refill reminder sent to ${rx.patient} (${rx.id})`,
+      );
+    }
+
+    case "NEW_REFILL": {
+      const rx = state.prescriptions.find((x) => x.id === a.rxId);
+      if (!rx) return state;
+      const nextNum = 2482 + state.prescriptions.filter((x) => x.id.startsWith("RX-")).length;
+      const copy: Prescription = {
+        id: `RX-${nextNum}`, patient: rx.patient, age: rx.age, productId: rx.productId, qty: rx.qty,
+        prescriber: rx.prescriber, status: "new", createdAt: Date.now(),
+        daysSupply: rx.daysSupply, note: `Refill of ${rx.id} · ${rx.patient}`,
+      };
+      return withToast(
+        { ...state, prescriptions: [copy, ...state.prescriptions], view: "prescriptions" },
+        "success", `Refill ${copy.id} queued for ${rx.patient}`,
+      );
+    }
+
+    case "RESTORE":
+      return withToast(
+        { ...state, products: a.products, transactions: a.transactions, prescriptions: a.prescriptions, cart: [], held: [], receipt: null, payOpen: false },
+        "success", `Backup restored — ${a.products.length} products · ${a.transactions.length} receipts`,
+      );
+
     case "REFUND_TX": {
       const orig = state.transactions.find((t) => t.id === a.txId);
       if (!orig) return state;
@@ -287,7 +338,12 @@ function reducer(state: State, a: Action): State {
         a.status === "ready" ? `${rx.id} ready for pickup` :
         a.status === "dispensed" ? `${rx.id} dispensed — logged` : `${rx.id} reopened`;
       return withToast(
-        { ...state, prescriptions: state.prescriptions.map((x) => (x.id === a.id ? { ...x, status: a.status } : x)) },
+        {
+          ...state,
+          prescriptions: state.prescriptions.map((x) => (x.id === a.id
+            ? { ...x, status: a.status, dispensedAt: a.status === "dispensed" ? (x.dispensedAt ?? Date.now()) : x.dispensedAt }
+            : x)),
+        },
         "success", msg,
       );
     }

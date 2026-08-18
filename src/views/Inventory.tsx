@@ -3,7 +3,7 @@ import { usePos, money } from "../store";
 import { CATEGORIES, daysUntil, fefoBatches, stockOf, nearestExpiry, newBatchCode } from "../data";
 import type { CategoryId, Product, Batch } from "../data";
 import { cx, Badge, Modal, StockBar, Empty } from "../ui";
-import { ISearch, IPlus, IBox, IAlert, IDownload, IEdit, IX, ICheck } from "../icons";
+import { ISearch, IPlus, IBox, IAlert, IDownload, IEdit, IX, ICheck, IReport, ICalendar } from "../icons";
 
 type Filter = "all" | "low" | "expiring" | "rx";
 
@@ -16,6 +16,7 @@ export default function Inventory() {
   const [adjusting, setAdjusting] = useState<Product | null>(null);
   const [receiving, setReceiving] = useState<Product | null>(null);
   const [adding, setAdding] = useState(false);
+  const [report, setReport] = useState<"low" | "expiry" | null>(null);
 
   /* respond to alert-bell navigation presets even when already mounted */
   useEffect(() => {
@@ -114,6 +115,14 @@ export default function Inventory() {
         </div>
 
         <div className="flex-1" />
+        <button onClick={() => setReport("low")}
+          className="flex items-center gap-1.5 px-3 py-2 rounded-lg border border-mist bg-card text-xs font-semibold text-ink hover:border-honey-400 hover:bg-honey-100/50 transition active:scale-95">
+          <IReport size={14} /> Reorder report
+        </button>
+        <button onClick={() => setReport("expiry")}
+          className="flex items-center gap-1.5 px-3 py-2 rounded-lg border border-mist bg-card text-xs font-semibold text-ink hover:border-brick-400 hover:bg-brick-100/40 transition active:scale-95">
+          <ICalendar size={14} /> Expiry report
+        </button>
         <button onClick={exportCsv}
           className="flex items-center gap-1.5 px-3 py-2 rounded-lg border border-mist bg-card text-xs font-semibold text-ink hover:border-pine-400 hover:bg-pine-50 transition active:scale-95">
           <IDownload size={14} /> Export CSV
@@ -229,6 +238,7 @@ export default function Inventory() {
       {adjusting && <AdjustModal p={adjusting} onClose={() => setAdjusting(null)} />}
       {receiving && <ReceiveModal p={receiving} onClose={() => setReceiving(null)} />}
       {adding && <AddProductModal onClose={() => setAdding(false)} />}
+      {report && <ReportModal mode={report} onClose={() => setReport(null)} />}
     </div>
   );
 }
@@ -364,6 +374,172 @@ function ReceiveModal({ p, onClose }: { p: Product; onClose: () => void }) {
             valid ? "bg-pine-700 text-pine-50 hover:bg-pine-600" : "bg-mist text-inksoft/60 cursor-not-allowed")}>
           <ICheck size={15} /> Book into stock
         </button>
+      </div>
+    </Modal>
+  );
+}
+
+function ReportModal({ mode, onClose }: { mode: "low" | "expiry"; onClose: () => void }) {
+  const { state, dispatch } = usePos();
+  const isLow = mode === "low";
+
+  /* --- reorder report: everything at/below par, with suggested order qty --- */
+  const lowRows = useMemo(() => state.products
+    .filter((p) => stockOf(p) <= p.reorderLevel)
+    .map((p) => {
+      const onHand = stockOf(p);
+      const suggest = Math.max(0, p.reorderLevel * 2 - onHand);
+      return { p, onHand, suggest, orderCost: suggest * p.cost };
+    })
+    .sort((a, b) => (a.onHand / Math.max(1, a.p.reorderLevel)) - (b.onHand / Math.max(1, b.p.reorderLevel))),
+  [state.products]);
+  const poTotal = lowRows.reduce((s, r) => s + r.orderCost, 0);
+
+  /* --- expiry report: every lot due within 90 days (incl. expired) --- */
+  const expRows = useMemo(() => {
+    const rows: { p: Product; b: Batch; d: number }[] = [];
+    for (const p of state.products) for (const b of p.batches) {
+      const d = daysUntil(b.expiry);
+      if (d <= 90) rows.push({ p, b, d });
+    }
+    return rows.sort((x, y) => x.b.expiry.localeCompare(y.b.expiry));
+  }, [state.products]);
+
+  const bucket = (lo: number, hi: number) => expRows.filter((r) => r.d >= lo && r.d <= hi);
+  const buckets = [
+    { label: "Expired", rows: bucket(-9999, 0), tone: "#c24a2e" },
+    { label: "0–30d", rows: bucket(1, 30), tone: "#c24a2e" },
+    { label: "31–60d", rows: bucket(31, 60), tone: "#e0a63c" },
+    { label: "61–90d", rows: bucket(61, 90), tone: "#3b8668" },
+  ];
+  const writeOff = expRows.reduce((s, r) => s + r.b.qty * r.p.cost, 0);
+
+  const exportCsv = () => {
+    let head: string[], body: string[];
+    if (isLow) {
+      head = ["sku", "product", "on_hand", "reorder_level", "suggested_order", "supplier", "unit_cost", "order_cost"];
+      body = lowRows.map((r) => [r.p.sku, `\"${r.p.name}\"`, r.onHand, r.p.reorderLevel, r.suggest, `\"${r.p.supplier}\"`, r.p.cost.toFixed(2), r.orderCost.toFixed(2)].join(","));
+    } else {
+      head = ["sku", "product", "batch", "expiry", "days_left", "qty", "value_at_cost"];
+      body = expRows.map((r) => [r.p.sku, `\"${r.p.name}\"`, r.b.batch, r.b.expiry, r.d, r.b.qty, (r.b.qty * r.p.cost).toFixed(2)].join(","));
+    }
+    const blob = new Blob([[head.join(","), ...body].join("\n")], { type: "text/csv" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url; a.download = `${isLow ? "reorder" : "expiry"}-report-${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click(); URL.revokeObjectURL(url);
+    dispatch({ type: "TOAST", kind: "success", msg: `${isLow ? "Reorder" : "Expiry"} report exported` });
+  };
+
+  const rows = isLow ? lowRows.length : expRows.length;
+
+  return (
+    <Modal onClose={onClose} width={680} labelledBy="rpt-title">
+      <div className="px-5 py-4 border-b border-mist flex items-start justify-between">
+        <div>
+          <h2 id="rpt-title" className="font-display font-bold text-ink flex items-center gap-2">
+            {isLow ? <IReport size={17} className="text-honey-700" /> : <ICalendar size={17} className="text-brick-700" />}
+            {isLow ? "Reorder report" : "Expiry report · next 90 days"}
+          </h2>
+          <p className="text-xs text-inksoft mt-0.5">
+            {isLow
+              ? <>Suggested order brings each SKU to <span className="font-semibold">2× par</span> · est. PO value <span className="num font-bold text-ink">{money(poTotal)}</span></>
+              : <>At-risk inventory value <span className="num font-bold text-brick-700">{money(writeOff)}</span> across {rows} lots</>}
+          </p>
+        </div>
+        <button onClick={onClose} className="p-1.5 rounded-md hover:bg-mist/60 text-inksoft" aria-label="Close"><IX size={14} /></button>
+      </div>
+
+      <div className="p-5">
+        {isLow ? (
+          <>
+            <div className="flex gap-2 flex-wrap mb-3">
+              <span className="px-2.5 py-1 rounded-md bg-honey-100 text-honey-700 text-[11px] font-bold num">{lowRows.length} SKUs below par</span>
+              <span className="px-2.5 py-1 rounded-md bg-pine-100 text-pine-700 text-[11px] font-bold num">{lowRows.reduce((s, r) => s + r.suggest, 0)} units to order</span>
+              <span className="px-2.5 py-1 rounded-md bg-ink text-paper text-[11px] font-bold num">PO est. {money(poTotal)}</span>
+            </div>
+            <div className="max-h-80 overflow-y-auto scroll-slim rounded-lg border border-mist">
+              <table className="w-full text-xs border-collapse">
+                <thead className="sticky top-0">
+                  <tr className="bg-pine-900 text-pine-100 text-left text-[9px] uppercase tracking-[0.14em]">
+                    <th className="px-3 py-2 font-bold">Product</th>
+                    <th className="px-2 py-2 font-bold text-center">On hand</th>
+                    <th className="px-2 py-2 font-bold text-center">Par</th>
+                    <th className="px-2 py-2 font-bold text-center">Suggest</th>
+                    <th className="px-2 py-2 font-bold">Supplier</th>
+                    <th className="px-3 py-2 font-bold text-right">Order cost</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {lowRows.map((r, i) => (
+                    <tr key={r.p.id} className={cx("border-t border-mist/70", i % 2 === 1 && "bg-paper/60")}>
+                      <td className="px-3 py-2 font-semibold text-ink">{r.p.name}{r.p.rx && <span className="text-brick-700 font-bold"> ℞</span>}</td>
+                      <td className={cx("px-2 py-2 text-center num font-bold", r.onHand <= Math.ceil(r.p.reorderLevel / 3) ? "text-brick-700" : "text-honey-700")}>{r.onHand}</td>
+                      <td className="px-2 py-2 text-center num text-inksoft">{r.p.reorderLevel}</td>
+                      <td className="px-2 py-2 text-center num font-bold text-pine-700">+{r.suggest}</td>
+                      <td className="px-2 py-2 text-inksoft">{r.p.supplier}</td>
+                      <td className="px-3 py-2 text-right num font-semibold text-ink">{money(r.orderCost)}</td>
+                    </tr>
+                  ))}
+                  {lowRows.length === 0 && <tr><td colSpan={6} className="px-3 py-8 text-center text-inksoft">All SKUs above par — nothing to order. ✓</td></tr>}
+                </tbody>
+              </table>
+            </div>
+          </>
+        ) : (
+          <>
+            <div className="flex gap-2 flex-wrap mb-3">
+              {buckets.map((b) => (
+                <span key={b.label} className="px-2.5 py-1 rounded-md text-[11px] font-bold num flex items-center gap-1.5 border"
+                  style={{ background: `${b.tone}14`, color: b.tone, borderColor: `${b.tone}44` }}>
+                  <span className="w-1.5 h-1.5 rounded-full" style={{ background: b.tone }} />
+                  {b.label}: {b.rows.length} lots · {money(b.rows.reduce((s, r) => s + r.b.qty * r.p.cost, 0))}
+                </span>
+              ))}
+            </div>
+            <div className="max-h-80 overflow-y-auto scroll-slim rounded-lg border border-mist">
+              <table className="w-full text-xs border-collapse">
+                <thead className="sticky top-0">
+                  <tr className="bg-pine-900 text-pine-100 text-left text-[9px] uppercase tracking-[0.14em]">
+                    <th className="px-3 py-2 font-bold">Product · lot</th>
+                    <th className="px-2 py-2 font-bold">Expiry</th>
+                    <th className="px-2 py-2 font-bold text-center">Days</th>
+                    <th className="px-2 py-2 font-bold text-center">Qty</th>
+                    <th className="px-3 py-2 font-bold text-right">Value at cost</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {expRows.map((r, i) => (
+                    <tr key={`${r.p.id}-${r.b.batch}`} className={cx("border-t border-mist/70", i % 2 === 1 && "bg-paper/60")}>
+                      <td className="px-3 py-2">
+                        <p className="font-semibold text-ink">{r.p.name}</p>
+                        <p className="num text-[10px] text-inksoft">lot {r.b.batch} · {r.p.supplier}</p>
+                      </td>
+                      <td className="px-2 py-2 num text-inksoft">{r.b.expiry}</td>
+                      <td className="px-2 py-2 text-center">
+                        <span className={cx("num inline-block min-w-[38px] px-1.5 py-0.5 rounded font-bold",
+                          r.d <= 0 ? "bg-ink text-paper" : r.d <= 30 ? "bg-brick-100 text-brick-700" : r.d <= 60 ? "bg-honey-100 text-honey-700" : "bg-pine-100 text-pine-700")}>
+                          {r.d <= 0 ? "EXP" : r.d}
+                        </span>
+                      </td>
+                      <td className="px-2 py-2 text-center num font-bold text-ink">{r.b.qty}</td>
+                      <td className="px-3 py-2 text-right num font-semibold text-ink">{money(r.b.qty * r.p.cost)}</td>
+                    </tr>
+                  ))}
+                  {expRows.length === 0 && <tr><td colSpan={5} className="px-3 py-8 text-center text-inksoft">No lots expiring within 90 days. ✓</td></tr>}
+                </tbody>
+              </table>
+            </div>
+          </>
+        )}
+
+        <div className="mt-4 flex justify-end gap-2">
+          <button onClick={onClose} className="px-4 py-2 rounded-lg border border-mist text-xs font-semibold text-inksoft hover:text-ink hover:border-ink/30 transition">Close</button>
+          <button onClick={exportCsv}
+            className="flex items-center gap-1.5 px-4 py-2 rounded-lg bg-pine-700 text-pine-50 text-xs font-bold hover:bg-pine-600 transition active:scale-95">
+            <IDownload size={13} /> Export CSV
+          </button>
+        </div>
       </div>
     </Modal>
   );

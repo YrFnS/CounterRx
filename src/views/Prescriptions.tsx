@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import {
   DndContext, DragOverlay, PointerSensor, useSensor, useSensors, closestCorners,
   useDraggable, useDroppable,
@@ -8,7 +8,7 @@ import { usePos, relTime } from "../store";
 import { stockOf } from "../data";
 import type { RxStatus, Prescription } from "../data";
 import { cx, Badge } from "../ui";
-import { IRx, ICheck, IClock, IRegister, IShield, IGrab } from "../icons";
+import { IRx, ICheck, IClock, IRegister, IShield, IGrab, IRefresh, ISend } from "../icons";
 
 const FLOW: RxStatus[] = ["new", "verifying", "ready", "dispensed"];
 const LABEL: Record<RxStatus, string> = {
@@ -27,9 +27,19 @@ const NEXT: Partial<Record<RxStatus, { to: RxStatus; label: string }>> = {
 };
 
 export default function Prescriptions() {
-  const { state, dispatch } = usePos();
+  const { state, dispatch, product } = usePos();
   const [activeId, setActiveId] = useState<string | null>(null);
   const [overCol, setOverCol] = useState<RxStatus | null>(null);
+
+  /* Refill radar: maintenance fills whose days-supply runs out within 7 days */
+  const dueRefills = useMemo(() => {
+    const now = Date.now();
+    return state.prescriptions
+      .filter((r) => r.status === "dispensed" && r.daysSupply && r.dispensedAt)
+      .map((r) => ({ r, daysLeft: Math.ceil((r.dispensedAt! + r.daysSupply! * 86_400_000 - now) / 86_400_000) }))
+      .filter((x) => x.daysLeft <= 7)
+      .sort((a, b) => a.daysLeft - b.daysLeft);
+  }, [state.prescriptions]);
 
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }));
   const activeRx = state.prescriptions.find((r) => r.id === activeId) ?? null;
@@ -58,6 +68,52 @@ export default function Prescriptions() {
           <IShield size={14} className="text-pine-600" /> Pharmacist on duty: <span className="font-semibold text-ink">R. Mensah, RPh</span>
         </p>
       </div>
+
+      {dueRefills.length > 0 && (
+        <div className="mt-3.5 rounded-xl border border-honey-300/60 bg-honey-100/40 p-3 anim-fade-up">
+          <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-honey-700 flex items-center gap-1.5">
+            <IRefresh size={12} /> Refill radar · therapy runs out ≤ 7 days · {dueRefills.length} patient{dueRefills.length === 1 ? "" : "s"}
+          </p>
+          <div className="mt-2 flex gap-2.5 overflow-x-auto scroll-slim pb-1">
+            {dueRefills.map(({ r, daysLeft }, i) => {
+              const p = product(r.productId);
+              const overdue = daysLeft < 0;
+              return (
+                <div key={r.id} style={{ animationDelay: `${i * 60}ms` }}
+                  className={cx("anim-fade-up shrink-0 w-64 rounded-lg border bg-card p-3 shadow-lift transition-transform hover:-translate-y-0.5",
+                    overdue ? "border-brick-400" : "border-honey-300/70")}>
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="text-xs font-bold text-ink truncate">{r.patient} <span className="font-medium text-inksoft">· {r.age}y</span></p>
+                    <span className={cx("num shrink-0 text-[9px] font-bold px-1.5 py-0.5 rounded",
+                      overdue ? "bg-brick-500 text-brick-100 anim-pulse-dot" : "bg-honey-500 text-pine-950")}>
+                      {overdue ? `${Math.abs(daysLeft)}d overdue` : `due in ${daysLeft}d`}
+                    </span>
+                  </div>
+                  <p className="mt-1 text-[11px] text-inksoft truncate">
+                    <span className="font-semibold text-ink">{p?.name ?? r.productId}</span> × {r.qty}
+                    {r.daysSupply && <span className="num"> · {r.daysSupply}-day supply</span>}
+                  </p>
+                  <p className="text-[10px] text-inksoft num">
+                    filled {r.dispensedAt ? relTime(r.dispensedAt) : "—"} · {r.prescriber}
+                    {r.remindedAt && <span className="text-pine-700 font-bold"> · reminded {relTime(r.remindedAt)}</span>}
+                  </p>
+                  <div className="mt-2 flex gap-1.5">
+                    <button onClick={() => dispatch({ type: "NEW_REFILL", rxId: r.id })}
+                      className="flex-1 flex items-center justify-center gap-1 py-1.5 rounded-md bg-pine-700 text-pine-50 text-[11px] font-bold hover:bg-pine-600 transition active:scale-95">
+                      <IRefresh size={11} /> Start refill
+                    </button>
+                    <button onClick={() => dispatch({ type: "REMIND_RX", id: r.id })}
+                      className={cx("flex-1 flex items-center justify-center gap-1 py-1.5 rounded-md border text-[11px] font-bold transition active:scale-95",
+                        r.remindedAt ? "border-pine-200 bg-pine-50 text-pine-700" : "border-honey-400 bg-honey-100/60 text-honey-700 hover:bg-honey-100")}>
+                      <ISend size={11} /> {r.remindedAt ? "Reminded" : "Remind"}
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       <DndContext sensors={sensors} collisionDetection={closestCorners}
         onDragStart={onDragStart} onDragOver={onDragOver} onDragEnd={onDragEnd} onDragCancel={() => { setActiveId(null); setOverCol(null); }}>

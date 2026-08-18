@@ -277,8 +277,11 @@ function ReceiptBody({ tx }: { tx: Transaction }) {
             <span className="shrink-0">{money(l.price * l.qty)}</span>
           </div>
           <div className="flex justify-between text-inksoft text-[11px]">
-            <span className="truncate">{l.form}</span>
-            <span>{l.qty} × {money(l.price)}</span>
+            <span className="truncate">{l.form}{l.override && <span className="text-pine-700 font-bold"> · price override</span>}</span>
+            <span>
+              {l.qty} × {money(l.price)}
+              {l.override && l.listPrice !== undefined && <span className="line-through opacity-60 ml-1">{money(l.listPrice)}</span>}
+            </span>
           </div>
           {l.note && <p className="text-[10px] text-inksoft italic">↳ {l.note}</p>}
           {l.alloc && l.alloc.length > 0 && (

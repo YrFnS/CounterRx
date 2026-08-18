@@ -1,8 +1,9 @@
-import { useEffect, useState } from "react";
-import type { ReactNode } from "react";
+import { useEffect, useRef, useState } from "react";
+import type { ReactNode, ChangeEvent } from "react";
 import { PosProvider, usePos } from "./store";
 import type { View } from "./store";
 import { CASHIER, STORE, daysUntil, nearestExpiry, stockOf } from "./data";
+import type { Product, Transaction, Prescription } from "./data";
 import { cx } from "./ui";
 import { PaymentModal, ReceiptModal } from "./modals";
 import { ToastHost } from "./ui";
@@ -12,7 +13,7 @@ import Inventory from "./views/Inventory";
 import Prescriptions from "./views/Prescriptions";
 import History from "./views/History";
 import {
-  ICross, IRegister, IDash, IBox, IRx, IHistory, IBell, IAlert, IChevD, IRecall, IScan,
+  ICross, IRegister, IDash, IBox, IRx, IHistory, IBell, IAlert, IChevD, IRecall, IScan, IDownload, IUpload,
 } from "./icons";
 
 const TITLES: Record<View, { title: string; sub: string }> = {
@@ -62,6 +63,42 @@ function Shell() {
     return () => window.removeEventListener("keydown", h);
   }, [dispatch, state.view, state.cart.length, state.payOpen, state.receipt]);
 
+  /* ---------- backup / restore ---------- */
+  const fileRef = useRef<HTMLInputElement>(null);
+  const backup = () => {
+    const payload = {
+      app: "counterrx", version: 3, at: new Date().toISOString(),
+      products: state.products, transactions: state.transactions, prescriptions: state.prescriptions,
+    };
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url; a.download = `counterrx-backup-${new Date().toISOString().slice(0, 10)}.json`;
+    a.click(); URL.revokeObjectURL(url);
+    dispatch({ type: "TOAST", kind: "success", msg: "Backup downloaded — ledger, stock & scripts saved" });
+  };
+  const onRestoreFile = (e: ChangeEvent<HTMLInputElement>) => {
+    const f = e.target.files?.[0];
+    if (!f) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      try {
+        const d = JSON.parse(String(reader.result)) as { products?: unknown; transactions?: unknown; prescriptions?: unknown };
+        if (!Array.isArray(d.products) || !Array.isArray(d.transactions) || !Array.isArray(d.prescriptions)) throw new Error("invalid backup");
+        dispatch({
+          type: "RESTORE",
+          products: d.products as Product[],
+          transactions: d.transactions as Transaction[],
+          prescriptions: d.prescriptions as Prescription[],
+        });
+      } catch {
+        dispatch({ type: "TOAST", kind: "error", msg: "Restore failed — not a valid CounterRx backup" });
+      }
+    };
+    reader.readAsText(f);
+    e.target.value = "";
+  };
+
   return (
     <div className="flex h-full overflow-hidden">
       {/* ---------- sidebar ---------- */}
@@ -109,6 +146,19 @@ function Shell() {
             <p className="text-[13px] font-semibold text-paper mt-0.5">{CASHIER}</p>
             <p className="text-[10px] text-pine-300 num">Terminal 01 · drawer synced</p>
           </div>
+          <div className="grid grid-cols-2 gap-2">
+            <button onClick={backup}
+              className="flex items-center justify-center gap-1.5 px-2 py-2 rounded-lg border border-pine-800 text-pine-300 text-[11px] font-semibold hover:border-pine-600 hover:text-paper transition active:scale-95"
+              title="Download a full JSON backup">
+              <IDownload size={12} /> Backup
+            </button>
+            <button onClick={() => fileRef.current?.click()}
+              className="flex items-center justify-center gap-1.5 px-2 py-2 rounded-lg border border-pine-800 text-pine-300 text-[11px] font-semibold hover:border-pine-600 hover:text-paper transition active:scale-95"
+              title="Restore from a backup file">
+              <IUpload size={12} /> Restore
+            </button>
+          </div>
+          <input ref={fileRef} type="file" accept="application/json,.json" className="hidden" onChange={onRestoreFile} />
           <button onClick={() => dispatch({ type: "RESET" })}
             className="w-full flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg border border-pine-800 text-pine-300 text-[11px] font-semibold hover:border-pine-600 hover:text-paper transition">
             <IRecall size={12} /> Reset demo data

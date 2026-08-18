@@ -103,6 +103,41 @@ export const IGrab = (p: P) => (
     <circle cx="15" cy="18" r="1.15" fill="currentColor" stroke="none" />
   </Base>
 );
+export const ITag = (p: P) => (
+  <Base {...p}>
+    <path d="M3.5 12.5v-8a1 1 0 0 1 1-1h8L20.5 11a1.5 1.5 0 0 1 0 2.1l-6.4 6.4a1.5 1.5 0 0 1-2.1 0z" />
+    <circle cx="8" cy="8" r="1.4" />
+  </Base>
+);
+export const ICalendar = (p: P) => (
+  <Base {...p}>
+    <rect x="3.5" y="5" width="17" height="15.5" rx="2" />
+    <path d="M3.5 10h17M8 3v4M16 3v4" />
+  </Base>
+);
+export const IRefresh = (p: P) => (
+  <Base {...p}>
+    <path d="M4.5 12a7.5 7.5 0 0 1 12.8-5.3L20 9.5M20 4.5v5h-5" />
+    <path d="M19.5 12a7.5 7.5 0 0 1-12.8 5.3L4 14.5M4 19.5v-5h5" />
+  </Base>
+);
+export const IReport = (p: P) => (
+  <Base {...p}>
+    <path d="M4 4h12l4 4v12H4z" />
+    <path d="M16 4v4h4M8 12h8M8 16h5" />
+  </Base>
+);
+export const IUpload = (p: P) => (
+  <Base {...p}>
+    <path d="M12 15V4M7.5 8.5 12 4l4.5 4.5M4 15v4a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-4" />
+  </Base>
+);
+export const ISend = (p: P) => (
+  <Base {...p}>
+    <path d="m20.5 3.5-9 17-2.6-7.4L1.5 10.5z" />
+    <path d="M20.5 3.5 8.9 13.1" />
+  </Base>
+);
 export const IClock = (p: P) => (
   <Base {...p}><circle cx="12" cy="12" r="8.5" /><path d="M12 7.5V12l3 2" /></Base>
 );

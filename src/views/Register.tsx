@@ -5,7 +5,7 @@ import { CATEGORIES, TAX_RATE, daysUntil, stockOf, nearestExpiry } from "../data
 import type { CategoryId, Product } from "../data";
 import { cx, Badge, Empty } from "../ui";
 import {
-  ISearch, IScan, IPlus, IMinus, ITrash, IPause, IRecall, IX, ICart, IPill, IChevD, ISpark, IEdit,
+  ISearch, IScan, IPlus, IMinus, ITrash, IPause, IRecall, IX, ICart, IPill, IChevD, ISpark, IEdit, ITag,
 } from "../icons";
 
 type SortKey = "name" | "price" | "stock";
@@ -37,6 +37,8 @@ export default function Register() {
   const [cat, setCat] = useState<CategoryId | "all">("all");
   const [sort, setSort] = useState<SortKey>("name");
   const [noteFor, setNoteFor] = useState<string | null>(null);
+  const [priceFor, setPriceFor] = useState<string | null>(null);
+  const [priceVal, setPriceVal] = useState("");
   const searchRef = useRef<HTMLInputElement>(null);
 
   const saveNote = (productId: string, value: string) => {
@@ -245,6 +247,37 @@ export default function Register() {
                 <button onClick={() => setNoteFor(p.id)}
                   className="mt-2 flex items-center gap-1 text-[10px] font-semibold text-inksoft/60 hover:text-honey-700 opacity-0 group-hover:opacity-100 transition-all duration-200">
                   <IEdit size={9} /> Add counter note
+                </button>
+              )}
+
+              {priceFor === p.id ? (
+                <div className="anim-fade-up mt-2 flex items-center gap-1.5">
+                  <span className="text-[10px] font-bold text-inksoft">$</span>
+                  <input autoFocus value={priceVal} onChange={(e) => setPriceVal(e.target.value.replace(/[^\d.]/g, ""))}
+                    placeholder={p.price.toFixed(2)} inputMode="decimal"
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") { const v = parseFloat(priceVal); if (v > 0) dispatch({ type: "SET_PRICE", productId: p.id, price: v }); setPriceFor(null); }
+                      if (e.key === "Escape") setPriceFor(null);
+                    }}
+                    onBlur={() => { const v = parseFloat(priceVal); if (v > 0) dispatch({ type: "SET_PRICE", productId: p.id, price: v }); setPriceFor(null); }}
+                    className="num flex-1 min-w-0 text-[11px] px-2 py-1.5 rounded-md border border-pine-300 bg-card text-ink focus:outline-none focus:border-pine-500 focus:ring-2 focus:ring-pine-200 transition" />
+                  <button onClick={() => { dispatch({ type: "SET_PRICE", productId: p.id, price: null }); setPriceFor(null); }}
+                    className="text-[10px] font-bold text-inksoft hover:text-brick-700 px-1.5 py-1 rounded transition">List</button>
+                </div>
+              ) : line.priceOverride !== undefined ? (
+                <p className="mt-2 flex items-center gap-1.5 text-[10px] font-semibold text-pine-700 bg-pine-100/80 border border-pine-200 rounded-md px-2 py-1 num">
+                  <ITag size={9} className="shrink-0" />
+                  <span>override {money(line.priceOverride)}</span>
+                  <span className="text-inksoft line-through font-medium">{money(p.price)}</span>
+                  <button onClick={() => dispatch({ type: "SET_PRICE", productId: p.id, price: null })}
+                    className="ml-auto p-0.5 rounded text-inksoft hover:text-brick-700 transition" aria-label="Reset to list price">
+                    <IX size={9} />
+                  </button>
+                </p>
+              ) : (
+                <button onClick={() => { setPriceFor(p.id); setPriceVal(""); }}
+                  className="mt-2 flex items-center gap-1 text-[10px] font-semibold text-inksoft/60 hover:text-pine-700 opacity-0 group-hover:opacity-100 transition-all duration-200">
+                  <ITag size={9} /> Override price
                 </button>
               )}
             </div>
