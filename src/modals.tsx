@@ -3,15 +3,18 @@ import type { ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { usePos, money } from "./store";
 import { TAX_RATE, STORE } from "./data";
-import type { PayMethod, Transaction } from "./data";
+import type { PayMethod, PaymentLeg, Transaction } from "./data";
 import { Modal, cx } from "./ui";
-import { ICash, ICard, IShield, IX, IPrint, ICheck } from "./icons";
+import { ICash, ICard, IShield, IX, IPrint, ICheck, ISplit } from "./icons";
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
 
 export function PaymentModal() {
   const { state, dispatch, product } = usePos();
-  const [method, setMethod] = useState<PayMethod>("cash");
+  const [leg1, setLeg1] = useState<PayMethod>("cash");
+  const [leg2, setLeg2] = useState<PayMethod>("card");
+  const [split, setSplit] = useState(false);
+  const [leg1Amt, setLeg1Amt] = useState("");
   const [discountPct, setDiscountPct] = useState(0);
   const [tendered, setTendered] = useState("");
 
@@ -28,7 +31,10 @@ export function PaymentModal() {
 
   const tenderedNum = parseFloat(tendered) || 0;
   const change = round2(tenderedNum - t.total);
-  const canConfirm = method !== "cash" || tenderedNum >= t.total;
+  const l1 = Math.min(Math.max(0, parseFloat(leg1Amt) || 0), t.total);
+  const l2 = round2(t.total - l1);
+  const splitValid = split && l1 > 0 && l2 > 0;
+  const canConfirm = split ? splitValid : leg1 !== "cash" || tenderedNum >= t.total;
   const hasRx = state.cart.some((c) => product(c.productId)?.rx);
 
   const methods: { id: PayMethod; label: string; icon: ReactNode; hint: string }[] = [
@@ -36,10 +42,17 @@ export function PaymentModal() {
     { id: "card", label: "Card", icon: <ICard size={17} />, hint: "Terminal #2" },
     { id: "insurance", label: "Insurance", icon: <IShield size={17} />, hint: "Claim auto-filed" },
   ];
+  const labelOf = (m: PayMethod) => methods.find((x) => x.id === m)?.label ?? m;
 
   const confirm = () => {
     if (!canConfirm) return;
-    dispatch({ type: "COMPLETE_SALE", method, tendered: method === "cash" ? tenderedNum : t.total, discountPct });
+    const payments: PaymentLeg[] = split
+      ? [{ method: leg1, amount: round2(l1) }, { method: leg2, amount: l2 }]
+      : [{ method: leg1, amount: t.total }];
+    dispatch({
+      type: "COMPLETE_SALE", payments, discountPct,
+      tendered: !split && leg1 === "cash" ? tenderedNum : undefined,
+    });
   };
 
   return (
@@ -98,22 +111,80 @@ export function PaymentModal() {
 
         {/* right — method */}
         <div className="p-5 bg-pine-50/50">
-          <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-inksoft mb-2">Payment method</p>
+          <div className="flex items-center justify-between mb-2">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-inksoft">
+              {split ? "Payment 1 of 2" : "Payment method"}
+            </p>
+            <button onClick={() => setSplit(!split)}
+              className={cx("flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-[11px] font-bold transition-all duration-200",
+                split
+                  ? "bg-honey-500 border-honey-500 text-pine-950 shadow-lift"
+                  : "bg-card border-mist text-inksoft hover:border-honey-500 hover:text-honey-700")}>
+              <ISplit size={12} /> {split ? "Split on" : "Split tender"}
+            </button>
+          </div>
           <div className="grid grid-cols-3 gap-2">
             {methods.map((m) => (
-              <button key={m.id} onClick={() => setMethod(m.id)}
+              <button key={m.id} onClick={() => {
+                setLeg1(m.id);
+                if (split && m.id === leg2) setLeg2(m.id === "card" ? "cash" : "card");
+              }}
                 className={cx("flex flex-col items-center gap-1.5 p-3 rounded-lg border-2 transition-all duration-200",
-                  method === m.id
+                  leg1 === m.id
                     ? "border-pine-600 bg-pine-700 text-pine-50 shadow-lift -translate-y-0.5"
                     : "border-mist bg-card text-ink hover:border-pine-300 hover:-translate-y-0.5")}>
                 {m.icon}
                 <span className="text-xs font-semibold">{m.label}</span>
-                <span className={cx("text-[10px]", method === m.id ? "text-pine-200" : "text-inksoft")}>{m.hint}</span>
+                <span className={cx("text-[10px]", leg1 === m.id ? "text-pine-200" : "text-inksoft")}>{m.hint}</span>
               </button>
             ))}
           </div>
 
-          {method === "cash" && (
+          {split && (
+            <div className="mt-4 anim-fade-up space-y-3">
+              <div>
+                <label className="text-[11px] font-semibold uppercase tracking-[0.14em] text-inksoft">
+                  {labelOf(leg1)} amount — leg 1
+                </label>
+                <div className="flex gap-1.5 mt-1.5">
+                  <input autoFocus value={leg1Amt} onChange={(e) => setLeg1Amt(e.target.value.replace(/[^\d.]/g, ""))}
+                    onKeyDown={(e) => e.key === "Enter" && confirm()}
+                    inputMode="decimal" placeholder="0.00"
+                    className="num flex-1 px-3 py-2 rounded-lg border-2 border-mist bg-card text-base font-semibold text-ink focus:border-pine-500 focus:outline-none transition" />
+                  {[25, 50, 75].map((pct) => (
+                    <Quick key={pct} label={`${pct}%`} onClick={() => setLeg1Amt(round2((t.total * pct) / 100).toFixed(2))} />
+                  ))}
+                </div>
+              </div>
+              <div>
+                <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-inksoft mb-1.5">Payment 2 · remainder</p>
+                <div className="grid grid-cols-3 gap-2">
+                  {methods.map((m) => (
+                    <button key={m.id} onClick={() => setLeg2(m.id)}
+                      className={cx("flex items-center justify-center gap-1.5 py-2 rounded-lg border-2 text-xs font-semibold transition-all duration-200",
+                        leg2 === m.id
+                          ? "border-honey-500 bg-honey-100 text-honey-700 shadow-lift"
+                          : "border-mist bg-card text-inksoft hover:border-honey-300")}>
+                      {m.icon}{m.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div className={cx("px-3 py-2.5 rounded-lg border text-xs font-semibold flex items-center justify-between",
+                splitValid ? "bg-pine-100 border-pine-200 text-pine-900" : "bg-honey-100/70 border-honey-300/60 text-honey-700")}>
+                {splitValid ? (
+                  <>
+                    <span className="flex items-center gap-1.5"><ICheck size={13} /> {labelOf(leg1)} {money(round2(l1))} + {labelOf(leg2)} {money(l2)}</span>
+                    <span className="num">= {money(t.total)}</span>
+                  </>
+                ) : (
+                  <span>{l1 <= 0 ? "Enter the first payment amount" : "Adjust — legs must cover the total exactly"}</span>
+                )}
+              </div>
+            </div>
+          )}
+
+          {!split && leg1 === "cash" && (
             <div className="mt-4">
               <label className="text-[11px] font-semibold uppercase tracking-[0.14em] text-inksoft">Cash tendered</label>
               <input autoFocus value={tendered} onChange={(e) => setTendered(e.target.value.replace(/[^\d.]/g, ""))}
@@ -134,12 +205,12 @@ export function PaymentModal() {
             </div>
           )}
 
-          {method === "card" && (
+          {!split && leg1 === "card" && (
             <div className="mt-4 px-3 py-3 rounded-lg bg-card border border-mist text-xs text-inksoft leading-relaxed">
               Terminal #2 is listening — insert, tap or swipe. Amount <span className="num font-semibold text-ink">{money(t.total)}</span> will be sent automatically.
             </div>
           )}
-          {method === "insurance" && (
+          {!split && leg1 === "insurance" && (
             <div className="mt-4 px-3 py-3 rounded-lg bg-card border border-mist text-xs text-inksoft leading-relaxed">
               Claim will be filed to <span className="font-semibold text-ink">BlueCross PBM</span>. Patient co-pay is collected at pickup.
             </div>
@@ -151,7 +222,9 @@ export function PaymentModal() {
                 ? "bg-pine-700 text-pine-50 hover:bg-pine-600 active:scale-[0.98] shadow-lift"
                 : "bg-mist text-inksoft cursor-not-allowed")}>
             <ICheck size={16} />
-            Confirm {money(t.total)} · {methods.find((m) => m.id === method)?.label}
+            {split
+              ? `Confirm split · ${labelOf(leg1)} ${money(round2(l1))} + ${labelOf(leg2)} ${money(l2)}`
+              : `Confirm ${money(t.total)} · ${labelOf(leg1)}`}
           </button>
           <p className="text-[10px] text-inksoft text-center mt-2">Enter ↵ confirms · Esc cancels</p>
         </div>
@@ -207,6 +280,7 @@ function ReceiptBody({ tx }: { tx: Transaction }) {
             <span className="truncate">{l.form}</span>
             <span>{l.qty} × {money(l.price)}</span>
           </div>
+          {l.note && <p className="text-[10px] text-inksoft italic">↳ {l.note}</p>}
           {l.alloc && l.alloc.length > 0 && (
             <div className="text-[10px] text-inksoft num">FEFO lots: {l.alloc.map((a) => `${a.batch}×${a.qty}`).join(" · ")}</div>
           )}
@@ -218,7 +292,12 @@ function ReceiptBody({ tx }: { tx: Transaction }) {
       <div className="flex justify-between"><span>Tax 8%</span><span>{money(tx.tax)}</span></div>
       <div className="flex justify-between font-bold text-[14px] mt-1"><span>TOTAL</span><span>{money(tx.total)}</span></div>
       <div className="receipt-dash my-3" />
-      <div className="flex justify-between"><span>Paid by</span><span className="uppercase">{tx.method}</span></div>
+      {(tx.payments ?? [{ method: tx.method, amount: tx.total }]).map((pg, i) => (
+        <div key={i} className="flex justify-between">
+          <span className="uppercase">{i === 0 ? "Paid by" : "+ then"} {pg.method}</span>
+          <span>{money(pg.amount)}</span>
+        </div>
+      ))}
       {tx.tendered !== undefined && (
         <>
           <div className="flex justify-between"><span>Cash</span><span>{money(tx.tendered)}</span></div>

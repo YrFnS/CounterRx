@@ -90,6 +90,9 @@ export const ITrendUp = (p: P) => (
 export const ITrendDown = (p: P) => (
   <Base {...p}><path d="m3 7 6 6 4-4 8 8" /><path d="M15 17h6v-6" /></Base>
 );
+export const ISplit = (p: P) => (
+  <Base {...p}><path d="M12 4v5m0 0c0 4.5-5.5 4.5-5.5 10M12 9c0 4.5 5.5 4.5 5.5 10" /></Base>
+);
 export const IGrab = (p: P) => (
   <Base {...p}>
     <circle cx="9" cy="6" r="1.15" fill="currentColor" stroke="none" />

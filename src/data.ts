@@ -72,12 +72,15 @@ export function newBatchCode(): string {
 export interface TxLine {
   productId: string; name: string; form: string; qty: number; price: number; rx: boolean;
   alloc?: { batch: string; qty: number }[]; // FEFO lot trail
+  note?: string;                            // per-line counter note
 }
 export type PayMethod = "cash" | "card" | "insurance";
+export interface PaymentLeg { method: PayMethod; amount: number; }
 export interface Transaction {
   id: string; at: number; lines: TxLine[];
   subtotal: number; discount: number; tax: number; total: number;
   method: PayMethod; cashier: string; tendered?: number; change?: number;
+  payments?: PaymentLeg[]; // split-tender legs (absent for legacy single-tender sales)
   refundedAt?: number;   // original sale was refunded
   refundOf?: string;     // this record is the refund of the given sale
   reason?: string;
@@ -89,7 +92,7 @@ export interface Prescription {
   prescriber: string; status: RxStatus; createdAt: number; note?: string;
 }
 
-export interface HeldSale { id: string; label: string; at: number; items: { productId: string; qty: number }[]; }
+export interface HeldSale { id: string; label: string; at: number; items: { productId: string; qty: number; note?: string }[]; }
 
 export const TAX_RATE = 0.08;
 export const CASHIER = "A. Okafor";

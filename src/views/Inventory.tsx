@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { usePos, money } from "../store";
-import { CATEGORIES, daysUntil, fefoBatches, stockOf, nearestExpiry } from "../data";
+import { CATEGORIES, daysUntil, fefoBatches, stockOf, nearestExpiry, newBatchCode } from "../data";
 import type { CategoryId, Product, Batch } from "../data";
 import { cx, Badge, Modal, StockBar, Empty } from "../ui";
 import { ISearch, IPlus, IBox, IAlert, IDownload, IEdit, IX, ICheck } from "../icons";
@@ -14,6 +14,7 @@ export default function Inventory() {
   const [filter, setFilter] = useState<Filter>(state.invPreset === "expiring" ? "expiring" : state.invPreset === "low" ? "low" : "all");
   const [monthFilter, setMonthFilter] = useState<string | null>(null);
   const [adjusting, setAdjusting] = useState<Product | null>(null);
+  const [receiving, setReceiving] = useState<Product | null>(null);
   const [adding, setAdding] = useState(false);
 
   /* respond to alert-bell navigation presets even when already mounted */
@@ -206,10 +207,10 @@ export default function Inventory() {
                     </td>
                     <td className="px-4 py-2.5">
                       <div className="flex justify-end gap-1.5">
-                        <button onClick={() => dispatch({ type: "RESTOCK", productId: p.id, amount: 20 })}
-                          title="Receive +20 as a new lot (18-month shelf life)"
+                        <button onClick={() => setReceiving(p)}
+                          title={`Receive stock from ${p.supplier}`}
                           className="px-2 py-1.5 rounded-md border border-pine-200 bg-pine-50 text-pine-700 text-[11px] font-bold hover:bg-pine-700 hover:text-pine-50 transition active:scale-95">
-                          +20
+                          Receive
                         </button>
                         <button onClick={() => setAdjusting(p)}
                           className="grid place-items-center w-7 h-7 rounded-md border border-mist text-inksoft hover:border-pine-400 hover:text-pine-700 transition active:scale-90" aria-label={`Adjust ${p.name}`}>
@@ -226,6 +227,7 @@ export default function Inventory() {
       </div>
 
       {adjusting && <AdjustModal p={adjusting} onClose={() => setAdjusting(null)} />}
+      {receiving && <ReceiveModal p={receiving} onClose={() => setReceiving(null)} />}
       {adding && <AddProductModal onClose={() => setAdding(false)} />}
     </div>
   );
@@ -266,6 +268,104 @@ function LotRow({ b, first }: { b: Batch; first: boolean }) {
       <span className="num text-xs font-bold text-ink ml-auto pr-1">×{b.qty}</span>
       {first && <Badge tone="pine">FEFO</Badge>}
     </div>
+  );
+}
+
+function ReceiveModal({ p, onClose }: { p: Product; onClose: () => void }) {
+  const { dispatch } = usePos();
+  const onHand = stockOf(p);
+  const suggested = Math.max(10, p.reorderLevel * 2 - onHand);
+  const [qty, setQty] = useState(String(suggested));
+  const [batch, setBatch] = useState(newBatchCode());
+  const [expiry, setExpiry] = useState(new Date(Date.now() + 540 * 86_400_000).toISOString().slice(0, 10));
+  const [cost, setCost] = useState(p.cost.toFixed(2));
+
+  const qtyNum = parseInt(qty) || 0;
+  const valid = qtyNum > 0 && batch.trim().length > 0 && /^\d{4}-\d{2}-\d{2}$/.test(expiry);
+  const expDays = Math.ceil((new Date(expiry + "T00:00:00").getTime() - Date.now()) / 86_400_000);
+
+  const submit = () => {
+    if (!valid) return;
+    dispatch({ type: "RESTOCK", productId: p.id, amount: qtyNum, batch: batch.trim(), expiry });
+    onClose();
+  };
+
+  return (
+    <Modal onClose={onClose} width={440} labelledBy="rcv-title">
+      <div className="px-5 py-4 border-b border-mist flex items-start justify-between">
+        <div>
+          <h2 id="rcv-title" className="font-display font-bold text-ink">Receive stock</h2>
+          <p className="text-xs text-inksoft mt-0.5">{p.name} · {p.form}</p>
+        </div>
+        <button onClick={onClose} className="p-1.5 rounded-md hover:bg-mist/60 text-inksoft" aria-label="Close"><IX size={14} /></button>
+      </div>
+      <div className="p-5 space-y-4">
+        <div className="flex items-center gap-2.5 px-3 py-2.5 rounded-lg bg-pine-50 border border-pine-200">
+          <IBox size={15} className="text-pine-700 shrink-0" />
+          <div className="min-w-0">
+            <p className="text-xs font-bold text-ink truncate">{p.supplier}</p>
+            <p className="text-[10px] text-inksoft">
+              On hand <span className="num font-bold text-ink">{onHand}</span> · reorder at{" "}
+              <span className="num font-bold text-ink">{p.reorderLevel}</span> · par level{" "}
+              <span className="num font-bold text-pine-800">{p.reorderLevel * 2}</span>
+            </p>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-2 gap-3">
+          <label className="block">
+            <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-inksoft">Quantity received</span>
+            <input value={qty} onChange={(e) => setQty(e.target.value.replace(/\D/g, ""))} inputMode="numeric"
+              className="num w-full mt-1 px-2.5 py-2 rounded-lg border-2 border-mist bg-card text-base font-bold focus:border-pine-500 focus:outline-none transition" />
+          </label>
+          <label className="block">
+            <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-inksoft">Unit cost $</span>
+            <input value={cost} onChange={(e) => setCost(e.target.value.replace(/[^\d.]/g, ""))} inputMode="decimal"
+              className="num w-full mt-1 px-2.5 py-2 rounded-lg border-2 border-mist bg-card text-base font-bold focus:border-pine-500 focus:outline-none transition" />
+          </label>
+          <label className="block">
+            <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-inksoft">Lot / batch code</span>
+            <input value={batch} onChange={(e) => setBatch(e.target.value)}
+              className="num w-full mt-1 px-2.5 py-2 rounded-lg border-2 border-mist bg-card text-sm font-semibold focus:border-pine-500 focus:outline-none transition" />
+          </label>
+          <label className="block">
+            <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-inksoft">Expiry date</span>
+            <input type="date" value={expiry} onChange={(e) => setExpiry(e.target.value)}
+              className="num w-full mt-1 px-2.5 py-2 rounded-lg border-2 border-mist bg-card text-sm font-semibold focus:border-pine-500 focus:outline-none transition" />
+          </label>
+        </div>
+
+        <div className="flex gap-1.5">
+          <button onClick={() => setQty(String(suggested))}
+            className="num flex-1 px-2 py-1.5 rounded-md bg-card border border-mist text-[11px] font-bold text-ink hover:border-pine-400 hover:bg-pine-50 transition">
+            Par {suggested}
+          </button>
+          {[20, 50, 100].map((v) => (
+            <button key={v} onClick={() => setQty(String(v))}
+              className="num flex-1 px-2 py-1.5 rounded-md bg-card border border-mist text-[11px] font-bold text-ink hover:border-pine-400 hover:bg-pine-50 transition">
+              +{v}
+            </button>
+          ))}
+        </div>
+
+        <div className={cx("px-3 py-2 rounded-lg border text-[11px] font-semibold",
+          valid && expDays > 60 ? "bg-pine-100 border-pine-200 text-pine-900"
+            : valid ? "bg-honey-100 border-honey-300/60 text-honey-700"
+            : "bg-mist/50 border-mist text-inksoft")}>
+          {valid
+            ? expDays > 60
+              ? `New lot ${batch.trim()} · ${expDays}d shelf life · stock becomes ${onHand + qtyNum}`
+              : `⚠ Short-dated lot — only ${expDays}d until expiry. Flagged on the register immediately.`
+            : "Enter quantity, lot code and a valid expiry date"}
+        </div>
+
+        <button onClick={submit} disabled={!valid}
+          className={cx("w-full py-2.5 rounded-lg font-display font-bold text-sm transition active:scale-[0.98] flex items-center justify-center gap-2",
+            valid ? "bg-pine-700 text-pine-50 hover:bg-pine-600" : "bg-mist text-inksoft/60 cursor-not-allowed")}>
+          <ICheck size={15} /> Book into stock
+        </button>
+      </div>
+    </Modal>
   );
 }
 

@@ -5,7 +5,7 @@ import {
   stockOf, nearestExpiry, allocFEFO, newBatchCode, daysUntil,
 } from "./data";
 import type {
-  Product, Transaction, Prescription, HeldSale, TxLine, PayMethod, RxStatus, Batch,
+  Product, Transaction, Prescription, HeldSale, TxLine, PayMethod, PaymentLeg, RxStatus, Batch,
 } from "./data";
 
 export type View = "register" | "dashboard" | "inventory" | "prescriptions" | "history";
@@ -17,7 +17,7 @@ interface State {
   products: Product[];
   transactions: Transaction[];
   prescriptions: Prescription[];
-  cart: { productId: string; qty: number }[];
+  cart: { productId: string; qty: number; note?: string }[];
   held: HeldSale[];
   view: View;
   invPreset: InventoryPreset;
@@ -38,10 +38,11 @@ type Action =
   | { type: "RECALL_HELD"; id: string }
   | { type: "DROP_HELD"; id: string }
   | { type: "OPEN_PAY"; open: boolean }
-  | { type: "COMPLETE_SALE"; method: PayMethod; tendered: number; discountPct: number }
+  | { type: "COMPLETE_SALE"; payments: PaymentLeg[]; tendered?: number; discountPct: number }
   | { type: "OPEN_RECEIPT"; tx: Transaction | null }
   | { type: "ADJUST_BATCH"; productId: string; batch: string; newQty: number; reason: string }
-  | { type: "RESTOCK"; productId: string; amount: number }
+  | { type: "RESTOCK"; productId: string; amount: number; batch: string; expiry: string }
+  | { type: "SET_NOTE"; productId: string; note: string }
   | { type: "ADD_PRODUCT"; product: Product }
   | { type: "REFUND_TX"; txId: string; reason: string }
   | { type: "RX_STATUS"; id: string; status: RxStatus }
@@ -83,7 +84,7 @@ const round2 = (n: number) => Math.round(n * 100) / 100;
 function cartTotals(state: State, discountPct: number) {
   const lines: TxLine[] = state.cart.map((c) => {
     const p = state.products.find((x) => x.id === c.productId)!;
-    return { productId: p.id, name: p.name, form: p.form, qty: c.qty, price: p.price, rx: p.rx };
+    return { productId: p.id, name: p.name, form: p.form, qty: c.qty, price: p.price, rx: p.rx, note: c.note };
   });
   const subtotal = round2(lines.reduce((s, l) => s + l.price * l.qty, 0));
   const discount = round2((subtotal * discountPct) / 100);
@@ -177,17 +178,23 @@ function reducer(state: State, a: Action): State {
         line.alloc = res.alloc.filter((x) => x.qty > 0);
         return { ...p, batches: res.batches };
       });
+      const primary = a.payments[0];
+      const singleCash = a.payments.length === 1 && primary.method === "cash";
       const tx: Transaction = {
         id: `T-${Date.now().toString(36).toUpperCase().slice(-6)}`,
         at: Date.now(), lines: t.lines,
         subtotal: t.subtotal, discount: t.discount, tax: t.tax, total: t.total,
-        method: a.method, cashier: CASHIER,
-        tendered: a.method === "cash" ? a.tendered : undefined,
-        change: a.method === "cash" ? round2(a.tendered - t.total) : undefined,
+        method: primary.method, cashier: CASHIER,
+        payments: a.payments.length > 1 ? a.payments : undefined,
+        tendered: singleCash ? (a.tendered ?? primary.amount) : undefined,
+        change: singleCash ? round2((a.tendered ?? primary.amount) - t.total) : undefined,
       };
+      const tenderLabel = a.payments.length > 1
+        ? `split ${a.payments.map((p) => p.method).join(" + ")}`
+        : primary.method;
       return withToast(
         { ...state, products, transactions: [tx, ...state.transactions], cart: [], payOpen: false, receipt: tx },
-        "success", `Payment captured — ${tx.id} · $${t.total.toFixed(2)}`,
+        "success", `Payment captured — ${tx.id} · $${t.total.toFixed(2)} · ${tenderLabel}`,
       );
     }
 
@@ -215,11 +222,17 @@ function reducer(state: State, a: Action): State {
     case "RESTOCK": {
       const p = state.products.find((x) => x.id === a.productId);
       if (!p) return state;
-      const code = newBatchCode();
-      const expiry = new Date(Date.now() + 540 * 86_400_000).toISOString().slice(0, 10);
-      const lot: Batch = { batch: code, expiry, qty: a.amount };
+      const lot: Batch = { batch: a.batch, expiry: a.expiry, qty: a.amount };
       const products = state.products.map((x) => (x.id === a.productId ? { ...x, batches: [...x.batches, lot] } : x));
-      return withToast({ ...state, products }, "success", `Received +${a.amount} × ${p.name} → lot ${code} (exp ${expiry})`);
+      return withToast({ ...state, products }, "success", `Received +${a.amount} × ${p.name} → lot ${a.batch} (exp ${a.expiry})`);
+    }
+
+    case "SET_NOTE": {
+      const note = a.note.trim();
+      return {
+        ...state,
+        cart: state.cart.map((c) => (c.productId === a.productId ? { ...c, note: note || undefined } : c)),
+      };
     }
 
     case "REFUND_TX": {

@@ -5,7 +5,7 @@ import { CATEGORIES, TAX_RATE, daysUntil, stockOf, nearestExpiry } from "../data
 import type { CategoryId, Product } from "../data";
 import { cx, Badge, Empty } from "../ui";
 import {
-  ISearch, IScan, IPlus, IMinus, ITrash, IPause, IRecall, IX, ICart, IPill, IChevD, ISpark,
+  ISearch, IScan, IPlus, IMinus, ITrash, IPause, IRecall, IX, ICart, IPill, IChevD, ISpark, IEdit,
 } from "../icons";
 
 type SortKey = "name" | "price" | "stock";
@@ -36,7 +36,13 @@ export default function Register() {
   const [q, setQ] = useState("");
   const [cat, setCat] = useState<CategoryId | "all">("all");
   const [sort, setSort] = useState<SortKey>("name");
+  const [noteFor, setNoteFor] = useState<string | null>(null);
   const searchRef = useRef<HTMLInputElement>(null);
+
+  const saveNote = (productId: string, value: string) => {
+    dispatch({ type: "SET_NOTE", productId, note: value });
+    setNoteFor(null);
+  };
 
   const needle = q.trim().toLowerCase();
 
@@ -217,6 +223,30 @@ export default function Register() {
                   <ITrash size={13} />
                 </button>
               </div>
+              {noteFor === p.id ? (
+                <input autoFocus defaultValue={line.note ?? ""}
+                  placeholder="e.g. take with food — counseling given"
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") saveNote(p.id, (e.target as HTMLInputElement).value);
+                    if (e.key === "Escape") setNoteFor(null);
+                  }}
+                  onBlur={(e) => saveNote(p.id, e.target.value)}
+                  className="anim-fade-up mt-2 w-full text-[11px] px-2 py-1.5 rounded-md border border-honey-300 bg-card text-ink placeholder:text-inksoft/60 focus:outline-none focus:border-honey-500 focus:ring-2 focus:ring-honey-300/40 transition" />
+              ) : line.note ? (
+                <p className="mt-2 flex items-center gap-1 text-[10px] font-medium text-honey-700 bg-honey-100/70 border border-honey-300/50 rounded-md px-2 py-1">
+                  <IEdit size={9} className="shrink-0" />
+                  <span className="truncate">{line.note}</span>
+                  <button onClick={() => dispatch({ type: "SET_NOTE", productId: p.id, note: "" })}
+                    className="ml-auto shrink-0 p-0.5 rounded text-inksoft hover:text-brick-700 transition" aria-label="Clear note">
+                    <IX size={9} />
+                  </button>
+                </p>
+              ) : (
+                <button onClick={() => setNoteFor(p.id)}
+                  className="mt-2 flex items-center gap-1 text-[10px] font-semibold text-inksoft/60 hover:text-honey-700 opacity-0 group-hover:opacity-100 transition-all duration-200">
+                  <IEdit size={9} /> Add counter note
+                </button>
+              )}
             </div>
           ))}
         </div>

@@ -10,6 +10,7 @@ const DAY = 86_400_000;
 
 export default function Dashboard() {
   const { state, dispatch, lowStock, expiring, newRx, todayStats } = usePos();
+  const [range, setRange] = useState<7 | 30>(7);
 
   const dayStart = new Date(); dayStart.setHours(0, 0, 0, 0);
   const t0 = dayStart.getTime();
@@ -18,7 +19,7 @@ export default function Dashboard() {
 
   const week = useMemo(() => {
     const days: { label: string; date: string; total: number; count: number; units: number }[] = [];
-    for (let d = 6; d >= 0; d--) {
+    for (let d = range - 1; d >= 0; d--) {
       const start = t0 - d * DAY;
       const txs = state.transactions.filter((t) => t.at >= start && t.at < start + DAY);
       const sales = txs.filter((t) => !t.refundOf);
@@ -31,7 +32,7 @@ export default function Dashboard() {
       });
     }
     return days;
-  }, [state.transactions, t0]);
+  }, [state.transactions, t0, range]);
 
   const yesterday = state.transactions.filter((t) => t.at >= t0 - DAY && t.at < t0);
   const yRevenue = yesterday.reduce((s, t) => s + t.total, 0);
@@ -40,14 +41,14 @@ export default function Dashboard() {
 
   const topSellers = useMemo(() => {
     const agg = new Map<string, { name: string; qty: number; revenue: number; cat: string }>();
-    state.transactions.filter((t) => t.at >= t0 - 6 * DAY && !t.refundOf).forEach((t) =>
+    state.transactions.filter((t) => t.at >= t0 - (range - 1) * DAY && !t.refundOf).forEach((t) =>
       t.lines.forEach((l) => {
         const cur = agg.get(l.productId) ?? { name: l.name, qty: 0, revenue: 0, cat: "" };
         const prod = state.products.find((p) => p.id === l.productId);
         agg.set(l.productId, { ...cur, qty: cur.qty + l.qty, revenue: cur.revenue + l.qty * l.price, cat: prod?.category ?? "" });
       }));
     return [...agg.values()].sort((a, b) => b.qty - a.qty).slice(0, 6);
-  }, [state.transactions, state.products, t0]);
+  }, [state.transactions, state.products, t0, range]);
 
   const maxQty = Math.max(...topSellers.map((t) => t.qty), 1);
   const recent = state.transactions.slice(0, 7);
@@ -76,17 +77,25 @@ export default function Dashboard() {
       <div className="mt-4 grid xl:grid-cols-3 gap-3.5">
         {/* revenue chart */}
         <div className="xl:col-span-2 bg-card border border-mist rounded-xl shadow-lift p-5">
-          <div className="flex items-baseline justify-between">
+          <div className="flex items-baseline justify-between gap-3">
             <div>
-              <h2 className="font-display font-bold text-ink text-[15px]">Revenue · last 7 days</h2>
+              <h2 className="font-display font-bold text-ink text-[15px]">Revenue · last {range} days</h2>
               <p className="text-xs text-inksoft mt-0.5">
-                Week total <span className="num font-bold text-pine-800">{money(week.reduce((s, w) => s + w.total, 0))}</span>
+                Period total <span className="num font-bold text-pine-800">{money(week.reduce((s, w) => s + w.total, 0))}</span>
                 {" "}· best day {week.reduce((a, b) => (b.total > a.total ? b : a)).label}
               </p>
             </div>
-            <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-inksoft">POS ledger</span>
+            <div className="flex rounded-lg border border-mist overflow-hidden shrink-0">
+              {([7, 30] as const).map((r) => (
+                <button key={r} onClick={() => setRange(r)}
+                  className={cx("num px-2.5 py-1.5 text-[11px] font-bold transition-all duration-200",
+                    range === r ? "bg-pine-800 text-pine-50" : "bg-card text-inksoft hover:text-ink hover:bg-pine-50")}>
+                  {r}d
+                </button>
+              ))}
+            </div>
           </div>
-          <div className="mt-5 flex items-end gap-3 h-44">
+          <div className={cx("mt-5 flex items-end h-44", range === 7 ? "gap-3" : "gap-[3px]")}>
             {week.map((w, i) => {
               const h = Math.max(6, (w.total / maxDay) * 100);
               const isToday = i === week.length - 1;
@@ -109,7 +118,7 @@ export default function Dashboard() {
                     {money(w.total).replace(".00", "")}
                   </span>
                   <div className="w-full flex justify-center">
-                    <div className="anim-bar w-full max-w-[46px] rounded-t-md transition-all duration-200 cursor-pointer"
+                    <div className={cx("anim-bar w-full rounded-t-md transition-all duration-200 cursor-pointer", range === 7 ? "max-w-[46px]" : "max-w-[16px] rounded-t-[3px]")}
                       style={{
                         height: `${(h / 100) * 132}px`, animationDelay: `${i * 60}ms`,
                         transform: active ? "scaleX(1.08)" : undefined,
@@ -120,7 +129,11 @@ export default function Dashboard() {
                             : "linear-gradient(180deg,#8fbfa9,#5da184)",
                       }} />
                   </div>
-                  <span className={cx("text-[11px] font-semibold", isToday || active ? "text-pine-800" : "text-inksoft")}>{w.label}</span>
+                  <span className={cx("text-[10px] font-semibold h-3.5 leading-none",
+                    range === 30 && !isToday && !active && (week.length - 1 - i) % 5 !== 0 ? "opacity-0" : "",
+                    isToday || active ? "text-pine-800" : "text-inksoft")}>
+                    {range === 7 ? w.label : w.date.replace(/^([A-Za-z]+) /, "")}
+                  </span>
                 </div>
               );
             })}
@@ -178,7 +191,7 @@ export default function Dashboard() {
         {/* top sellers */}
         <div className="bg-card border border-mist rounded-xl shadow-lift p-5">
           <div className="flex items-center justify-between">
-            <h2 className="font-display font-bold text-ink text-[15px]">Top movers · 7 days</h2>
+            <h2 className="font-display font-bold text-ink text-[15px]">Top movers · {range} days</h2>
             <IFlask size={15} className="text-pine-600" />
           </div>
           <div className="mt-4 space-y-3">
