@@ -71,6 +71,15 @@ body {
 @keyframes shake { 0%,100%{transform:translateX(0)} 25%{transform:translateX(-4px)} 75%{transform:translateX(4px)} }
 
 .anim-fade-up { animation: fadeUp 0.35s cubic-bezier(0.22, 1, 0.36, 1) both; }
+
+/* fuzzy-search match highlight */
+mark.fuzzy-hl {
+  background: rgba(224, 166, 60, 0.32);
+  color: inherit;
+  border-radius: 3px;
+  padding: 0 1px;
+  font-weight: 700;
+}
 .anim-toast { animation: toastIn 0.28s cubic-bezier(0.22, 1, 0.36, 1) both; }
 .anim-pop { animation: popIn 0.3s cubic-bezier(0.22, 1, 0.36, 1) both; }
 .anim-bar { transform-origin: bottom; animation: barGrow 0.7s cubic-bezier(0.22, 1, 0.36, 1) both; }

@@ -5,10 +5,31 @@ import { CATEGORIES, TAX_RATE, daysUntil } from "../data";
 import type { CategoryId, Product } from "../data";
 import { cx, Badge, Empty } from "../ui";
 import {
-  ISearch, IScan, IPlus, IMinus, ITrash, IPause, IRecall, IX, ICart, IPill, IChevD,
+  ISearch, IScan, IPlus, IMinus, ITrash, IPause, IRecall, IX, ICart, IPill, IChevD, ISpark,
 } from "../icons";
 
 type SortKey = "name" | "price" | "stock";
+
+/* Subsequence fuzzy matcher: returns the matched character indices plus a relevance score. */
+function fuzzy(query: string, target: string): { idx: number[]; score: number } | null {
+  const qq = query.toLowerCase().replace(/\s+/g, "");
+  const t = target.toLowerCase();
+  if (!qq) return { idx: [], score: 0 };
+  const idx: number[] = [];
+  let ti = 0, streak = 0, score = 0;
+  for (const ch of qq) {
+    const found = t.indexOf(ch, ti);
+    if (found === -1) return null;
+    streak = found === ti ? streak + 1 : 1;
+    score += streak * 2;                                        // consecutive-run bonus
+    if (found === 0 || /[\s\-/.]/.test(t[found - 1])) score += 6; // word-start bonus
+    score += Math.max(0, 12 - found) * 0.15;                    // earlier matches win
+    idx.push(found);
+    ti = found + 1;
+  }
+  score += (qq.length / t.length) * 4;                          // tighter matches win
+  return { idx, score };
+}
 
 export default function Register() {
   const { state, dispatch, product } = usePos();
@@ -17,17 +38,39 @@ export default function Register() {
   const [sort, setSort] = useState<SortKey>("name");
   const searchRef = useRef<HTMLInputElement>(null);
 
+  const needle = q.trim().toLowerCase();
+
   const list = useMemo(() => {
-    const needle = q.trim().toLowerCase();
-    let arr = state.products.filter((p) => {
-      if (cat !== "all" && p.category !== cat) return false;
-      if (!needle) return true;
-      return [p.name, p.generic, p.brand, p.sku, p.barcode].some((s) => s.toLowerCase().includes(needle));
-    });
-    arr = [...arr].sort((a, b) =>
-      sort === "price" ? a.price - b.price : sort === "stock" ? a.stock - b.stock : a.name.localeCompare(b.name));
-    return arr;
-  }, [state.products, q, cat, sort]);
+    const entries = state.products
+      .filter((p) => cat === "all" || p.category === cat)
+      .map((p): { p: Product; idx: number[]; score: number } | null => {
+        if (!needle) return { p, idx: [], score: 0 };
+        const fm = fuzzy(needle, p.name);
+        if (fm) return { p, idx: fm.idx, score: fm.score };
+        const fallback = [p.generic, p.brand, p.sku, p.barcode].some((s) => s.toLowerCase().includes(needle));
+        return fallback ? { p, idx: [], score: 0 } : null;
+      })
+      .filter((x): x is { p: Product; idx: number[]; score: number } => x !== null);
+    entries.sort((a, b) =>
+      needle
+        ? b.score - a.score || a.p.name.localeCompare(b.p.name)
+        : sort === "price" ? a.p.price - b.p.price
+        : sort === "stock" ? a.p.stock - b.p.stock
+        : a.p.name.localeCompare(b.p.name));
+    return entries;
+  }, [state.products, needle, cat, sort]);
+
+  /* Best movers by units sold across all transactions — feeds the quick-pick rail. */
+  const topSellers = useMemo(() => {
+    const units = new Map<string, number>();
+    for (const t of state.transactions)
+      for (const l of t.lines) units.set(l.productId, (units.get(l.productId) ?? 0) + l.qty);
+    return [...units.entries()]
+      .map(([id, sold]) => ({ p: state.products.find((x) => x.id === id), sold }))
+      .filter((x): x is { p: Product; sold: number } => !!x.p && x.p.stock > 0)
+      .sort((a, b) => b.sold - a.sold)
+      .slice(0, 6);
+  }, [state.transactions, state.products]);
 
   /* barcode scanner simulation: an exact barcode + Enter scans the item in */
   const onSearchKey = (e: React.KeyboardEvent<HTMLInputElement>) => {
@@ -89,13 +132,16 @@ export default function Register() {
         </div>
 
         <div className="flex-1 overflow-y-auto scroll-slim px-5 pb-6">
+          {needle === "" && cat === "all" && topSellers.length > 0 && (
+            <QuickPicks items={topSellers} onAdd={(id) => dispatch({ type: "ADD_CART", productId: id })} />
+          )}
           {list.length === 0 ? (
             <Empty icon={<IPill size={22} />} title="No products match"
-              hint={`Nothing found for “${q}”. Try a generic name, or scan the item's barcode.`} />
+              hint={`Nothing found for “${q}”. Try a fuzzy match like “para 500”, a generic name, or scan the barcode.`} />
           ) : (
             <div className="grid grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4 gap-3">
-              {list.map((p) => (
-                <ProductCard key={p.id} p={p}
+              {list.map(({ p, idx }) => (
+                <ProductCard key={p.id} p={p} hl={idx}
                   flashing={state.flashId === p.id} flashKey={state.flashKey}
                   onAdd={() => dispatch({ type: "ADD_CART", productId: p.id })} />
               ))}
@@ -206,6 +252,47 @@ export default function Register() {
   );
 }
 
+/* Renders `text` with the fuzzy-matched characters wrapped in a highlight. */
+function Highlight({ text, idx }: { text: string; idx: number[] }) {
+  if (!idx.length) return <>{text}</>;
+  const set = new Set(idx);
+  return (
+    <>
+      {text.split("").map((ch, i) =>
+        set.has(i) ? <mark key={i} className="fuzzy-hl">{ch}</mark> : <span key={i}>{ch}</span>)}
+    </>
+  );
+}
+
+function QuickPicks({ items, onAdd }: { items: { p: Product; sold: number }[]; onAdd: (id: string) => void }) {
+  return (
+    <div className="mb-4 anim-fade-up">
+      <div className="flex items-center gap-1.5 mb-2">
+        <ISpark size={13} className="text-honey-700" />
+        <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-inksoft">Fast movers · top sellers</p>
+      </div>
+      <div className="flex gap-2 overflow-x-auto scroll-slim pb-1">
+        {items.map(({ p, sold }) => (
+          <button key={p.id} onClick={() => onAdd(p.id)}
+            className="group shrink-0 w-[172px] text-left bg-pine-50/60 border border-pine-200/70 rounded-xl p-2.5 hover:border-pine-400 hover:-translate-y-0.5 hover:shadow-lift active:scale-[0.97] transition-all duration-200">
+            <div className="flex items-center justify-between gap-1">
+              <span className="w-2 h-2 rounded-full" style={{ background: CATEGORIES.find((c) => c.id === p.category)?.dot }} />
+              <span className="num text-[9px] font-bold text-pine-700 bg-pine-100 rounded px-1 py-0.5">{sold} sold</span>
+            </div>
+            <p className="mt-1.5 text-[12px] font-semibold text-ink leading-tight line-clamp-2 min-h-[2.4em]">{p.name}</p>
+            <div className="mt-1.5 flex items-center justify-between">
+              <span className="num text-[13px] font-bold text-pine-800">{money(p.price)}</span>
+              <span className="grid place-items-center w-6 h-6 rounded-md bg-pine-700 text-pine-50 group-hover:scale-110 transition-transform">
+                <IPlus size={12} />
+              </span>
+            </div>
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function QtyBtn({ children, onClick, label, disabled }: {
   children: ReactNode; onClick: () => void; label: string; disabled?: boolean;
 }) {
@@ -234,8 +321,8 @@ function CatChip({ active, label, count, dot, onClick }: {
   );
 }
 
-function ProductCard({ p, flashing, flashKey, onAdd }: {
-  p: Product; flashing: boolean; flashKey: number; onAdd: () => void;
+function ProductCard({ p, hl = [], flashing, flashKey, onAdd }: {
+  p: Product; hl?: number[]; flashing: boolean; flashKey: number; onAdd: () => void;
 }) {
   const d = daysUntil(p.expiry);
   const out = p.stock <= 0;
@@ -254,7 +341,9 @@ function ProductCard({ p, flashing, flashKey, onAdd }: {
         </span>
         {p.rx && <Badge tone="brick">℞</Badge>}
       </div>
-      <p className="mt-1.5 font-display font-semibold text-[14px] text-ink leading-snug line-clamp-2 min-h-[2.5em]">{p.name}</p>
+      <p className="mt-1.5 font-display font-semibold text-[14px] text-ink leading-snug line-clamp-2 min-h-[2.5em]">
+        <Highlight text={p.name} idx={hl} />
+      </p>
       <p className="text-[11px] text-inksoft truncate">{p.generic}</p>
       <p className="text-[11px] text-inksoft/80 mt-0.5 truncate">{p.form}</p>
 
