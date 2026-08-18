@@ -1,7 +1,7 @@
 import { useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { usePos, money, relTime } from "../store";
-import { CATEGORIES, TAX_RATE, daysUntil } from "../data";
+import { CATEGORIES, TAX_RATE, daysUntil, stockOf, nearestExpiry } from "../data";
 import type { CategoryId, Product } from "../data";
 import { cx, Badge, Empty } from "../ui";
 import {
@@ -55,7 +55,7 @@ export default function Register() {
       needle
         ? b.score - a.score || a.p.name.localeCompare(b.p.name)
         : sort === "price" ? a.p.price - b.p.price
-        : sort === "stock" ? a.p.stock - b.p.stock
+        : sort === "stock" ? stockOf(a.p) - stockOf(b.p)
         : a.p.name.localeCompare(b.p.name));
     return entries;
   }, [state.products, needle, cat, sort]);
@@ -63,11 +63,13 @@ export default function Register() {
   /* Best movers by units sold across all transactions — feeds the quick-pick rail. */
   const topSellers = useMemo(() => {
     const units = new Map<string, number>();
-    for (const t of state.transactions)
+    for (const t of state.transactions) {
+      if (t.refundOf) continue; // refunded units don't count as moved
       for (const l of t.lines) units.set(l.productId, (units.get(l.productId) ?? 0) + l.qty);
+    }
     return [...units.entries()]
       .map(([id, sold]) => ({ p: state.products.find((x) => x.id === id), sold }))
-      .filter((x): x is { p: Product; sold: number } => !!x.p && x.p.stock > 0)
+      .filter((x): x is { p: Product; sold: number } => !!x.p && stockOf(x.p) > 0)
       .sort((a, b) => b.sold - a.sold)
       .slice(0, 6);
   }, [state.transactions, state.products]);
@@ -206,8 +208,8 @@ export default function Register() {
                 <div className="flex items-center gap-1">
                   <QtyBtn onClick={() => dispatch({ type: "SET_QTY", productId: p.id, qty: line.qty - 1 })} label="Decrease"><IMinus size={12} /></QtyBtn>
                   <span className="num w-8 text-center text-sm font-bold text-ink">{line.qty}</span>
-                  <QtyBtn onClick={() => dispatch({ type: "ADD_CART", productId: p.id })} label="Increase" disabled={line.qty >= p.stock}><IPlus size={12} /></QtyBtn>
-                  {line.qty >= p.stock && <Badge tone="honey">max</Badge>}
+                  <QtyBtn onClick={() => dispatch({ type: "ADD_CART", productId: p.id })} label="Increase" disabled={line.qty >= stockOf(p)}><IPlus size={12} /></QtyBtn>
+                  {line.qty >= stockOf(p) && <Badge tone="honey">max</Badge>}
                   {p.rx && <Badge tone="brick">℞</Badge>}
                 </div>
                 <button onClick={() => dispatch({ type: "REMOVE_LINE", productId: p.id })}
@@ -324,9 +326,11 @@ function CatChip({ active, label, count, dot, onClick }: {
 function ProductCard({ p, hl = [], flashing, flashKey, onAdd }: {
   p: Product; hl?: number[]; flashing: boolean; flashKey: number; onAdd: () => void;
 }) {
-  const d = daysUntil(p.expiry);
-  const out = p.stock <= 0;
-  const low = !out && p.stock <= p.reorderLevel;
+  const near = nearestExpiry(p);
+  const d = near ? daysUntil(near) : 9999;
+  const avail = stockOf(p);
+  const out = avail <= 0;
+  const low = !out && avail <= p.reorderLevel;
   return (
     <button onClick={onAdd} disabled={out}
       className={cx(
@@ -354,7 +358,7 @@ function ProductCard({ p, hl = [], flashing, flashKey, onAdd }: {
             out ? "text-brick-700" : low ? "text-honey-700" : "text-pine-600")}>
             <span className={cx("w-1.5 h-1.5 rounded-full", (low || out) && "anim-pulse-dot")}
               style={{ background: out ? "#c24a2e" : low ? "#e0a63c" : "#3b8668" }} />
-            {out ? "Out of stock" : `${p.stock} in stock`}
+            {out ? "Out of stock" : `${avail} in stock`}
           </p>
         </div>
         <span className={cx("grid place-items-center w-8 h-8 rounded-lg border transition-all duration-200",

@@ -90,6 +90,16 @@ export const ITrendUp = (p: P) => (
 export const ITrendDown = (p: P) => (
   <Base {...p}><path d="m3 7 6 6 4-4 8 8" /><path d="M15 17h6v-6" /></Base>
 );
+export const IGrab = (p: P) => (
+  <Base {...p}>
+    <circle cx="9" cy="6" r="1.15" fill="currentColor" stroke="none" />
+    <circle cx="15" cy="6" r="1.15" fill="currentColor" stroke="none" />
+    <circle cx="9" cy="12" r="1.15" fill="currentColor" stroke="none" />
+    <circle cx="15" cy="12" r="1.15" fill="currentColor" stroke="none" />
+    <circle cx="9" cy="18" r="1.15" fill="currentColor" stroke="none" />
+    <circle cx="15" cy="18" r="1.15" fill="currentColor" stroke="none" />
+  </Base>
+);
 export const IClock = (p: P) => (
   <Base {...p}><circle cx="12" cy="12" r="8.5" /><path d="M12 7.5V12l3 2" /></Base>
 );

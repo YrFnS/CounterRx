@@ -2,9 +2,10 @@ import { createContext, useContext, useEffect, useMemo, useReducer } from "react
 import type { ReactNode, Dispatch } from "react";
 import {
   makeProducts, makePrescriptions, makeTransactions, TAX_RATE, CASHIER,
+  stockOf, nearestExpiry, allocFEFO, newBatchCode, daysUntil,
 } from "./data";
 import type {
-  Product, Transaction, Prescription, HeldSale, TxLine, PayMethod, RxStatus,
+  Product, Transaction, Prescription, HeldSale, TxLine, PayMethod, RxStatus, Batch,
 } from "./data";
 
 export type View = "register" | "dashboard" | "inventory" | "prescriptions" | "history";
@@ -39,9 +40,10 @@ type Action =
   | { type: "OPEN_PAY"; open: boolean }
   | { type: "COMPLETE_SALE"; method: PayMethod; tendered: number; discountPct: number }
   | { type: "OPEN_RECEIPT"; tx: Transaction | null }
-  | { type: "ADJUST_STOCK"; productId: string; newQty: number }
+  | { type: "ADJUST_BATCH"; productId: string; batch: string; newQty: number; reason: string }
   | { type: "RESTOCK"; productId: string; amount: number }
   | { type: "ADD_PRODUCT"; product: Product }
+  | { type: "REFUND_TX"; txId: string; reason: string }
   | { type: "RX_STATUS"; id: string; status: RxStatus }
   | { type: "RX_TO_CART"; id: string }
   | { type: "TOAST"; kind: Toast["kind"]; msg: string }
@@ -57,7 +59,7 @@ const seed = (): Pick<State, "products" | "transactions" | "prescriptions"> => {
   return { products, transactions: makeTransactions(products, now), prescriptions: makePrescriptions(now) };
 };
 
-const LS_KEY = "counterrx:v2";
+const LS_KEY = "counterrx:v3";
 
 function load(): State {
   const base: State = {
@@ -101,10 +103,11 @@ function reducer(state: State, a: Action): State {
     case "ADD_CART": {
       const p = state.products.find((x) => x.id === a.productId);
       if (!p) return state;
-      if (p.stock <= 0) return withToast(state, "error", `${p.name} is out of stock`);
+      const avail = stockOf(p);
+      if (avail <= 0) return withToast(state, "error", `${p.name} is out of stock`);
       const line = state.cart.find((c) => c.productId === p.id);
       if (line) {
-        if (line.qty >= p.stock) return withToast(state, "warn", `Only ${p.stock} × ${p.name} on the shelf`);
+        if (line.qty >= avail) return withToast(state, "warn", `Only ${avail} × ${p.name} on the shelf`);
         return {
           ...state, flashId: p.id, flashKey: state.flashKey + 1,
           cart: state.cart.map((c) => (c.productId === p.id ? { ...c, qty: c.qty + 1 } : c)),
@@ -119,8 +122,9 @@ function reducer(state: State, a: Action): State {
     case "SET_QTY": {
       const p = state.products.find((x) => x.id === a.productId);
       if (!p) return state;
-      const qty = Math.min(Math.max(0, a.qty), p.stock);
-      if (a.qty > p.stock) return withToast(state, "warn", `Only ${p.stock} in stock`);
+      const avail = stockOf(p);
+      const qty = Math.min(Math.max(0, a.qty), avail);
+      if (a.qty > avail) return withToast(state, "warn", `Only ${avail} in stock`);
       if (qty === 0) return { ...state, cart: state.cart.filter((c) => c.productId !== a.productId) };
       return { ...state, cart: state.cart.map((c) => (c.productId === a.productId ? { ...c, qty } : c)) };
     }
@@ -160,6 +164,19 @@ function reducer(state: State, a: Action): State {
     case "COMPLETE_SALE": {
       if (state.cart.length === 0) return state;
       const t = cartTotals(state, a.discountPct);
+      /* guard: every cart line must be coverable by on-hand lots */
+      for (const l of t.lines) {
+        const p = state.products.find((x) => x.id === l.productId)!;
+        if (stockOf(p) < l.qty) return withToast(state, "error", `${p.name} short on stock — only ${stockOf(p)} left`);
+      }
+      /* consume lots FEFO — earliest expiry leaves the shelf first */
+      const products = state.products.map((p) => {
+        const line = t.lines.find((l) => l.productId === p.id);
+        if (!line) return p;
+        const res = allocFEFO(p.batches, line.qty);
+        line.alloc = res.alloc.filter((x) => x.qty > 0);
+        return { ...p, batches: res.batches };
+      });
       const tx: Transaction = {
         id: `T-${Date.now().toString(36).toUpperCase().slice(-6)}`,
         at: Date.now(), lines: t.lines,
@@ -168,10 +185,6 @@ function reducer(state: State, a: Action): State {
         tendered: a.method === "cash" ? a.tendered : undefined,
         change: a.method === "cash" ? round2(a.tendered - t.total) : undefined,
       };
-      const products = state.products.map((p) => {
-        const line = t.lines.find((l) => l.productId === p.id);
-        return line ? { ...p, stock: Math.max(0, p.stock - line.qty) } : p;
-      });
       return withToast(
         { ...state, products, transactions: [tx, ...state.transactions], cart: [], payOpen: false, receipt: tx },
         "success", `Payment captured — ${tx.id} · $${t.total.toFixed(2)}`,
@@ -181,19 +194,70 @@ function reducer(state: State, a: Action): State {
     case "OPEN_RECEIPT":
       return { ...state, receipt: a.tx };
 
-    case "ADJUST_STOCK": {
+    case "ADJUST_BATCH": {
       const p = state.products.find((x) => x.id === a.productId);
-      if (!p) return state;
-      const products = state.products.map((x) => (x.id === a.productId ? { ...x, stock: Math.max(0, a.newQty) } : x));
-      const delta = Math.max(0, a.newQty) - p.stock;
-      return withToast({ ...state, products }, delta >= 0 ? "success" : "warn", `${p.name} stock set to ${Math.max(0, a.newQty)} (${delta >= 0 ? "+" : ""}${delta})`);
+      const b = p?.batches.find((x) => x.batch === a.batch);
+      if (!p || !b) return state;
+      const newQty = Math.max(0, a.newQty);
+      const delta = newQty - b.qty;
+      const products = state.products.map((x) => x.id !== p.id ? x : {
+        ...x,
+        batches: newQty === 0
+          ? x.batches.filter((bb) => bb.batch !== a.batch)
+          : x.batches.map((bb) => (bb.batch === a.batch ? { ...bb, qty: newQty } : bb)),
+      });
+      return withToast(
+        { ...state, products }, delta >= 0 ? "success" : "warn",
+        `${p.name} · ${a.batch} set to ${newQty} (${delta >= 0 ? "+" : ""}${delta}) — ${a.reason}`,
+      );
     }
 
     case "RESTOCK": {
       const p = state.products.find((x) => x.id === a.productId);
       if (!p) return state;
-      const products = state.products.map((x) => (x.id === a.productId ? { ...x, stock: x.stock + a.amount } : x));
-      return withToast({ ...state, products }, "success", `Received +${a.amount} × ${p.name}`);
+      const code = newBatchCode();
+      const expiry = new Date(Date.now() + 540 * 86_400_000).toISOString().slice(0, 10);
+      const lot: Batch = { batch: code, expiry, qty: a.amount };
+      const products = state.products.map((x) => (x.id === a.productId ? { ...x, batches: [...x.batches, lot] } : x));
+      return withToast({ ...state, products }, "success", `Received +${a.amount} × ${p.name} → lot ${code} (exp ${expiry})`);
+    }
+
+    case "REFUND_TX": {
+      const orig = state.transactions.find((t) => t.id === a.txId);
+      if (!orig) return state;
+      if (orig.refundOf) return withToast(state, "error", "Refund records can't be refunded");
+      if (orig.refundedAt) return withToast(state, "warn", `${orig.id} was already refunded`);
+      /* return every unit to its original lot (or the longest-dated lot) */
+      const products = state.products.map((p) => {
+        const line = orig.lines.find((l) => l.productId === p.id);
+        if (!line) return p;
+        let batches = [...p.batches];
+        const give = (batchCode: string, qty: number) => {
+          const idx = batches.findIndex((b) => b.batch === batchCode);
+          if (idx >= 0) batches = batches.map((b, i) => (i === idx ? { ...b, qty: b.qty + qty } : b));
+          else batches = [...batches, {
+            batch: batchCode,
+            expiry: new Date(Date.now() + 365 * 86_400_000).toISOString().slice(0, 10),
+            qty,
+          }];
+        };
+        if (line.alloc && line.alloc.length > 0) line.alloc.forEach((al) => give(al.batch, al.qty));
+        else {
+          const latest = [...batches].sort((x, y) => y.expiry.localeCompare(x.expiry))[0];
+          give(latest ? latest.batch : `RTN-${orig.id.slice(2)}`, line.qty);
+        }
+        return { ...p, batches };
+      });
+      const refund: Transaction = {
+        id: `R-${orig.id.slice(2)}`, at: Date.now(), lines: orig.lines,
+        subtotal: -orig.subtotal, discount: -orig.discount, tax: -orig.tax, total: -orig.total,
+        method: orig.method, cashier: CASHIER, refundOf: orig.id, reason: a.reason,
+      };
+      const transactions = [refund, ...state.transactions.map((t) => (t.id === orig.id ? { ...t, refundedAt: Date.now() } : t))];
+      return withToast(
+        { ...state, products, transactions },
+        "success", `${orig.id} refunded — ${money(-orig.total)} returned, stock restored to lots`,
+      );
     }
 
     case "ADD_PRODUCT":
@@ -219,11 +283,12 @@ function reducer(state: State, a: Action): State {
       const rx = state.prescriptions.find((x) => x.id === a.id);
       const p = rx && state.products.find((x) => x.id === rx.productId);
       if (!rx || !p) return state;
-      if (p.stock <= 0) return withToast(state, "error", `${p.name} out of stock — cannot attach`);
-      const qty = Math.min(rx.qty, p.stock);
+      const avail = stockOf(p);
+      if (avail <= 0) return withToast(state, "error", `${p.name} out of stock — cannot attach`);
+      const qty = Math.min(rx.qty, avail);
       const existing = state.cart.find((c) => c.productId === p.id);
       const cart = existing
-        ? state.cart.map((c) => (c.productId === p.id ? { ...c, qty: Math.min(c.qty + qty, p.stock) } : c))
+        ? state.cart.map((c) => (c.productId === p.id ? { ...c, qty: Math.min(c.qty + qty, avail) } : c))
         : [...state.cart, { productId: p.id, qty }];
       return withToast(
         { ...state, cart, view: "register", flashId: p.id, flashKey: state.flashKey + 1 },
@@ -272,21 +337,22 @@ export function PosProvider({ children }: { children: ReactNode }) {
 
   const value = useMemo<Ctx>(() => {
     const product = (id: string) => state.products.find((p) => p.id === id);
-    const lowStock = state.products.filter((p) => p.stock <= p.reorderLevel);
-    const expiring = state.products.filter((p) => {
-      const d = Math.ceil((new Date(p.expiry + "T00:00:00").getTime() - Date.now()) / 86_400_000);
-      return d <= 60;
-    }).sort((a, b) => a.expiry.localeCompare(b.expiry));
+    const lowStock = state.products.filter((p) => stockOf(p) <= p.reorderLevel);
+    const expiring = state.products
+      .filter((p) => { const e = nearestExpiry(p); return e !== null && daysUntil(e) <= 60; })
+      .sort((a, b) => (nearestExpiry(a) ?? "").localeCompare(nearestExpiry(b) ?? ""));
     const newRx = state.prescriptions.filter((r) => r.status === "new" || r.status === "verifying").length;
 
     const dayStart = new Date(); dayStart.setHours(0, 0, 0, 0);
     const today = state.transactions.filter((t) => t.at >= dayStart.getTime());
+    /* revenue nets refunds (negative records); counts/units ignore refund records */
     const revenue = round2(today.reduce((s, t) => s + t.total, 0));
-    const items = today.reduce((s, t) => s + t.lines.reduce((x, l) => x + l.qty, 0), 0);
+    const sales = today.filter((t) => !t.refundOf);
+    const items = sales.reduce((s, t) => s + t.lines.reduce((x, l) => x + l.qty, 0), 0);
 
     return {
       state, dispatch, product, lowStock, expiring, newRx,
-      todayStats: { revenue, count: today.length, avg: today.length ? round2(revenue / today.length) : 0, items },
+      todayStats: { revenue, count: sales.length, avg: sales.length ? round2(revenue / sales.length) : 0, items },
     };
   }, [state]);
 

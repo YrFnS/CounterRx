@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import type { ReactNode } from "react";
 import { PosProvider, usePos } from "./store";
 import type { View } from "./store";
-import { CASHIER, STORE } from "./data";
+import { CASHIER, STORE, daysUntil, nearestExpiry, stockOf } from "./data";
 import { cx } from "./ui";
 import { PaymentModal, ReceiptModal } from "./modals";
 import { ToastHost } from "./ui";
@@ -183,12 +183,12 @@ function TopBar() {
               <div className="max-h-72 overflow-y-auto scroll-slim space-y-1">
                 {expiring.slice(0, 3).map((p) => (
                   <AlertRow key={p.id} tone="brick" icon={<IAlert size={13} />}
-                    text={`${p.name} — ${Math.max(0, Math.ceil((new Date(p.expiry + "T00:00:00").getTime() - Date.now()) / 86400000))}d to expiry`}
+                    text={`${p.name} — ${Math.max(0, daysUntil(nearestExpiry(p)!))}d to expiry`}
                     onClick={() => { dispatch({ type: "GO", view: "inventory", invPreset: "expiring" }); setBellOpen(false); }} />
                 ))}
                 {lowStock.slice(0, 3).map((p) => (
                   <AlertRow key={`l-${p.id}`} tone="honey" icon={<IBox size={13} />}
-                    text={`${p.name} — ${p.stock} left, reorder at ${p.reorderLevel}`}
+                    text={`${p.name} — ${stockOf(p)} left, reorder at ${p.reorderLevel}`}
                     onClick={() => { dispatch({ type: "GO", view: "inventory", invPreset: "low" }); setBellOpen(false); }} />
                 ))}
                 {newRx > 0 && (

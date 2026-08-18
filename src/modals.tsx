@@ -190,6 +190,9 @@ function ReceiptBody({ tx }: { tx: Transaction }) {
         <p className="text-inksoft">{STORE.gstin}</p>
       </div>
       <div className="receipt-dash my-3" />
+      {tx.refundOf && (
+        <p className="text-center font-bold text-[11px] tracking-[0.2em] text-ink mb-1.5">— REFUND · REVERSAL OF {tx.refundOf} —</p>
+      )}
       <div className="flex justify-between"><span>Receipt</span><span className="font-semibold">{tx.id}</span></div>
       <div className="flex justify-between"><span>Date</span><span>{new Date(tx.at).toLocaleString("en-US", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}</span></div>
       <div className="flex justify-between"><span>Cashier</span><span>{tx.cashier}</span></div>
@@ -204,6 +207,9 @@ function ReceiptBody({ tx }: { tx: Transaction }) {
             <span className="truncate">{l.form}</span>
             <span>{l.qty} × {money(l.price)}</span>
           </div>
+          {l.alloc && l.alloc.length > 0 && (
+            <div className="text-[10px] text-inksoft num">FEFO lots: {l.alloc.map((a) => `${a.batch}×${a.qty}`).join(" · ")}</div>
+          )}
         </div>
       ))}
       <div className="receipt-dash my-3" />
