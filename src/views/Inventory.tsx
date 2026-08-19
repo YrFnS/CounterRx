@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
-import { usePos, money } from "../store";
-import { CATEGORIES, daysUntil, fefoBatches, stockOf, nearestExpiry, newBatchCode } from "../data";
-import type { CategoryId, Product, Batch } from "../data";
-import { cx, Badge, Modal, StockBar, Empty } from "../ui";
-import { ISearch, IPlus, IBox, IAlert, IDownload, IEdit, IX, ICheck, IReport, ICalendar, IClipboard } from "../icons";
+import { usePos, money, relTime } from "../store";
+import { CATEGORIES, daysUntil, fefoBatches, stockOf, nearestExpiry, newBatchCode, FIELD_SUGGESTIONS, BRANCHES } from "../data";
+import type { CategoryId, Product, Batch, TransferStatus } from "../data";
+import { cx, Badge, Modal, StockBar, Empty, CustomFieldsBlock } from "../ui";
+import { ISearch, IPlus, IBox, IAlert, IDownload, IEdit, IX, ICheck, IReport, ICalendar, IClipboard, ITag, ISwap } from "../icons";
 
 type Filter = "all" | "low" | "expiring" | "rx" | "controlled";
 
@@ -18,6 +18,7 @@ export default function Inventory() {
   const [adding, setAdding] = useState(false);
   const [counting, setCounting] = useState(false);
   const [report, setReport] = useState<"low" | "expiry" | null>(null);
+  const [transfersOpen, setTransfersOpen] = useState(false);
 
   /* respond to alert-bell navigation presets even when already mounted */
   useEffect(() => {
@@ -130,6 +131,10 @@ export default function Inventory() {
           className="flex items-center gap-1.5 px-3 py-2 rounded-lg border border-mist bg-card text-xs font-semibold text-ink hover:border-pine-400 hover:bg-pine-50 transition active:scale-95">
           <IClipboard size={14} /> Count sheet
         </button>
+        <button onClick={() => setTransfersOpen(true)}
+          className="flex items-center gap-1.5 px-3 py-2 rounded-lg border border-mist bg-card text-xs font-semibold text-ink hover:border-pine-400 hover:bg-pine-50 transition active:scale-95">
+          <ISwap size={14} /> Transfers
+        </button>
         <button onClick={exportCsv}
           className="flex items-center gap-1.5 px-3 py-2 rounded-lg border border-mist bg-card text-xs font-semibold text-ink hover:border-pine-400 hover:bg-pine-50 transition active:scale-95">
           <IDownload size={14} /> Export CSV
@@ -205,12 +210,17 @@ export default function Inventory() {
                             {p.controlled && <span className="ml-1 px-1.5 py-0.5 rounded bg-ink text-paper text-[9px] font-bold tracking-wide align-middle">{p.controlled}</span>}
                           </p>
                           <p className="num text-[10px] text-inksoft">{p.sku} · {p.barcode} · {p.supplier}</p>
+                          {(p.fields && p.fields.length > 0) && (
+                            <div className="mt-1"><CustomFieldsBlock fields={p.fields} suggestions={FIELD_SUGGESTIONS} listId={`pf-${p.id}`}
+                              onSave={(k, v) => dispatch({ type: "SET_FIELD", target: "product", id: p.id, field: { key: k, value: v } })}
+                              onRemove={(k) => dispatch({ type: "CLEAR_FIELD", target: "product", id: p.id, key: k })} /></div>
+                          )}
                         </div>
                       </div>
                     </td>
                     <td className="px-3 py-2">
                       <div className="space-y-1 py-0.5">
-                        {fefoBatches(p).map((b, bi) => <LotRow key={b.batch} b={b} first={bi === 0} />)}
+                        {fefoBatches(p).map((b, bi) => <LotRow key={b.batch} b={b} first={bi === 0} p={p} />)}
                         {p.batches.length === 0 && <p className="text-[11px] text-brick-700 font-bold">No lots on shelf</p>}
                       </div>
                     </td>
@@ -248,7 +258,119 @@ export default function Inventory() {
       {adding && <AddProductModal onClose={() => setAdding(false)} />}
       {report && <ReportModal mode={report} onClose={() => setReport(null)} />}
       {counting && <CountModal onClose={() => setCounting(false)} />}
+      {transfersOpen && <TransferModal onClose={() => setTransfersOpen(false)} />}
     </div>
+  );
+}
+
+/* Inter-branch transfer requests (2.6) */
+function TransferModal({ onClose }: { onClose: () => void }) {
+  const { state, dispatch, product } = usePos();
+  const canApprove = state.user?.role !== "cashier";
+  const [pid, setPid] = useState(state.products.find((p) => stockOf(p) > 0)?.id ?? "");
+  const [qty, setQty] = useState("10");
+  const [to, setTo] = useState(BRANCHES[0]);
+
+  const statusTone: Record<TransferStatus, string> = {
+    requested: "bg-honey-100 text-honey-700",
+    approved: "bg-pine-100 text-pine-700",
+    shipped: "bg-mist/60 text-ink",
+    received: "bg-pine-700 text-pine-50",
+    rejected: "bg-brick-100 text-brick-700",
+  };
+  const nextAction: Record<TransferStatus, { label: string; to: TransferStatus } | null> = {
+    requested: { label: "Approve", to: "approved" },
+    approved: { label: "Mark shipped", to: "shipped" },
+    shipped: { label: "Mark received", to: "received" },
+    received: null,
+    rejected: null,
+  };
+
+  const submit = () => {
+    const n = parseInt(qty, 10);
+    if (!pid || !n || n <= 0) return;
+    dispatch({ type: "ADD_TRANSFER", productId: pid, qty: n, toBranch: to });
+  };
+
+  return (
+    <Modal onClose={onClose} width={640} labelledBy="tr-title">
+      <div className="px-5 py-4 border-b border-mist flex items-start justify-between">
+        <div>
+          <h2 id="tr-title" className="font-display font-bold text-ink flex items-center gap-2">
+            <ISwap size={17} className="text-pine-700" /> Inter-branch transfers
+          </h2>
+          <p className="text-xs text-inksoft mt-0.5">
+            Move stock between branches — {canApprove ? "you can approve & ship" : "cashiers can only request"}
+          </p>
+        </div>
+        <button onClick={onClose} className="p-1.5 rounded-md hover:bg-mist/60 text-inksoft" aria-label="Close"><IX size={14} /></button>
+      </div>
+
+      <div className="p-5">
+        <div className="rounded-xl border border-mist bg-paper p-3.5 grid md:grid-cols-[1fr_90px_1fr_auto] gap-2.5 items-end">
+          <div>
+            <label className="text-[10px] font-bold uppercase tracking-[0.14em] text-inksoft">Product</label>
+            <select value={pid} onChange={(e) => setPid(e.target.value)}
+              className="w-full mt-1 px-2.5 py-2 rounded-lg border border-mist bg-card text-xs focus:border-pine-500 focus:outline-none">
+              {state.products.filter((p) => stockOf(p) > 0).map((p) => (
+                <option key={p.id} value={p.id}>{p.name} · {stockOf(p)} on hand</option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className="text-[10px] font-bold uppercase tracking-[0.14em] text-inksoft">Qty</label>
+            <input value={qty} onChange={(e) => setQty(e.target.value.replace(/[^\d]/g, ""))} inputMode="numeric"
+              className="num w-full mt-1 px-2.5 py-2 rounded-lg border border-mist bg-card text-xs font-bold focus:border-pine-500 focus:outline-none" />
+          </div>
+          <div>
+            <label className="text-[10px] font-bold uppercase tracking-[0.14em] text-inksoft">To branch</label>
+            <select value={to} onChange={(e) => setTo(e.target.value)}
+              className="w-full mt-1 px-2.5 py-2 rounded-lg border border-mist bg-card text-xs focus:border-pine-500 focus:outline-none">
+              {BRANCHES.map((b) => <option key={b} value={b}>{b}</option>)}
+            </select>
+          </div>
+          <button onClick={submit}
+            className="px-4 py-2 rounded-lg bg-pine-700 text-pine-50 text-xs font-bold hover:bg-pine-600 transition active:scale-95 shadow-lift">
+            Request
+          </button>
+        </div>
+
+        <div className="mt-4 space-y-2 max-h-[300px] overflow-y-auto scroll-slim">
+          {state.transfers.length === 0 && <p className="text-xs text-inksoft text-center py-6">No transfers yet.</p>}
+          {state.transfers.map((tr) => {
+            const p = product(tr.productId);
+            const act = nextAction[tr.status];
+            return (
+              <div key={tr.id} className="flex items-center gap-3 rounded-lg border border-mist bg-card px-3.5 py-2.5">
+                <div className="min-w-0 flex-1">
+                  <p className="text-xs font-bold text-ink truncate">
+                    {tr.qty} × {p?.name ?? tr.productId}
+                    <span className="text-inksoft font-semibold"> → {tr.toBranch}</span>
+                  </p>
+                  <p className="text-[10px] text-inksoft num">
+                    {tr.id} · {relTime(tr.createdAt)} · by {tr.requestedBy}{tr.note ? ` · ${tr.note}` : ""}
+                  </p>
+                </div>
+                <span className={cx("px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wide shrink-0", statusTone[tr.status])}>{tr.status}</span>
+                {act && canApprove && (
+                  <button onClick={() => dispatch({ type: "TRANSFER_STATUS", id: tr.id, status: act.to })}
+                    className="px-2.5 py-1.5 rounded-md bg-ink text-paper text-[11px] font-bold hover:bg-pine-900 transition active:scale-95 shrink-0">
+                    {act.label}
+                  </button>
+                )}
+                {tr.status === "requested" && canApprove && (
+                  <button onClick={() => dispatch({ type: "TRANSFER_STATUS", id: tr.id, status: "rejected" })}
+                    className="px-2 py-1.5 rounded-md border border-mist text-[11px] font-bold text-inksoft hover:text-brick-700 hover:border-brick-400 transition shrink-0"
+                    aria-label="Reject">
+                    <IX size={12} />
+                  </button>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </Modal>
   );
 }
 
@@ -273,8 +395,21 @@ function HeatCell({ label, units, lots, max, active, danger, onClick }: {
   );
 }
 
-function LotRow({ b, first }: { b: Batch; first: boolean }) {
+function LotRow({ b, first, p }: { b: Batch; first: boolean; p: Product }) {
+  const { dispatch } = usePos();
   const d = daysUntil(b.expiry);
+  const [editing, setEditing] = useState(false);
+  const [val, setVal] = useState("");
+  const priced = b.price !== undefined;
+
+  const save = () => {
+    const n = parseFloat(val);
+    if (val.trim() !== "" && Number.isFinite(n) && n > 0) {
+      dispatch({ type: "SET_BATCH_PRICE", productId: p.id, batch: b.batch, price: n });
+    }
+    setEditing(false);
+  };
+
   return (
     <div className="flex items-center gap-2">
       <span className="num text-xs font-semibold text-ink w-[86px] truncate" title={b.batch}>{b.batch}</span>
@@ -284,6 +419,34 @@ function LotRow({ b, first }: { b: Batch; first: boolean }) {
         {d < 0 ? "EXPIRED" : `${d}d`}
       </span>
       <span className="num text-[10px] text-inksoft">{b.expiry}</span>
+
+      {/* lot-level pricing (1.4) */}
+      {editing ? (
+        <span className="flex items-center gap-1 anim-fade-up">
+          <input autoFocus value={val} onChange={(e) => setVal(e.target.value.replace(/[^\d.]/g, ""))}
+            onKeyDown={(e) => { if (e.key === "Enter") save(); if (e.key === "Escape") setEditing(false); }}
+            onBlur={save} placeholder={p.price.toFixed(2)} inputMode="decimal"
+            className="num w-16 px-1.5 py-0.5 rounded border border-honey-500 bg-honey-100/60 text-[10px] font-bold text-ink focus:outline-none" />
+        </span>
+      ) : priced ? (
+        <button onClick={() => { setVal(String(b.price)); setEditing(true); }}
+          className="group/lp flex items-center gap-1 px-1.5 py-0.5 rounded bg-honey-100 border border-honey-300/70 hover:border-honey-500 transition" title="Lot clearance price — click to edit">
+          <ITag size={9} className="text-honey-700" />
+          <span className="num text-[10px] font-bold text-honey-800">{money(b.price!)}</span>
+          <span className="num text-[9px] text-inksoft line-through">{money(p.price)}</span>
+        </button>
+      ) : (
+        <button onClick={() => { setVal(""); setEditing(true); }}
+          className="opacity-0 group-hover:opacity-100 flex items-center gap-1 px-1.5 py-0.5 rounded border border-dashed border-mist text-[9px] font-bold text-inksoft hover:text-honey-700 hover:border-honey-400 transition-all"
+          title="Set a clearance price for this lot">
+          <ITag size={9} /> price
+        </button>
+      )}
+      {priced && !editing && (
+        <button onClick={() => dispatch({ type: "SET_BATCH_PRICE", productId: p.id, batch: b.batch, price: null })}
+          className="text-inksoft/50 hover:text-brick-700 transition" aria-label="Clear lot price"><IX size={9} /></button>
+      )}
+
       <span className="num text-xs font-bold text-ink ml-auto pr-1">×{b.qty}</span>
       {first && <Badge tone="pine">FEFO</Badge>}
     </div>

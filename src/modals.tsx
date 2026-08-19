@@ -5,7 +5,7 @@ import { usePos, money, cartTotals } from "./store";
 import { TAX_RATE, STORE, REDEEM_CHUNK_PTS, REDEEM_CHUNK_VALUE } from "./data";
 import type { PayMethod, PaymentLeg, Transaction } from "./data";
 import { Modal, cx } from "./ui";
-import { ICash, ICard, IShield, IX, IPrint, ICheck, ISplit, IUsers, IStar, IAlert } from "./icons";
+import { ICash, ICard, IShield, IX, IPrint, ICheck, ISplit, IUsers, IStar, IAlert, ICode, ICopy, IDownload } from "./icons";
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
 
@@ -425,6 +425,94 @@ export function ReceiptModal({ tx, onClose }: { tx: Transaction; onClose: () => 
           className="flex-1 py-2.5 rounded-lg bg-pine-700 text-pine-50 font-display font-semibold text-sm hover:bg-pine-600 transition">
           New sale
         </button>
+      </div>
+    </Modal>
+  );
+}
+
+/* Local data-exchange surface (6.8) — the app is offline-first, so external
+   systems integrate by reading/writing the JSON documents it persists. */
+export function DataExchangeModal({ onClose }: { onClose: () => void }) {
+  const { state, dispatch } = usePos();
+
+  const collections = useMemo(() => [
+    { name: "products", count: state.products.length, desc: "Catalog + lots, pricing, custom fields", data: state.products },
+    { name: "transactions", count: state.transactions.length, desc: "Sales ledger incl. refunds & splits", data: state.transactions },
+    { name: "prescriptions", count: state.prescriptions.length, desc: "Rx queue, status & insurance", data: state.prescriptions },
+    { name: "customers", count: state.customers.length, desc: "Loyalty book & purchase links", data: state.customers },
+    { name: "transfers", count: state.transfers.length, desc: "Inter-branch stock movements", data: state.transfers },
+    { name: "audit", count: state.audit.length, desc: "Append-only event log (webhook source)", data: state.audit },
+  ], [state]);
+
+  const [copied, setCopied] = useState<string | null>(null);
+
+  const copy = async (name: string, data: unknown) => {
+    try {
+      await navigator.clipboard.writeText(JSON.stringify(data, null, 2));
+      setCopied(name);
+      dispatch({ type: "TOAST", kind: "success", msg: `${name}.json copied to clipboard` });
+      setTimeout(() => setCopied(null), 1400);
+    } catch {
+      dispatch({ type: "TOAST", kind: "error", msg: "Clipboard unavailable in this browser" });
+    }
+  };
+
+  const download = (name: string, data: unknown) => {
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url; a.download = `counterrx-${name}.json`;
+    a.click(); URL.revokeObjectURL(url);
+    dispatch({ type: "TOAST", kind: "success", msg: `${name}.json downloaded` });
+  };
+
+  return (
+    <Modal onClose={onClose} width={680} labelledBy="api-title">
+      <div className="px-5 py-4 border-b border-mist flex items-start justify-between">
+        <div>
+          <h2 id="api-title" className="font-display font-bold text-ink flex items-center gap-2">
+            <ICode size={17} className="text-pine-700" /> Data-exchange surface
+          </h2>
+          <p className="text-xs text-inksoft mt-0.5">
+            Offline-first ledger — integrate by reading/writing these JSON documents
+          </p>
+        </div>
+        <button onClick={onClose} className="p-1.5 rounded-md hover:bg-mist/60 text-inksoft" aria-label="Close"><IX size={14} /></button>
+      </div>
+
+      <div className="p-5">
+        <div className="rounded-lg bg-pine-950 text-pine-100 px-4 py-3 mb-4 num text-[11px] leading-relaxed">
+          <p className="text-pine-300">base&nbsp;=&nbsp;<span className="text-honey-300">localStorage["counterrx:v4"]</span></p>
+          <p className="text-pine-300">GET&nbsp;&nbsp;/products&nbsp;&nbsp;/transactions&nbsp;&nbsp;/prescriptions&nbsp;&nbsp;/customers&nbsp;&nbsp;/transfers&nbsp;&nbsp;/audit</p>
+          <p className="text-pine-200/60">events&nbsp;→&nbsp;audit stream (append-only, mirrors every POS mutation)</p>
+        </div>
+
+        <div className="space-y-2 max-h-[330px] overflow-y-auto scroll-slim">
+          {collections.map((c) => (
+            <div key={c.name} className="flex items-center gap-3 rounded-lg border border-mist bg-card px-3.5 py-2.5">
+              <div className="min-w-0 flex-1">
+                <p className="text-xs font-bold text-ink num">/{c.name}
+                  <span className="ml-2 px-1.5 py-0.5 rounded bg-mist/60 text-[10px] font-bold text-inksoft">{c.count} records</span>
+                </p>
+                <p className="text-[10px] text-inksoft truncate">{c.desc}</p>
+              </div>
+              <button onClick={() => copy(c.name, c.data)}
+                className="flex items-center gap-1 px-2.5 py-1.5 rounded-md border border-mist text-[11px] font-bold text-inksoft hover:text-pine-700 hover:border-pine-400 transition shrink-0">
+                <ICopy size={11} /> {copied === c.name ? "Copied" : "Copy JSON"}
+              </button>
+              <button onClick={() => download(c.name, c.data)}
+                className="flex items-center gap-1 px-2.5 py-1.5 rounded-md bg-ink text-paper text-[11px] font-bold hover:bg-pine-900 transition shrink-0">
+                <IDownload size={11} /> .json
+              </button>
+            </div>
+          ))}
+        </div>
+
+        <p className="mt-3.5 text-[10px] text-inksoft leading-relaxed">
+          Every register action (sale, refund, adjustment, transfer, dispense) appends to <span className="num font-semibold">/audit</span>,
+          so a downstream system can poll or tail that stream for near-real-time sync. Restore a full snapshot any time via
+          sidebar <span className="font-semibold">Backup / Restore</span>.
+        </p>
       </div>
     </Modal>
   );

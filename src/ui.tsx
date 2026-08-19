@@ -1,8 +1,9 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import type { ReactNode } from "react";
 import { usePos } from "./store";
 import type { Toast } from "./store";
-import { IX, ICheck, IAlert } from "./icons";
+import { IX, ICheck, IAlert, IPlus } from "./icons";
+import type { Field } from "./data";
 
 export const cx = (...parts: (string | false | null | undefined)[]) =>
   parts.filter(Boolean).join(" ");
@@ -120,6 +121,56 @@ export function Empty({ title, hint, icon }: { title: string; hint: string; icon
       <div className="grid place-items-center w-14 h-14 rounded-2xl bg-pine-100 text-pine-700 mb-3">{icon}</div>
       <p className="font-display font-semibold text-ink">{title}</p>
       <p className="text-sm text-inksoft mt-1 max-w-[260px]">{hint}</p>
+    </div>
+  );
+}
+
+/* Custom user-defined attributes (6.7) — chips + inline add/remove */
+export function CustomFieldsBlock({ fields, suggestions, onSave, onRemove, listId }: {
+  fields: Field[];
+  suggestions: string[];
+  onSave: (key: string, value: string) => void;
+  onRemove: (key: string) => void;
+  listId: string;
+}) {
+  const [adding, setAdding] = useState(false);
+  const [key, setKey] = useState("");
+  const [val, setVal] = useState("");
+
+  const commit = () => {
+    if (key.trim() && val.trim()) onSave(key.trim(), val.trim());
+    setAdding(false); setKey(""); setVal("");
+  };
+
+  return (
+    <div className="flex flex-wrap items-center gap-1">
+      {fields.map((f) => (
+        <span key={f.key} className="inline-flex items-center gap-1 pl-1.5 pr-1 py-0.5 rounded bg-mist/50 border border-mist text-[10px] text-ink">
+          <span className="font-bold text-inksoft">{f.key}</span>
+          <span className="font-semibold">{f.value}</span>
+          <button onClick={() => onRemove(f.key)} className="p-0.5 rounded text-inksoft/60 hover:text-brick-700 hover:bg-brick-100 transition" aria-label={`Remove ${f.key}`}>
+            <IX size={8} />
+          </button>
+        </span>
+      ))}
+      {adding ? (
+        <span className="inline-flex items-center gap-1 anim-fade-up">
+          <input autoFocus value={key} onChange={(e) => setKey(e.target.value)} list={listId} placeholder="Key"
+            onKeyDown={(e) => { if (e.key === "Enter") commit(); if (e.key === "Escape") setAdding(false); }}
+            className="w-20 px-1.5 py-0.5 rounded border border-pine-400 text-[10px] font-semibold focus:outline-none" />
+          <input value={val} onChange={(e) => setVal(e.target.value)} placeholder="Value"
+            onKeyDown={(e) => { if (e.key === "Enter") commit(); if (e.key === "Escape") setAdding(false); }}
+            className="w-24 px-1.5 py-0.5 rounded border border-pine-400 text-[10px] font-semibold focus:outline-none" />
+          <button onClick={commit} className="p-1 rounded bg-pine-700 text-pine-50 hover:bg-pine-600 transition" aria-label="Save field"><ICheck size={9} /></button>
+          <button onClick={() => setAdding(false)} className="p-1 rounded text-inksoft hover:text-brick-700 transition" aria-label="Cancel"><IX size={9} /></button>
+        </span>
+      ) : (
+        <button onClick={() => setAdding(true)}
+          className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded border border-dashed border-mist text-[10px] font-bold text-inksoft/70 hover:text-pine-700 hover:border-pine-400 transition-all">
+          <IPlus size={8} /> field
+        </button>
+      )}
+      <datalist id={listId}>{suggestions.map((s) => <option key={s} value={s} />)}</datalist>
     </div>
   );
 }

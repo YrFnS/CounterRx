@@ -5,7 +5,7 @@ import type { View } from "./store";
 import { CASHIER, STORE, daysUntil, nearestExpiry, stockOf, USERS } from "./data";
 import type { Product, Transaction, Prescription, User } from "./data";
 import { cx } from "./ui";
-import { PaymentModal, ReceiptModal } from "./modals";
+import { PaymentModal, ReceiptModal, DataExchangeModal } from "./modals";
 import { ToastHost } from "./ui";
 import Register from "./views/Register";
 import Dashboard from "./views/Dashboard";
@@ -13,7 +13,7 @@ import Inventory from "./views/Inventory";
 import Prescriptions from "./views/Prescriptions";
 import History from "./views/History";
 import {
-  ICross, IRegister, IDash, IBox, IRx, IHistory, IBell, IAlert, IChevD, IRecall, IScan, IDownload, IUpload, IUsers, IWifi, IWifiOff,
+  ICross, IRegister, IDash, IBox, IRx, IHistory, IBell, IAlert, IChevD, IRecall, IScan, IDownload, IUpload, IUsers, IWifi, IWifiOff, ICode,
 } from "./icons";
 import Customers from "./views/Customers";
 
@@ -163,9 +163,7 @@ function LockScreen() {
 
 function Shell() {
   const { state, dispatch, lowStock, expiring, newRx } = usePos();
-
-  /* multi-user session — the till locks until someone signs in */
-  if (!state.user) return <LockScreen />;
+  const [apiOpen, setApiOpen] = useState(false);
 
   /* global keyboard shortcuts */
   useEffect(() => {
@@ -222,6 +220,9 @@ function Shell() {
     reader.readAsText(f);
     e.target.value = "";
   };
+
+  /* multi-user session — the till locks until someone signs in (after all hooks) */
+  if (!state.user) return <LockScreen />;
 
   return (
     <div className="flex h-full overflow-hidden">
@@ -297,6 +298,11 @@ function Shell() {
             </button>
           </div>
           <input ref={fileRef} type="file" accept="application/json,.json" className="hidden" onChange={onRestoreFile} />
+          <button onClick={() => setApiOpen(true)}
+            className="w-full flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg border border-pine-800 text-pine-300 text-[11px] font-semibold hover:border-pine-600 hover:text-paper transition active:scale-95"
+            title="Local data-exchange endpoints for external integration">
+            <ICode size={12} /> API surface
+          </button>
           <button onClick={() => dispatch({ type: "RESET" })}
             className="w-full flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg border border-pine-800 text-pine-300 text-[11px] font-semibold hover:border-pine-600 hover:text-paper transition">
             <IRecall size={12} /> Reset demo data
@@ -320,6 +326,7 @@ function Shell() {
 
       {state.payOpen && <PaymentModal />}
       {state.receipt && <ReceiptModal tx={state.receipt} onClose={() => dispatch({ type: "OPEN_RECEIPT", tx: null })} />}
+      {apiOpen && <DataExchangeModal onClose={() => setApiOpen(false)} />}
       <ToastHost />
     </div>
   );

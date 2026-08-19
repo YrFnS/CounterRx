@@ -199,3 +199,9 @@ export const IBoard = (p: P) => (
 export const IClock = (p: P) => (
   <Base {...p}><circle cx="12" cy="12" r="8.5" /><path d="M12 7.5V12l3 2" /></Base>
 );
+export const ICode = (p: P) => (
+  <Base {...p}>
+    <path d="m8 7-5 5 5 5M16 7l5 5-5 5" />
+    <path d="m13.5 4.5-3 15" />
+  </Base>
+);

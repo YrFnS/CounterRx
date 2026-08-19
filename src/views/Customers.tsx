@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import type { ReactNode } from "react";
 import { usePos, money, relTime, clockTime } from "../store";
 import type { Customer } from "../data";
-import { cx, Badge, Modal, Empty } from "../ui";
+import { cx, Badge, Modal, Empty, CustomFieldsBlock } from "../ui";
 import { IUsers, ISearch, IPlus, IX, IChevD, IStar, IRegister, IHistory, IPill, ICheck } from "../icons";
 
 const day = 86_400_000;
@@ -143,6 +143,11 @@ function CustomerRow({ c, visits, spend, last, txs, expanded, onToggle }: {
                 className="ml-auto flex items-center gap-1.5 px-2.5 py-1.5 rounded-md bg-pine-700 text-pine-50 text-[11px] font-bold hover:bg-pine-600 transition active:scale-95">
                 <IRegister size={11} /> Start sale for {c.name.split(" ")[0]}
               </button>
+            </div>
+            <div className="mb-2.5">
+              <CustomFieldsBlock fields={c.fields ?? []} suggestions={["Allergy", "Preferred pickup", "Insurance plan", "Delivery zone", "VIP note"]} listId={`cf-${c.id}`}
+                onSave={(k, v) => dispatch({ type: "SET_FIELD", target: "customer", id: c.id, field: { key: k, value: v } })}
+                onRemove={(k) => dispatch({ type: "CLEAR_FIELD", target: "customer", id: c.id, key: k })} />
             </div>
             {txs.length === 0 ? (
               <p className="text-xs text-inksoft">No purchases yet — attach them at the register to begin earning points.</p>
