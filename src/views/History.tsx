@@ -149,6 +149,7 @@ export default function History() {
 
       {refunding && <RefundModal tx={refunding} onClose={() => setRefunding(null)} />}
       {shiftOpen && <ShiftModal onClose={() => setShiftOpen(false)} />}
+      {auditOpen && <AuditTrail onClose={() => setAuditOpen(false)} />}
     </div>
   );
 }
@@ -340,6 +341,89 @@ function RefundModal({ tx, onClose }: { tx: Transaction; onClose: () => void }) 
           className="w-full py-2.5 rounded-lg bg-brick-600 text-brick-50 font-display font-bold text-sm hover:bg-brick-700 transition active:scale-[0.98]">
           Confirm refund · −{money(tx.total)}
         </button>
+      </div>
+    </Modal>
+  );
+}
+
+/* ---------------- audit trail (6.6) ---------------- */
+const KIND_META: Record<AuditKind, { label: string; dot: string }> = {
+  sale: { label: "Sales", dot: "#3b8668" },
+  stock: { label: "Stock", dot: "#e0a63c" },
+  money: { label: "Money", dot: "#c24a2e" },
+  rx: { label: "Rx", dot: "#4f7d9e" },
+  system: { label: "System", dot: "#5c6b66" },
+};
+
+function AuditTrail({ onClose }: { onClose: () => void }) {
+  const { state } = usePos();
+  const [kind, setKind] = useState<AuditKind | "all">("all");
+  const [q, setQ] = useState("");
+
+  const needle = q.trim().toLowerCase();
+  const rows = state.audit
+    .filter((e) => (kind === "all" || e.kind === kind) && (!needle || e.detail.toLowerCase().includes(needle) || e.actor.toLowerCase().includes(needle)))
+    .sort((a, b) => b.at - a.at);
+
+  return (
+    <Modal onClose={onClose} width={640} labelledBy="audit-title">
+      <div className="px-5 py-4 border-b border-mist flex items-start justify-between">
+        <div>
+          <h2 id="audit-title" className="font-display font-bold text-ink flex items-center gap-2">
+            <IReport size={17} className="text-pine-700" /> Audit trail
+          </h2>
+          <p className="text-xs text-inksoft mt-0.5">
+            Tamper-evident log of sales, stock moves, money events & Rx actions · {state.audit.length} entries
+          </p>
+        </div>
+        <button onClick={onClose} className="p-1.5 rounded-md hover:bg-mist/60 text-inksoft" aria-label="Close"><IX size={14} /></button>
+      </div>
+
+      <div className="p-5">
+        <div className="flex items-center gap-2 flex-wrap">
+          <button onClick={() => setKind("all")}
+            className={cx("px-2.5 py-1 rounded-full border text-[11px] font-bold transition",
+              kind === "all" ? "bg-ink text-paper border-ink" : "bg-card border-mist text-inksoft hover:border-ink/40")}>
+            All · {state.audit.length}
+          </button>
+          {(Object.keys(KIND_META) as AuditKind[]).map((k) => (
+            <button key={k} onClick={() => setKind(k)}
+              className={cx("px-2.5 py-1 rounded-full border text-[11px] font-bold transition flex items-center gap-1.5",
+                kind === k ? "text-paper" : "bg-card text-inksoft hover:border-ink/40")}
+              style={kind === k
+                ? { background: KIND_META[k].dot, borderColor: KIND_META[k].dot }
+                : { borderColor: `${KIND_META[k].dot}55` }}>
+              <span className="w-1.5 h-1.5 rounded-full" style={{ background: kind === k ? "#f5f2ea" : KIND_META[k].dot }} />
+              {KIND_META[k].label}
+            </button>
+          ))}
+          <div className="relative flex-1 min-w-[160px]">
+            <ISearch size={12} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-inksoft" />
+            <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search events…"
+              className="w-full pl-7 pr-2 py-1.5 rounded-md border border-mist text-xs focus:border-pine-500 focus:outline-none transition" />
+          </div>
+        </div>
+
+        <div className="mt-3 max-h-[420px] overflow-y-auto scroll-slim rounded-lg border border-mist">
+          {rows.length === 0 ? (
+            <p className="px-4 py-10 text-center text-xs text-inksoft">No entries match this filter.</p>
+          ) : (
+            <ol className="relative">
+              {rows.map((e, i) => (
+                <li key={e.id} className={cx("relative flex gap-3 px-4 py-2.5 border-t border-mist/60 first:border-t-0", i % 2 === 1 && "bg-paper/60")}>
+                  <span className="mt-1 w-2 h-2 rounded-full shrink-0 ring-4 ring-card" style={{ background: KIND_META[e.kind].dot }} />
+                  <div className="min-w-0 flex-1">
+                    <p className="text-xs font-semibold text-ink leading-snug">{e.detail}</p>
+                    <p className="text-[10px] text-inksoft num mt-0.5">
+                      <span className="font-bold uppercase tracking-wide" style={{ color: KIND_META[e.kind].dot }}>{e.kind}</span>
+                      {" · "}{e.actor} · {new Date(e.at).toLocaleDateString("en-US", { month: "short", day: "numeric" })} {clockTime(e.at)}
+                    </p>
+                  </div>
+                </li>
+              ))}
+            </ol>
+          )}
+        </div>
       </div>
     </Modal>
   );

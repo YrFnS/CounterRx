@@ -93,6 +93,13 @@ export const ITrendDown = (p: P) => (
 export const ISplit = (p: P) => (
   <Base {...p}><path d="M12 4v5m0 0c0 4.5-5.5 4.5-5.5 10M12 9c0 4.5 5.5 4.5 5.5 10" /></Base>
 );
+export const IClipboard = (p: P) => (
+  <Base {...p}>
+    <path d="M9 4.5H7.2c-.9 0-1.7.7-1.7 1.7v12.1c0 .9.8 1.7 1.7 1.7h9.6c.9 0 1.7-.8 1.7-1.7V6.2c0-1-.8-1.7-1.7-1.7H15" />
+    <rect x="9" y="3" width="6" height="3.4" rx="1" />
+    <path d="M9 11h6M9 14.5h6M9 18h3.5" strokeLinecap="round" />
+  </Base>
+);
 export const IGrab = (p: P) => (
   <Base {...p}>
     <circle cx="9" cy="6" r="1.15" fill="currentColor" stroke="none" />

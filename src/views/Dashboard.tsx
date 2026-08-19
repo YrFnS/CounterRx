@@ -1,9 +1,10 @@
 import { useMemo, useState } from "react";
 import { usePos, money, clockTime } from "../store";
 import { CATEGORIES, daysUntil, nearestExpiry, stockOf, fefoBatches } from "../data";
+import type { Customer } from "../data";
 import { Stat, cx } from "../ui";
 import {
-  ICash, ICart, ITrendUp, ITrendDown, IAlert, IBox, IRx, IPill, IChevD, IFlask,
+  ICash, ICart, ITrendUp, ITrendDown, IAlert, IBox, IRx, IPill, IChevD, IFlask, IUsers, IStar,
 } from "../icons";
 
 const DAY = 86_400_000;
@@ -52,6 +53,28 @@ export default function Dashboard() {
 
   const maxQty = Math.max(...topSellers.map((t) => t.qty), 1);
   const recent = state.transactions.slice(0, 7);
+
+  /* customer insights (4.3) */
+  const custStats = useMemo(() => {
+    const now = Date.now();
+    const spendBy = new Map<string, number>();
+    for (const t of state.transactions) {
+      if (!t.customerId || t.refundOf) continue;
+      spendBy.set(t.customerId, (spendBy.get(t.customerId) ?? 0) + t.total);
+    }
+    const top = [...spendBy.entries()]
+      .map(([id, spend]) => ({ c: state.customers.find((x) => x.id === id), spend }))
+      .filter((x): x is { c: Customer; spend: number } => Boolean(x.c))
+      .sort((a, b) => b.spend - a.spend)
+      .slice(0, 4);
+    const newThisWeek = state.customers.filter((c) => now - c.createdAt < 7 * DAY).length;
+    const totalPoints = state.customers.reduce((s, c) => s + c.points, 0);
+    const regulars = state.customers.filter((c) => {
+      const v = state.transactions.filter((t) => t.customerId === c.id && !t.refundOf).length;
+      return v >= 3;
+    }).length;
+    return { top, newThisWeek, totalPoints, regulars, maxSpend: Math.max(...top.map((t) => t.spend), 1) };
+  }, [state.customers, state.transactions]);
 
   const Delta = ({ v }: { v: number }) => (
     <span className={cx("inline-flex items-center gap-1 font-bold num text-[11px]", v >= 0 ? "text-pine-600" : "text-brick-700")}>
@@ -187,7 +210,7 @@ export default function Dashboard() {
         </div>
       </div>
 
-      <div className="mt-4 grid xl:grid-cols-2 gap-3.5 pb-6">
+      <div className="mt-4 grid xl:grid-cols-3 gap-3.5 pb-6">
         {/* top sellers */}
         <div className="bg-card border border-mist rounded-xl shadow-lift p-5">
           <div className="flex items-center justify-between">
@@ -235,6 +258,52 @@ export default function Dashboard() {
                 <span className="num text-xs font-bold text-pine-800 shrink-0 group-hover:scale-105 transition-transform">{money(t.total)}</span>
               </button>
             ))}
+          </div>
+        </div>
+
+        {/* customer book insights (4.3) */}
+        <div className="bg-card border border-mist rounded-xl shadow-lift p-5 flex flex-col">
+          <div className="flex items-center justify-between">
+            <h2 className="font-display font-bold text-ink text-[15px]">Customer book</h2>
+            <button onClick={() => dispatch({ type: "GO", view: "customers" })}
+              className="text-xs font-bold text-pine-700 hover:text-pine-600 transition">Open book →</button>
+          </div>
+          <div className="mt-3 grid grid-cols-3 gap-2">
+            <div className="rounded-lg bg-pine-100/70 border border-pine-200/60 px-2.5 py-2">
+              <p className="num text-base font-bold text-pine-800 leading-none">{custStats.newThisWeek}</p>
+              <p className="text-[9px] font-bold uppercase tracking-wide text-pine-700 mt-1">New / 7d</p>
+            </div>
+            <div className="rounded-lg bg-mist/50 border border-mist px-2.5 py-2">
+              <p className="num text-base font-bold text-ink leading-none">{custStats.regulars}</p>
+              <p className="text-[9px] font-bold uppercase tracking-wide text-inksoft mt-1">Regulars</p>
+            </div>
+            <div className="rounded-lg bg-honey-100/70 border border-honey-300/50 px-2.5 py-2">
+              <p className="num text-base font-bold text-honey-700 leading-none flex items-center gap-1"><IStar size={11} className="text-honey-500" />{custStats.totalPoints}</p>
+              <p className="text-[9px] font-bold uppercase tracking-wide text-honey-700 mt-1">Pts live</p>
+            </div>
+          </div>
+          <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-inksoft mt-4 mb-2 flex items-center gap-1.5">
+            <IUsers size={11} /> Top spenders · lifetime
+          </p>
+          <div className="space-y-2.5 flex-1">
+            {custStats.top.map((t, i) => (
+              <div key={t.c.id} className="flex items-center gap-2.5">
+                <span className="grid place-items-center w-7 h-7 rounded-lg bg-pine-800 text-pine-100 font-display font-bold text-[10px] shrink-0">
+                  {t.c.name.split(" ").map((w) => w[0]).slice(0, 2).join("")}
+                </span>
+                <div className="flex-1 min-w-0">
+                  <div className="flex justify-between text-xs mb-0.5">
+                    <span className="font-semibold text-ink truncate">{t.c.name}</span>
+                    <span className="num text-pine-800 font-bold shrink-0 ml-2">{money(t.spend)}</span>
+                  </div>
+                  <div className="h-1.5 rounded-full bg-mist/60 overflow-hidden">
+                    <div className="anim-grow-w h-full rounded-full bg-honey-500"
+                      style={{ width: `${(t.spend / custStats.maxSpend) * 100}%`, animationDelay: `${i * 70}ms` }} />
+                  </div>
+                </div>
+              </div>
+            ))}
+            {custStats.top.length === 0 && <p className="text-xs text-inksoft">No linked sales yet — attach customers at the register.</p>}
           </div>
         </div>
       </div>

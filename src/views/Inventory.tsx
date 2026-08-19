@@ -3,7 +3,7 @@ import { usePos, money } from "../store";
 import { CATEGORIES, daysUntil, fefoBatches, stockOf, nearestExpiry, newBatchCode } from "../data";
 import type { CategoryId, Product, Batch } from "../data";
 import { cx, Badge, Modal, StockBar, Empty } from "../ui";
-import { ISearch, IPlus, IBox, IAlert, IDownload, IEdit, IX, ICheck, IReport, ICalendar } from "../icons";
+import { ISearch, IPlus, IBox, IAlert, IDownload, IEdit, IX, ICheck, IReport, ICalendar, IClipboard } from "../icons";
 
 type Filter = "all" | "low" | "expiring" | "rx";
 
@@ -16,6 +16,7 @@ export default function Inventory() {
   const [adjusting, setAdjusting] = useState<Product | null>(null);
   const [receiving, setReceiving] = useState<Product | null>(null);
   const [adding, setAdding] = useState(false);
+  const [counting, setCounting] = useState(false);
   const [report, setReport] = useState<"low" | "expiry" | null>(null);
 
   /* respond to alert-bell navigation presets even when already mounted */
@@ -122,6 +123,10 @@ export default function Inventory() {
         <button onClick={() => setReport("expiry")}
           className="flex items-center gap-1.5 px-3 py-2 rounded-lg border border-mist bg-card text-xs font-semibold text-ink hover:border-brick-400 hover:bg-brick-100/40 transition active:scale-95">
           <ICalendar size={14} /> Expiry report
+        </button>
+        <button onClick={() => setCounting(true)}
+          className="flex items-center gap-1.5 px-3 py-2 rounded-lg border border-mist bg-card text-xs font-semibold text-ink hover:border-pine-400 hover:bg-pine-50 transition active:scale-95">
+          <IClipboard size={14} /> Count sheet
         </button>
         <button onClick={exportCsv}
           className="flex items-center gap-1.5 px-3 py-2 rounded-lg border border-mist bg-card text-xs font-semibold text-ink hover:border-pine-400 hover:bg-pine-50 transition active:scale-95">
@@ -239,6 +244,7 @@ export default function Inventory() {
       {receiving && <ReceiveModal p={receiving} onClose={() => setReceiving(null)} />}
       {adding && <AddProductModal onClose={() => setAdding(false)} />}
       {report && <ReportModal mode={report} onClose={() => setReport(null)} />}
+      {counting && <CountModal onClose={() => setCounting(false)} />}
     </div>
   );
 }
@@ -374,6 +380,112 @@ function ReceiveModal({ p, onClose }: { p: Product; onClose: () => void }) {
             valid ? "bg-pine-700 text-pine-50 hover:bg-pine-600" : "bg-mist text-inksoft/60 cursor-not-allowed")}>
           <ICheck size={15} /> Book into stock
         </button>
+      </div>
+    </Modal>
+  );
+}
+
+/* Physical count sheet (2.7) — walk the shelves, enter counted qty, apply variances */
+function CountModal({ onClose }: { onClose: () => void }) {
+  const { state, dispatch } = usePos();
+  const [counts, setCounts] = useState<Record<string, string>>(() =>
+    Object.fromEntries(state.products.map((p) => [p.id, String(stockOf(p))])));
+  const [search, setSearch] = useState("");
+
+  const needle = search.trim().toLowerCase();
+  const rows = state.products.filter((p) => !needle || p.name.toLowerCase().includes(needle) || p.sku.toLowerCase().includes(needle));
+
+  const diffs = rows
+    .map((p) => {
+      const counted = Math.max(0, parseInt(counts[p.id] ?? "", 10));
+      return { p, counted, onHand: stockOf(p), delta: (Number.isFinite(counted) ? counted : stockOf(p)) - stockOf(p) };
+    })
+    .filter((r) => r.delta !== 0);
+  const netUnits = diffs.reduce((s, r) => s + r.delta, 0);
+  const netValue = diffs.reduce((s, r) => s + r.delta * r.p.cost, 0);
+
+  const apply = () => {
+    dispatch({ type: "COUNT_APPLY", entries: diffs.map((r) => ({ productId: r.p.id, counted: r.counted })) });
+    onClose();
+  };
+
+  return (
+    <Modal onClose={onClose} width={680} labelledBy="cnt-title">
+      <div className="px-5 py-4 border-b border-mist flex items-start justify-between">
+        <div>
+          <h2 id="cnt-title" className="font-display font-bold text-ink flex items-center gap-2">
+            <IClipboard size={17} className="text-pine-700" /> Physical count sheet
+          </h2>
+          <p className="text-xs text-inksoft mt-0.5">
+            Enter counted qty per SKU — variances post to the earliest-expiry lot and the audit trail
+          </p>
+        </div>
+        <button onClick={onClose} className="p-1.5 rounded-md hover:bg-mist/60 text-inksoft" aria-label="Close"><IX size={14} /></button>
+      </div>
+
+      <div className="p-5">
+        <div className="flex items-center gap-2 mb-3">
+          <div className="relative flex-1">
+            <ISearch size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-inksoft" />
+            <input autoFocus value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Filter SKUs to count…"
+              className="w-full pl-8 pr-3 py-2 rounded-lg border border-mist text-sm focus:border-pine-500 focus:outline-none transition" />
+          </div>
+          <span className={cx("num text-[11px] font-bold px-2.5 py-1.5 rounded-md border",
+            diffs.length === 0 ? "bg-card border-mist text-inksoft" : netUnits >= 0 ? "bg-pine-100 border-pine-300/60 text-pine-700" : "bg-brick-100 border-brick-300/60 text-brick-700")}>
+            {diffs.length} variance{diffs.length === 1 ? "" : "s"} · {netUnits >= 0 ? "+" : ""}{netUnits} units · {money(netValue)}
+          </span>
+        </div>
+
+        <div className="max-h-[380px] overflow-y-auto scroll-slim rounded-lg border border-mist">
+          <table className="w-full text-xs border-collapse">
+            <thead className="sticky top-0">
+              <tr className="bg-pine-900 text-pine-100 text-left text-[9px] uppercase tracking-[0.14em]">
+                <th className="px-3 py-2 font-bold">SKU · product</th>
+                <th className="px-2 py-2 font-bold text-center">On hand</th>
+                <th className="px-2 py-2 font-bold text-center">Counted</th>
+                <th className="px-3 py-2 font-bold text-center">Variance</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((p, i) => {
+                const onHand = stockOf(p);
+                const counted = Math.max(0, parseInt(counts[p.id] ?? "", 10));
+                const delta = (Number.isFinite(counted) ? counted : onHand) - onHand;
+                return (
+                  <tr key={p.id} className={cx("border-t border-mist/70", i % 2 === 1 && "bg-paper/60", delta !== 0 && "bg-honey-100/30")}>
+                    <td className="px-3 py-1.5">
+                      <p className="font-semibold text-ink truncate">{p.name}</p>
+                      <p className="num text-[10px] text-inksoft">{p.sku}</p>
+                    </td>
+                    <td className="px-2 py-1.5 text-center num font-bold text-inksoft">{onHand}</td>
+                    <td className="px-2 py-1.5 text-center">
+                      <input value={counts[p.id]} onChange={(e) => setCounts({ ...counts, [p.id]: e.target.value.replace(/[^\d]/g, "") })}
+                        inputMode="numeric"
+                        className={cx("num w-16 px-2 py-1 rounded-md border text-center font-bold focus:outline-none transition",
+                          delta !== 0 ? "border-honey-500 bg-honey-100/60 text-honey-800" : "border-mist bg-card text-ink focus:border-pine-500")} />
+                    </td>
+                    <td className="px-3 py-1.5 text-center">
+                      <span className={cx("num inline-block min-w-[44px] px-1.5 py-0.5 rounded font-bold",
+                        delta > 0 ? "bg-pine-100 text-pine-700" : delta < 0 ? "bg-brick-100 text-brick-700" : "text-inksoft/60")}>
+                        {delta > 0 ? `+${delta}` : delta}
+                      </span>
+                    </td>
+                  </tr>
+                );
+              })}
+              {rows.length === 0 && <tr><td colSpan={4} className="px-3 py-8 text-center text-inksoft">No SKUs match that filter.</td></tr>}
+            </tbody>
+          </table>
+        </div>
+
+        <div className="mt-4 flex justify-end gap-2">
+          <button onClick={onClose} className="px-4 py-2 rounded-lg border border-mist text-xs font-semibold text-inksoft hover:text-ink hover:border-ink/30 transition">Cancel</button>
+          <button onClick={apply} disabled={diffs.length === 0}
+            className={cx("flex items-center gap-1.5 px-4 py-2 rounded-lg text-xs font-bold transition active:scale-95",
+              diffs.length > 0 ? "bg-pine-700 text-pine-50 hover:bg-pine-600 shadow-lift" : "bg-mist text-inksoft cursor-not-allowed")}>
+            <ICheck size={13} /> Apply count · {diffs.length} variance{diffs.length === 1 ? "" : "s"}
+          </button>
+        </div>
       </div>
     </Modal>
   );
