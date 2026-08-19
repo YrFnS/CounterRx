@@ -274,6 +274,7 @@ export default function Register() {
                   {line.qty >= stockOf(p) && <Badge tone="honey">max</Badge>}
                   {p.rx && <Badge tone="brick">℞</Badge>}
                   {p.controlled && <span className="px-1.5 py-0.5 rounded bg-ink text-paper text-[9px] font-bold tracking-wide">{p.controlled}</span>}
+                  {p.restricted && <span className="px-1.5 py-0.5 rounded bg-honey-500 text-pine-950 text-[9px] font-bold tracking-wide">BTC</span>}
                 </div>
                 <button onClick={() => dispatch({ type: "REMOVE_LINE", productId: p.id })}
                   className="p-1.5 rounded-md text-inksoft opacity-40 group-hover:opacity-100 hover:text-brick-700 hover:bg-brick-100 transition" aria-label={`Remove ${p.name}`}>

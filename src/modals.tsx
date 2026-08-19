@@ -3,7 +3,7 @@ import type { ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { usePos, money, cartTotals } from "./store";
 import { TAX_RATE, findInteractions, can } from "./data";
-import type { PayMethod, PaymentLeg, Transaction } from "./data";
+import type { PayMethod, PaymentLeg, Transaction, Product } from "./data";
 import { Modal, cx } from "./ui";
 import { ICash, ICard, IShield, IX, IPrint, ICheck, ISplit, IUsers, IStar, IAlert, ICode, ICopy, IDownload } from "./icons";
 
@@ -21,6 +21,9 @@ export function PaymentModal() {
   const [idChecked, setIdChecked] = useState(false);
   const [overrideAck, setOverrideAck] = useState(false);
   const [overrideReason, setOverrideReason] = useState("");
+  const [rPurchaser, setRPurchaser] = useState("");
+  const [rIdType, setRIdType] = useState("Driver license");
+  const [rIdLast4, setRIdLast4] = useState("");
 
   const customer = state.customers.find((c) => c.id === state.saleCustomerId) ?? null;
 
@@ -32,6 +35,11 @@ export function PaymentModal() {
   const moderate = interactions.filter((i) => i.severity === "moderate");
   const isPharmacist = can(state.user?.role, "verify_rx");
   const nameOf = (id: string) => product(id)?.name ?? id;
+
+  /* behind-the-counter items require purchaser ID capture (§3) */
+  const restrictedLines = state.cart
+    .map((c) => ({ qty: c.qty, p: product(c.productId) }))
+    .filter((x): x is { qty: number; p: Product } => !!x.p && !!x.p.restricted);
   const taxExempt = !!(customer?.taxExempt || exemptToggle);
   const t = useMemo(() => cartTotals(state, discountPct, taxExempt), [state, discountPct, taxExempt]);
   const hasControlled = state.cart.some((c) => product(c.productId)?.controlled);
@@ -50,7 +58,9 @@ export function PaymentModal() {
   const controlledOk = !hasControlled || (!!customer && idChecked);
   /* major interactions block checkout unless a pharmacist documents an override */
   const interactionOk = major.length === 0 || overrideAck;
-  const canConfirm = paymentOk && controlledOk && interactionOk;
+  /* behind-the-counter sales need purchaser name + ID last-4 */
+  const restrictedOk = restrictedLines.length === 0 || (rPurchaser.trim().length >= 2 && /^\d{4}$/.test(rIdLast4));
+  const canConfirm = paymentOk && controlledOk && interactionOk && restrictedOk;
   const hasRx = state.cart.some((c) => product(c.productId)?.rx);
 
   const methods: { id: PayMethod; label: string; icon: ReactNode; hint: string }[] = [
@@ -75,6 +85,9 @@ export function PaymentModal() {
     dispatch({
       type: "COMPLETE_SALE", payments, discountPct, taxExempt, idChecked,
       tendered: !split && leg1 === "cash" ? tenderedNum : undefined,
+      restricted: restrictedLines.length > 0
+        ? { purchaser: rPurchaser, idType: rIdType, idLast4: rIdLast4 }
+        : undefined,
     });
   };
 
@@ -230,6 +243,28 @@ export function PaymentModal() {
                   </span>
                 </label>
               )}
+            </div>
+          )}
+
+          {restrictedLines.length > 0 && (
+            <div className="mt-3 rounded-lg border-2 border-honey-400 bg-honey-100/50 px-3 py-2.5 anim-fade-up">
+              <p className="text-xs font-bold text-honey-800 flex items-center gap-1.5">
+                <IAlert size={13} className="shrink-0" /> Behind-the-counter — log required
+              </p>
+              <p className="text-[10px] text-honey-700 font-semibold mt-0.5">
+                {restrictedLines.map((r) => `${r.qty}× ${r.p.name}`).join(" · ")} — limit {restrictedLines[0].p.restricted?.limitPerSale}/sale
+              </p>
+              <div className="mt-2 grid grid-cols-2 gap-2">
+                <input value={rPurchaser} onChange={(e) => setRPurchaser(e.target.value)} placeholder="Purchaser full name *"
+                  className="col-span-2 px-2.5 py-1.5 rounded-md border border-honey-300 bg-card text-xs focus:border-honey-500 focus:outline-none transition" />
+                <select value={rIdType} onChange={(e) => setRIdType(e.target.value)}
+                  className="px-2 py-1.5 rounded-md border border-honey-300 bg-card text-xs focus:border-honey-500 focus:outline-none transition">
+                  {["Driver license", "State ID", "Passport"].map((o) => <option key={o}>{o}</option>)}
+                </select>
+                <input value={rIdLast4} onChange={(e) => setRIdLast4(e.target.value.replace(/\D/g, "").slice(0, 4))}
+                  placeholder="ID last 4 *" inputMode="numeric"
+                  className="num px-2.5 py-1.5 rounded-md border border-honey-300 bg-card text-xs tracking-[0.2em] focus:border-honey-500 focus:outline-none transition" />
+              </div>
             </div>
           )}
 

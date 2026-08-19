@@ -421,6 +421,23 @@ function reducer(state: State, a: Action): State {
       if (controlledLines.length > 0 && customer) {
         next = withAudit(next, "rx", `⚠ Controlled sale ${tx.id} — ${controlledLines.map((l) => `${l.name} ×${l.qty}`).join(", ")} · ${customer.name} · ID verified ✓`);
       }
+      /* restricted / behind-the-counter OTC — mandatory purchase log with ID capture (§3) */
+      if (a.restricted && a.restricted.purchaser.trim()) {
+        let logSeq = (next.restrictedLog[0]?.id ?? 9000) + 1;
+        const entries: RestrictedLogEntry[] = t.lines
+          .map((l) => {
+            const p = state.products.find((x) => x.id === l.productId);
+            return p?.restricted ? { p, l } : null;
+          })
+          .filter((x): x is { p: Product; l: TxLine } => x !== null)
+          .map(({ p, l }) => ({
+            id: logSeq++, at: tx.at, productId: p.id, qty: l.qty,
+            purchaser: a.restricted!.purchaser.trim(), idType: a.restricted!.idType,
+            idLast4: a.restricted!.idLast4, cashier: state.user?.name ?? CASHIER,
+          }));
+        next = { ...next, restrictedLog: [...entries, ...next.restrictedLog] };
+        next = withAudit(next, "sale", `⚠ BTC log ${tx.id} — ${entries.map((e) => `${e.qty}× ${state.products.find((p) => p.id === e.productId)?.name ?? e.productId}`).join(", ")} · ${a.restricted!.purchaser} (${a.restricted!.idType} ····${a.restricted!.idLast4})`);
+      }
       return withToast(next, "success", `Payment captured — ${tx.id} · $${t.total.toFixed(2)} · ${tenderLabel}${ptsLabel}`);
     }
 
@@ -787,9 +804,10 @@ export function PosProvider({ children }: { children: ReactNode }) {
         products: state.products, transactions: state.transactions.slice(0, 400),
         prescriptions: state.prescriptions, customers: state.customers,
         transfers: state.transfers, audit: state.audit,
+        staff: state.staff, settings: state.settings, restrictedLog: state.restrictedLog,
       }));
     } catch { /* storage full — ignore */ }
-  }, [state.products, state.transactions, state.prescriptions, state.customers, state.transfers, state.audit]);
+  }, [state.products, state.transactions, state.prescriptions, state.customers, state.transfers, state.audit, state.staff, state.settings, state.restrictedLog]);
 
   const value = useMemo<Ctx>(() => {
     const product = (id: string) => state.products.find((p) => p.id === id);
