@@ -114,7 +114,7 @@ export default function Dashboard() {
   );
 
   return (
-    <div className="h-full overflow-y-auto scroll-slim px-6 py-5">
+    <div className="h-full overflow-y-auto scroll-slim px-3 sm:px-6 py-4 sm:py-5">
       <div className="grid grid-cols-2 xl:grid-cols-4 gap-3.5">
         <Stat label="Today's revenue" value={money(todayStats.revenue)}
           icon={<ICash size={15} />} accent="#0f4437" sub={<Delta v={delta} />} />

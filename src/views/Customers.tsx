@@ -32,16 +32,16 @@ export default function Customers() {
   const loyal = rows.filter((r) => r.visits >= 3).length;
 
   return (
-    <div className="h-full flex flex-col px-6 py-5 min-h-0">
+    <div className="h-full flex flex-col px-3 sm:px-6 py-4 sm:py-5 min-h-0">
       <div className="flex items-end justify-between flex-wrap gap-3">
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 flex-1 min-w-[420px]">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-2.5 sm:gap-3 flex-1 w-full md:w-auto md:min-w-[420px]">
           <Kpi label="Customers on book" value={String(state.customers.length)} />
           <Kpi label="New this week" value={String(newThisWeek)} accent={newThisWeek > 0} />
           <Kpi label="Regulars · 3+ visits" value={String(loyal)} />
           <Kpi label="Loyalty pts in play" value={totalPoints.toLocaleString()} star />
         </div>
         <div className="flex items-center gap-2">
-          <div className="relative w-60">
+          <div className="relative w-full sm:w-60">
             <ISearch size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-inksoft" />
             <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Name or phone…"
               className="w-full pl-9 pr-3 py-2 rounded-lg bg-card border border-mist text-sm focus:border-pine-500 focus:outline-none focus:ring-2 focus:ring-pine-200 transition" />
@@ -53,11 +53,11 @@ export default function Customers() {
         </div>
       </div>
 
-      <div className="mt-4 flex-1 min-h-0 overflow-y-auto scroll-slim rounded-xl border border-mist bg-card shadow-lift">
+      <div className="mt-4 flex-1 min-h-0 overflow-auto scroll-slim rounded-xl border border-mist bg-card shadow-lift">
         {rows.length === 0 ? (
           <Empty icon={<IUsers size={22} />} title="No customers match" hint="Try another name or phone number." />
         ) : (
-          <table className="w-full text-sm border-collapse">
+          <table className="w-full text-sm border-collapse min-w-[880px]">
             <thead className="sticky top-0 z-10">
               <tr className="bg-pine-900 text-pine-100 text-left text-[10px] uppercase tracking-[0.14em]">
                 <th className="px-4 py-2.5 font-bold">Customer</th>

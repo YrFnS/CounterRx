@@ -56,7 +56,7 @@ export default function Prescriptions() {
   };
 
   return (
-    <div className="h-full flex flex-col px-6 py-5 min-h-0">
+    <div className="h-full flex flex-col px-3 sm:px-6 py-4 sm:py-5 min-h-0">
       <div className="flex items-center gap-3 flex-wrap">
         <div>
           <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-inksoft flex items-center gap-1.5">

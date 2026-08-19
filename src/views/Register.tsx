@@ -102,10 +102,10 @@ export default function Register() {
   const hasRx = cartLines.some((x) => x.p.rx);
 
   return (
-    <div className="flex h-full min-h-0">
+    <div className="flex flex-col lg:flex-row h-full min-h-0 overflow-y-auto lg:overflow-hidden scroll-slim">
       {/* -------- catalog side -------- */}
-      <section className="flex-1 min-w-0 flex flex-col">
-        <div className="px-5 pt-4 pb-3 space-y-3">
+      <section className="flex-1 min-w-0 flex flex-col lg:min-h-0">
+        <div className="px-3 sm:px-5 pt-4 pb-3 space-y-3">
           <div className="flex gap-2.5 items-center">
             <div className="relative flex-1">
               <ISearch size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-inksoft" />
@@ -115,7 +115,7 @@ export default function Register() {
                 placeholder="Search name, generic, brand… or scan a barcode"
                 className="w-full pl-9 pr-20 py-2.5 rounded-lg bg-card border border-mist text-sm text-ink placeholder:text-inksoft/70 focus:border-pine-500 focus:outline-none focus:ring-2 focus:ring-pine-200 transition"
               />
-              <span className="scan-chip absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1.5 px-2 py-1 rounded-md bg-pine-800 text-pine-100 text-[10px] font-semibold tracking-wide">
+              <span className="scan-chip absolute right-2 top-1/2 -translate-y-1/2 hidden sm:flex items-center gap-1.5 px-2 py-1 rounded-md bg-pine-800 text-pine-100 text-[10px] font-semibold tracking-wide">
                 <IScan size={12} /> SCANNER LIVE
               </span>
             </div>
@@ -141,7 +141,7 @@ export default function Register() {
           </div>
         </div>
 
-        <div className="flex-1 overflow-y-auto scroll-slim px-5 pb-6">
+        <div className="lg:flex-1 overflow-y-auto scroll-slim px-3 sm:px-5 pb-6">
           {needle === "" && cat === "all" && topSellers.length > 0 && (
             <QuickPicks items={topSellers} onAdd={(id) => dispatch({ type: "ADD_CART", productId: id })} />
           )}
@@ -161,7 +161,7 @@ export default function Register() {
       </section>
 
       {/* -------- cart side -------- */}
-      <aside className="w-[372px] shrink-0 border-l border-mist bg-card flex flex-col">
+      <aside className="w-full lg:w-[372px] lg:shrink-0 border-t lg:border-t-0 lg:border-l border-mist bg-card flex flex-col lg:min-h-0">
         <div className="px-4 pt-4 pb-3 border-b border-mist flex items-center justify-between">
           <div className="flex items-center gap-2">
             <span className="grid place-items-center w-8 h-8 rounded-lg bg-pine-800 text-pine-50"><ICart size={16} /></span>
@@ -200,7 +200,7 @@ export default function Register() {
           </div>
         )}
 
-        <div className="flex-1 overflow-y-auto scroll-slim px-4 py-3 space-y-2">
+        <div className="max-h-[320px] lg:max-h-none lg:flex-1 overflow-y-auto scroll-slim px-4 py-3 space-y-2">
           {cartLines.length === 0 && (
             <Empty icon={<ICart size={22} />} title="Cart is empty"
               hint="Tap a product or scan its barcode. Press F2 to jump to search, F8 to take payment." />

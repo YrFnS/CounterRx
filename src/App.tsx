@@ -13,7 +13,7 @@ import Inventory from "./views/Inventory";
 import Prescriptions from "./views/Prescriptions";
 import History from "./views/History";
 import {
-  ICross, IRegister, IDash, IBox, IRx, IHistory, IBell, IAlert, IChevD, IRecall, IScan, IDownload, IUpload, IUsers, IWifi, IWifiOff, ICode,
+  ICross, IRegister, IDash, IBox, IRx, IHistory, IBell, IAlert, IChevD, IRecall, IScan, IDownload, IUpload, IUsers, IWifi, IWifiOff, ICode, IMenu, IX,
 } from "./icons";
 import Customers from "./views/Customers";
 
@@ -164,12 +164,21 @@ function LockScreen() {
 function Shell() {
   const { state, dispatch, lowStock, expiring, newRx } = usePos();
   const [apiOpen, setApiOpen] = useState(false);
+  const [navOpen, setNavOpen] = useState(false);
+  const go = (view: View) => { dispatch({ type: "GO", view }); setNavOpen(false); };
+
+  /* close the mobile nav drawer with Escape */
+  useEffect(() => {
+    const h = (e: KeyboardEvent) => { if (e.key === "Escape") setNavOpen(false); };
+    window.addEventListener("keydown", h);
+    return () => window.removeEventListener("keydown", h);
+  }, []);
 
   /* global keyboard shortcuts */
   useEffect(() => {
     const h = (e: KeyboardEvent) => {
       const map: Record<string, View> = { F1: "register", F3: "dashboard", F4: "inventory", F5: "prescriptions", F6: "history", F7: "customers" };
-      if (map[e.key]) { e.preventDefault(); dispatch({ type: "GO", view: map[e.key] }); return; }
+      if (map[e.key]) { e.preventDefault(); dispatch({ type: "GO", view: map[e.key] }); setNavOpen(false); return; }
       if (e.key === "F2") {
         e.preventDefault();
         if (state.view !== "register") dispatch({ type: "GO", view: "register" });
@@ -226,8 +235,16 @@ function Shell() {
 
   return (
     <div className="flex h-full overflow-hidden">
-      {/* ---------- sidebar ---------- */}
-      <aside className="w-[218px] shrink-0 bg-pine-950 text-pine-100 flex flex-col relative overflow-hidden">
+      {/* mobile nav overlay */}
+      {navOpen && (
+        <button aria-label="Close navigation" onClick={() => setNavOpen(false)}
+          className="fixed inset-0 z-40 bg-pine-950/55 backdrop-blur-[2px] lg:hidden anim-fade-up" />
+      )}
+
+      {/* ---------- sidebar (off-canvas below lg) ---------- */}
+      <aside className={cx(
+        "fixed lg:static inset-y-0 left-0 z-50 w-[218px] shrink-0 bg-pine-950 text-pine-100 flex flex-col overflow-hidden transition-transform duration-300 ease-out",
+        navOpen ? "translate-x-0 shadow-pop" : "-translate-x-full lg:translate-x-0")}>
         <div className="absolute inset-0 pointer-events-none opacity-[0.05]"
           style={{ backgroundImage: "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='26' height='26' viewBox='0 0 26 26'%3E%3Cpath d='M11 7h4v4h4v4h-4v4h-4v-4H7v-4h4z' fill='%238fbfa9'/%3E%3C/svg%3E\")" }} />
         <div className="relative px-5 pt-5 pb-4">
@@ -235,10 +252,14 @@ function Shell() {
             <span className="grid place-items-center w-9 h-9 rounded-xl bg-pine-700 text-pine-100 shadow-lift">
               <ICross size={18} />
             </span>
-            <div>
+            <div className="flex-1">
               <p className="font-display font-bold text-[17px] text-paper leading-none tracking-tight">CounterRx</p>
               <p className="text-[10px] text-pine-300 font-semibold tracking-[0.18em] uppercase mt-1">Pharmacy POS</p>
             </div>
+            <button onClick={() => setNavOpen(false)} aria-label="Close menu"
+              className="lg:hidden grid place-items-center w-8 h-8 rounded-lg text-pine-300 hover:text-paper hover:bg-pine-900 transition active:scale-90">
+              <IX size={15} />
+            </button>
           </div>
         </div>
 
@@ -248,7 +269,7 @@ function Shell() {
             const badge = n.id === "inventory" ? lowStock.length + expiring.length
               : n.id === "prescriptions" ? newRx : 0;
             return (
-              <button key={n.id} onClick={() => dispatch({ type: "GO", view: n.id })}
+              <button key={n.id} onClick={() => go(n.id)}
                 className={cx("w-full flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-[13px] font-semibold transition-all duration-200 group",
                   active ? "bg-pine-700 text-paper shadow-lift translate-x-0.5" : "text-pine-200 hover:bg-pine-900 hover:text-paper hover:translate-x-0.5")}>
                 <span className={cx("transition-transform duration-200", !active && "group-hover:scale-110")}>{n.icon}</span>
@@ -313,8 +334,8 @@ function Shell() {
 
       {/* ---------- main ---------- */}
       <div className="flex-1 min-w-0 ambient flex flex-col">
-        <TopBar />
-        <main className="flex-1 min-h-0">
+        <TopBar onMenu={() => setNavOpen(true)} />
+        <main className="flex-1 min-h-0 min-w-0">
           {state.view === "register" && <Register />}
           {state.view === "dashboard" && <Dashboard />}
           {state.view === "customers" && <Customers />}
@@ -332,7 +353,7 @@ function Shell() {
   );
 }
 
-function TopBar() {
+function TopBar({ onMenu }: { onMenu: () => void }) {
   const { state, dispatch, lowStock, expiring, newRx } = usePos();
   const [bellOpen, setBellOpen] = useState(false);
   const [now, setNow] = useState(() => new Date());
@@ -346,10 +367,14 @@ function TopBar() {
   const alertCount = lowStock.length + expiring.length + newRx;
 
   return (
-    <header className="h-14 shrink-0 border-b border-mist bg-card/70 backdrop-blur-sm flex items-center gap-3 px-5">
-      <div className="min-w-0">
-        <h1 className="font-display font-bold text-[15px] text-ink leading-none truncate">{t.title}</h1>
-        <p className="text-[11px] text-inksoft mt-0.5 truncate">{t.sub}</p>
+    <header className="h-14 shrink-0 border-b border-mist bg-card/70 backdrop-blur-sm flex items-center gap-2 sm:gap-3 px-3 sm:px-5">
+      <button onClick={onMenu} aria-label="Open navigation"
+        className="lg:hidden grid place-items-center w-9 h-9 rounded-lg border border-mist bg-card text-ink hover:border-pine-400 hover:bg-pine-50 transition active:scale-90 shrink-0">
+        <IMenu size={16} />
+      </button>
+      <div className="min-w-0 flex-1 sm:flex-none">
+        <h1 className="font-display font-bold text-[14px] sm:text-[15px] text-ink leading-none truncate">{t.title}</h1>
+        <p className="text-[11px] text-inksoft mt-0.5 truncate hidden sm:block">{t.sub}</p>
       </div>
 
       <div className="flex-1" />

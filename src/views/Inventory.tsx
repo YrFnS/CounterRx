@@ -97,7 +97,7 @@ export default function Inventory() {
   const maxBucket = Math.max(...horizon.buckets.map((b) => b.units), horizon.expired.units, 1);
 
   return (
-    <div className="h-full flex flex-col px-6 py-5 min-h-0">
+    <div className="h-full flex flex-col px-3 sm:px-6 py-4 sm:py-5 min-h-0">
       <div className="flex flex-wrap items-center gap-3">
         <div className="relative flex-1 min-w-[220px] max-w-[360px]">
           <ISearch size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-inksoft" />
@@ -158,7 +158,7 @@ export default function Inventory() {
             </button>
           )}
         </div>
-        <div className="flex items-end gap-1">
+        <div className="flex items-end gap-1 overflow-x-auto scroll-slim pb-1 -mx-1 px-1">
           <HeatCell label="Exp." units={horizon.expired.units} lots={horizon.expired.lots}
             max={maxBucket} active={monthFilter === "expired"} danger
             onClick={() => setMonthFilter(monthFilter === "expired" ? null : "expired")} />
@@ -181,11 +181,11 @@ export default function Inventory() {
         <span className="ml-auto text-[10px] font-semibold uppercase tracking-[0.14em] text-inksoft/70">Lots listed FEFO — earliest expiry sells first</span>
       </div>
 
-      <div className="mt-3 flex-1 min-h-0 overflow-y-auto scroll-slim rounded-xl border border-mist bg-card shadow-lift">
+      <div className="mt-3 flex-1 min-h-0 overflow-auto scroll-slim rounded-xl border border-mist bg-card shadow-lift">
         {rows.length === 0 ? (
           <Empty icon={<IBox size={22} />} title="Nothing here" hint="Adjust the filters or add a new product to the catalog." />
         ) : (
-          <table className="w-full text-sm border-collapse">
+          <table className="w-full text-sm border-collapse min-w-[980px]">
             <thead className="sticky top-0 z-10">
               <tr className="bg-pine-900 text-pine-100 text-left text-[10px] uppercase tracking-[0.14em]">
                 <th className="px-4 py-2.5 font-bold">Product</th>
@@ -384,7 +384,7 @@ function HeatCell({ label, units, lots, max, active, danger, onClick }: {
   return (
     <button onClick={onClick}
       title={`${units} units in ${lots} lot${lots === 1 ? "" : "s"} — click to filter`}
-      className={cx("flex-1 min-w-0 rounded-md border px-0.5 pt-1.5 pb-1 transition-all duration-200 text-center",
+      className={cx("flex-1 min-w-[52px] rounded-md border px-0.5 pt-1.5 pb-1 transition-all duration-200 text-center",
         active ? "border-ink shadow-lift -translate-y-0.5" : "border-transparent hover:border-mist hover:-translate-y-0.5")}
       style={{ background: bg }}>
       <span className={cx("block num text-[10px] font-bold leading-none", danger && units > 0 ? "text-brick-100" : units / max > 0.45 ? "text-pine-950" : "text-ink")}>
@@ -602,12 +602,11 @@ function CountModal({ onClose }: { onClose: () => void }) {
           </span>
         </div>
 
-        <div className="max-h-[380px] overflow-y-auto scroll-slim rounded-lg border border-mist">
-          <table className="w-full text-xs border-collapse">
-            <thead className="sticky top-0">
-              <tr className="bg-pine-900 text-pine-100 text-left text-[9px] uppercase tracking-[0.14em]">
-                <th className="px-3 py-2 font-bold">SKU · product</th>
-                <th className="px-2 py-2 font-bold text-center">On hand</th>
+        <div className="max-h-[380px] overflow-auto scroll-slim rounded-lg border border-mist">
+              <table className="w-full text-xs border-collapse min-w-[540px]">
+                <thead className="sticky top-0">
+                  <tr className="bg-pine-900 text-pine-100 text-left text-[9px] uppercase tracking-[0.14em]">
+                    <th className="px-3 py-2 font-bold">SKU · product</th>                <th className="px-2 py-2 font-bold text-center">On hand</th>
                 <th className="px-2 py-2 font-bold text-center">Counted</th>
                 <th className="px-3 py-2 font-bold text-center">Variance</th>
               </tr>
@@ -736,8 +735,8 @@ function ReportModal({ mode, onClose }: { mode: "low" | "expiry"; onClose: () =>
               <span className="px-2.5 py-1 rounded-md bg-pine-100 text-pine-700 text-[11px] font-bold num">{lowRows.reduce((s, r) => s + r.suggest, 0)} units to order</span>
               <span className="px-2.5 py-1 rounded-md bg-ink text-paper text-[11px] font-bold num">PO est. {money(poTotal)}</span>
             </div>
-            <div className="max-h-80 overflow-y-auto scroll-slim rounded-lg border border-mist">
-              <table className="w-full text-xs border-collapse">
+            <div className="max-h-80 overflow-auto scroll-slim rounded-lg border border-mist">
+              <table className="w-full text-xs border-collapse min-w-[640px]">
                 <thead className="sticky top-0">
                   <tr className="bg-pine-900 text-pine-100 text-left text-[9px] uppercase tracking-[0.14em]">
                     <th className="px-3 py-2 font-bold">Product</th>
@@ -775,8 +774,8 @@ function ReportModal({ mode, onClose }: { mode: "low" | "expiry"; onClose: () =>
                 </span>
               ))}
             </div>
-            <div className="max-h-80 overflow-y-auto scroll-slim rounded-lg border border-mist">
-              <table className="w-full text-xs border-collapse">
+            <div className="max-h-80 overflow-auto scroll-slim rounded-lg border border-mist">
+              <table className="w-full text-xs border-collapse min-w-[560px]">
                 <thead className="sticky top-0">
                   <tr className="bg-pine-900 text-pine-100 text-left text-[9px] uppercase tracking-[0.14em]">
                     <th className="px-3 py-2 font-bold">Product · lot</th>
