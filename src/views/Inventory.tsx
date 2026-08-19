@@ -266,7 +266,7 @@ export default function Inventory() {
 /* Inter-branch transfer requests (2.6) */
 function TransferModal({ onClose }: { onClose: () => void }) {
   const { state, dispatch, product } = usePos();
-  const canApprove = state.user?.role !== "cashier";
+  const canApprove = can(state.user?.role, "approve_transfer");
   const [pid, setPid] = useState(state.products.find((p) => stockOf(p) > 0)?.id ?? "");
   const [qty, setQty] = useState("10");
   const [to, setTo] = useState(BRANCHES[0]);
