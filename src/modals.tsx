@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import type { ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { usePos, money, cartTotals } from "./store";
-import { TAX_RATE } from "./data";
+import { TAX_RATE, findInteractions, can } from "./data";
 import type { PayMethod, PaymentLeg, Transaction } from "./data";
 import { Modal, cx } from "./ui";
 import { ICash, ICard, IShield, IX, IPrint, ICheck, ISplit, IUsers, IStar, IAlert, ICode, ICopy, IDownload } from "./icons";
@@ -19,8 +19,19 @@ export function PaymentModal() {
   const [tendered, setTendered] = useState("");
   const [exemptToggle, setExemptToggle] = useState(false);
   const [idChecked, setIdChecked] = useState(false);
+  const [overrideAck, setOverrideAck] = useState(false);
+  const [overrideReason, setOverrideReason] = useState("");
 
   const customer = state.customers.find((c) => c.id === state.saleCustomerId) ?? null;
+
+  /* drug–drug interaction check across the cart (§3/§4) */
+  const interactions = useMemo(
+    () => findInteractions(state.cart.map((c) => c.productId)),
+    [state.cart]);
+  const major = interactions.filter((i) => i.severity === "major");
+  const moderate = interactions.filter((i) => i.severity === "moderate");
+  const isPharmacist = can(state.user?.role, "verify_rx");
+  const nameOf = (id: string) => product(id)?.name ?? id;
   const taxExempt = !!(customer?.taxExempt || exemptToggle);
   const t = useMemo(() => cartTotals(state, discountPct, taxExempt), [state, discountPct, taxExempt]);
   const hasControlled = state.cart.some((c) => product(c.productId)?.controlled);
@@ -37,7 +48,9 @@ export function PaymentModal() {
   const splitValid = split && l1 > 0 && l2 > 0;
   const paymentOk = split ? splitValid : leg1 !== "cash" || tenderedNum >= t.total;
   const controlledOk = !hasControlled || (!!customer && idChecked);
-  const canConfirm = paymentOk && controlledOk;
+  /* major interactions block checkout unless a pharmacist documents an override */
+  const interactionOk = major.length === 0 || overrideAck;
+  const canConfirm = paymentOk && controlledOk && interactionOk;
   const hasRx = state.cart.some((c) => product(c.productId)?.rx);
 
   const methods: { id: PayMethod; label: string; icon: ReactNode; hint: string }[] = [
@@ -49,6 +62,13 @@ export function PaymentModal() {
 
   const confirm = () => {
     if (!canConfirm) return;
+    /* pharmacist override of a major interaction — documented + audited (§3) */
+    if (major.length > 0 && overrideAck) {
+      dispatch({
+        type: "AUDIT_LOG", kind: "rx",
+        detail: `Interaction override by ${state.user?.name ?? "pharmacist"} — ${major.map((i) => `${nameOf(i.a)} + ${nameOf(i.b)}`).join("; ")} — reason: ${overrideReason.trim() || "(none given)"}`,
+      });
+    }
     const payments: PaymentLeg[] = split
       ? [{ method: leg1, amount: round2(l1) }, { method: leg2, amount: l2 }]
       : [{ method: leg1, amount: t.total }];
@@ -73,7 +93,55 @@ export function PaymentModal() {
         </button>
       </div>
 
-      <div className="grid md:grid-cols-2 gap-0 overflow-y-auto scroll-slim">
+      {/* drug–drug interaction gate (§3/§4) */}
+      {major.length > 0 && (
+        <div className={cx("mx-5 mt-4 rounded-lg border px-4 py-3 anim-fade-up",
+          overrideAck ? "border-pine-300 bg-pine-100/50" : "border-brick-500/50 bg-brick-100/40")}>
+          <p className={cx("flex items-center gap-1.5 text-[12px] font-bold",
+            overrideAck ? "text-pine-800" : "text-brick-700")}>
+            <IAlert size={14} />
+            {overrideAck ? "Interaction override documented" : `${major.length} major interaction${major.length === 1 ? "" : "s"} — checkout blocked`}
+          </p>
+          <ul className="mt-1.5 space-y-1">
+            {major.map((i) => (
+              <li key={i.a + i.b} className="text-[11px] leading-snug text-ink">
+                <span className="font-bold">{nameOf(i.a)}</span> + <span className="font-bold">{nameOf(i.b)}</span>
+                <span className="text-inksoft"> — {i.effect} {i.action}</span>
+              </li>
+            ))}
+          </ul>
+          {!overrideAck && (isPharmacist ? (
+            <div className="mt-2.5 flex gap-2 items-stretch">
+              <input value={overrideReason} onChange={(e) => setOverrideReason(e.target.value)}
+                placeholder="Clinical reason for dispensing anyway (required for audit)…"
+                className="flex-1 px-3 py-1.5 rounded-md border border-brick-300 bg-card text-xs focus:border-brick-500 focus:outline-none" />
+              <button onClick={() => setOverrideAck(true)}
+                className="px-3.5 py-1.5 rounded-md bg-brick-700 text-brick-100 text-xs font-bold hover:bg-brick-500 transition active:scale-95 whitespace-nowrap">
+                Pharmacist override
+              </button>
+            </div>
+          ) : (
+            <p className="mt-2 text-[11px] font-semibold text-brick-700">
+              A pharmacist must review and override before this sale can complete.
+            </p>
+          ))}
+        </div>
+      )}
+      {moderate.length > 0 && (
+        <div className="mx-5 mt-3 rounded-lg border border-honey-500/40 bg-honey-100/40 px-4 py-2.5">
+          <p className="flex items-center gap-1.5 text-[11px] font-bold text-honey-700"><IAlert size={13} /> Caution — moderate interaction{moderate.length === 1 ? "" : "s"}</p>
+          <ul className="mt-1 space-y-0.5">
+            {moderate.map((i) => (
+              <li key={i.a + i.b} className="text-[10.5px] text-ink leading-snug">
+                <span className="font-bold">{nameOf(i.a)}</span> + <span className="font-bold">{nameOf(i.b)}</span>
+                <span className="text-inksoft"> — {i.action}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      <div className="grid md:grid-cols-2 gap-0 overflow-y-auto scroll-slim mt-4">
         {/* left — totals */}
         <div className="p-5 md:border-r border-mist">
           <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-inksoft">Amount due</p>

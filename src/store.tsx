@@ -8,7 +8,7 @@ import {
 import type {
   Product, Transaction, Prescription, Customer, AuditEntry, AuditKind, Staff, Role, OrgSettings,
   HeldSale, TxLine, PayMethod, PaymentLeg, RxStatus, Batch, Transfer, TransferStatus, Field,
-  Snapshot, SnapshotMeta,
+  Snapshot, SnapshotMeta, RestrictedLogEntry,
 } from "./data";
 import { makeStaff, makeSettings, SNAPS_KEY, hashPin, ROLE_LABEL } from "./data";
 
@@ -22,6 +22,7 @@ interface State {
   staff: Staff[];
   settings: OrgSettings;
   lockouts: Record<string, { fails: number; until: number }>;
+  restrictedLog: RestrictedLogEntry[];
   online: boolean;
   products: Product[];
   transactions: Transaction[];
@@ -61,7 +62,7 @@ type Action =
   | { type: "RECALL_HELD"; id: string }
   | { type: "DROP_HELD"; id: string }
   | { type: "OPEN_PAY"; open: boolean }
-  | { type: "COMPLETE_SALE"; payments: PaymentLeg[]; tendered?: number; discountPct: number; taxExempt: boolean; idChecked: boolean }
+  | { type: "COMPLETE_SALE"; payments: PaymentLeg[]; tendered?: number; discountPct: number; taxExempt: boolean; idChecked: boolean; restricted?: { purchaser: string; idType: string; idLast4: string } }
   | { type: "OPEN_RECEIPT"; tx: Transaction | null }
   | { type: "ADJUST_BATCH"; productId: string; batch: string; newQty: number; reason: string }
   | { type: "RESTOCK"; productId: string; amount: number; batch: string; expiry: string }
@@ -86,6 +87,7 @@ type Action =
   | { type: "RX_STATUS"; id: string; status: RxStatus }
   | { type: "RX_TO_CART"; id: string }
   | { type: "TOAST"; kind: Toast["kind"]; msg: string }
+  | { type: "AUDIT_LOG"; kind: AuditKind; detail: string }
   | { type: "DISMISS_TOAST"; id: number }
   | { type: "RESET" };
 
@@ -114,7 +116,7 @@ const LS_KEY = "counterrx:v6";
 
 function load(): State {
   const base: State = {
-    ...seed(), user: null, lockouts: {}, online: typeof navigator === "undefined" ? true : navigator.onLine,
+    ...seed(), user: null, lockouts: {}, restrictedLog: [], online: typeof navigator === "undefined" ? true : navigator.onLine,
     cart: [], held: [], saleCustomerId: null, redeemPoints: 0,
     view: "register", invPreset: "all",
     payOpen: false, receipt: null, toasts: [], flashId: null, flashKey: 0,
@@ -131,6 +133,7 @@ function load(): State {
           transfers: saved.transfers ?? makeTransfers(Date.now()),
           staff: saved.staff ?? makeStaff(Date.now()),
           settings: { ...makeSettings(), ...(saved.settings ?? {}) },
+          restrictedLog: saved.restrictedLog ?? [],
           audit: saved.audit ?? [],
         };
       }
@@ -721,6 +724,9 @@ function reducer(state: State, a: Action): State {
 
     case "TOAST":
       return withToast(state, a.kind, a.msg);
+
+    case "AUDIT_LOG":
+      return withAudit(state, a.kind, a.detail);
 
     case "DISMISS_TOAST":
       return { ...state, toasts: state.toasts.filter((t) => t.id !== a.id) };

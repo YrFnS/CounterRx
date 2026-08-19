@@ -5,7 +5,7 @@ import {
 } from "@dnd-kit/core";
 import type { DragStartEvent, DragEndEvent, DragOverEvent } from "@dnd-kit/core";
 import { usePos, relTime } from "../store";
-import { stockOf } from "../data";
+import { stockOf, can } from "../data";
 import type { RxStatus, Prescription } from "../data";
 import { cx, Badge } from "../ui";
 import { IRx, ICheck, IClock, IRegister, IShield, IGrab, IRefresh, ISend } from "../icons";
@@ -230,7 +230,7 @@ function RxCard({ rx, ghost, overlay }: { rx: Prescription; ghost?: boolean; ove
               </span>
             </div>
             <p className="num text-[9px] text-inksoft mt-0.5">member {rx.insurance.memberId}</p>
-            {rx.insurance.status === "pending" && (state.user?.role === "cashier" ? (
+            {rx.insurance.status === "pending" && (!can(state.user?.role, "verify_rx") ? (
               <p className="mt-1 py-1 text-center rounded bg-mist/70 text-[10px] font-bold text-inksoft">🔒 Pharmacist sign-in required to verify</p>
             ) : (
               <button onClick={() => dispatch({ type: "VERIFY_RX", id: rx.id })}

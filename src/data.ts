@@ -37,6 +37,7 @@ export interface Product {
   supplier: string;
   batches: Batch[];
   controlled?: Schedule; // DEA schedule — ID + audit requirements at the till
+  restricted?: { limitPerSale: number }; // age-gated / monitored OTC — ID capture + mandatory log (§3)
   fields?: Field[];      // user-defined attributes (6.7)
 }
 
@@ -157,6 +158,37 @@ export const PERMS: Record<Perm, Role[]> = {
 export const can = (role: Role | undefined, perm: Perm): boolean =>
   !!role && PERMS[perm].includes(role);
 
+/* ------------------------------------------------------------------ */
+/*  Clinical decision support — drug–drug interactions (§3/§4)         */
+/* ------------------------------------------------------------------ */
+
+export interface InteractionPair {
+  a: string; b: string;              // product ids
+  severity: "major" | "moderate";
+  effect: string;                    // what happens
+  action: string;                    // recommended clinical action
+}
+
+export const INTERACTIONS: InteractionPair[] = [
+  { a: "codsyr", b: "alpr05", severity: "major", effect: "Opioid + benzodiazepine → additive CNS depression, respiratory risk (FDA boxed warning).", action: "Avoid combination; if unavoidable use lowest dose, counsel on sedation." },
+  { a: "codsyr", b: "zolp5", severity: "major", effect: "Opioid + sedative-hypnotic → additive CNS depression.", action: "Avoid concurrent use; monitor for excessive sedation." },
+  { a: "tram50", b: "alpr05", severity: "major", effect: "Opioid + benzodiazepine → additive CNS depression.", action: "Avoid combination; counsel on respiratory depression risk." },
+  { a: "tram50", b: "zolp5", severity: "major", effect: "Opioid + sedative-hypnotic → additive CNS depression.", action: "Avoid concurrent use or reduce doses." },
+  { a: "codsyr", b: "tram50", severity: "major", effect: "Duplicate opioid therapy → overdose & serotonin-syndrome risk.", action: "Dispense one opioid only; contact prescriber." },
+  { a: "asa75", b: "ibu400", severity: "moderate", effect: "Ibuprofen blunts aspirin's antiplatelet effect; ↑ GI bleed risk.", action: "Separate dosing ≥2h; consider gastroprotection." },
+  { a: "asa75", b: "diclo50", severity: "moderate", effect: "NSAID + antiplatelet → ↑ GI bleed risk.", action: "Use lowest NSAID dose, shortest duration; consider PPI." },
+  { a: "ibu400", b: "diclo50", severity: "moderate", effect: "Therapeutic duplication — two NSAIDs.", action: "Dispense one NSAID only." },
+  { a: "cipro500", b: "alpr05", severity: "moderate", effect: "CYP3A4 inhibition raises alprazolam levels → excess sedation.", action: "Reduce alprazolam dose; monitor sedation." },
+  { a: "cet10", b: "alpr05", severity: "moderate", effect: "Antihistamine + benzodiazepine → additive sedation.", action: "Counsel against driving; avoid alcohol." },
+  { a: "azi250", b: "atv20", severity: "moderate", effect: "Macrolide raises statin exposure → myopathy risk.", action: "Watch for muscle pain; consider holding statin during course." },
+];
+
+/** All interactions present among a set of product ids. */
+export function findInteractions(ids: string[]): InteractionPair[] {
+  const set = new Set(ids);
+  return INTERACTIONS.filter((i) => set.has(i.a) && set.has(i.b));
+}
+
 /* Compact synchronous SHA-256 (FIPS 180-4) — keeps PIN verification off async paths */
 export function sha256(msg: string): string {
   const K = [
@@ -261,6 +293,14 @@ export const SNAPS_KEY = "counterrx:snapshots";
 export type AuditKind = "sale" | "stock" | "money" | "rx" | "system";
 export interface AuditEntry { id: number; at: number; actor: string; kind: AuditKind; detail: string; }
 
+/** Behind-the-counter / monitored OTC sale — ID captured, mandatory log (§3) */
+export interface RestrictedLogEntry {
+  id: number; at: number;
+  productId: string; qty: number;
+  purchaser: string; idType: string; idLast4: string;
+  cashier: string;
+}
+
 /* bulk-pricing tiers — per non-Rx line, by quantity */
 export const BULK_TIERS: { min: number; pct: number }[] = [
   { min: 6, pct: 10 },
@@ -347,6 +387,8 @@ export function makeProducts(now: number): Product[] {
     { ...p("codsyr", "Codeine Cough Syrup", "Codeine phosphate 10mg/5ml", "Cheratussin AC", "coldflu", "Syrup · 118ml", 8.9, 4.6, 28, 10, true, "COD-25B09", 190, "Apex Distributors"), controlled: "C-V" as Schedule },
     { ...p("alpr05", "Alprazolam 0.5mg", "Alprazolam", "Xanax", "cns", "Tablet · strip of 15", 9.4, 4.2, 34, 12, true, "ALP-25D06", 300, "MediSource Ltd"), controlled: "C-IV" as Schedule },
     { ...p("zolp5", "Zolpidem 5mg", "Zolpidem tartrate", "Ambien", "cns", "Tablet · strip of 10", 11.6, 5.9, 18, 8, true, "ZOL-25A11", 240, "PharmaLine Co"), controlled: "C-IV" as Schedule },
+    /* restricted OTC — behind-the-counter, ID + log required, quantity-limited (§3) */
+    { ...p("sud30", "Pseudoephedrine 30mg", "Pseudoephedrine HCl", "Sudafed", "coldflu", "Tablet · strip of 12", 6.8, 3.1, 40, 12, false, "SUD-25B14", 320, "Apex Distributors"), restricted: { limitPerSale: 2 } },
   ];
 
   /* Lot-level clearance pricing (1.4): push near-expiry Paracetamol at a discount */

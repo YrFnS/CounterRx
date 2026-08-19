@@ -1,11 +1,11 @@
 import { useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { usePos, money, relTime, unitPrice, cartTotals } from "../store";
-import { CATEGORIES, TAX_RATE, daysUntil, stockOf, nearestExpiry, bulkPct, fefoBatches } from "../data";
+import { CATEGORIES, TAX_RATE, daysUntil, stockOf, nearestExpiry, bulkPct, fefoBatches, findInteractions } from "../data";
 import type { CategoryId, Product } from "../data";
 import { cx, Badge, Empty } from "../ui";
 import {
-  ISearch, IScan, IPlus, IMinus, ITrash, IPause, IRecall, IX, ICart, IPill, IChevD, ISpark, IEdit, ITag, IUsers,
+  ISearch, IScan, IPlus, IMinus, ITrash, IPause, IRecall, IX, ICart, IPill, IChevD, ISpark, IEdit, ITag, IUsers, IAlert,
 } from "../icons";
 
 /* Tiny WebAudio "scanner beep" — the signature sound of a POS, fired on a real barcode hit. */
@@ -125,6 +125,11 @@ export default function Register() {
   };
 
   const cartLines = state.cart.map((c) => ({ line: c, p: product(c.productId)! })).filter((x) => x.p);
+  /* products involved in a major interaction with something else in the cart */
+  const interactingIds = new Set(
+    findInteractions(cartLines.map((x) => x.p.id))
+      .filter((i) => i.severity === "major")
+      .flatMap((i) => [i.a, i.b]));
   /* single source of truth — matches the payment modal exactly */
   const attachedCustomer = state.customers.find((c) => c.id === state.saleCustomerId) ?? null;
   const totals = cartTotals(state, 0, !!attachedCustomer?.taxExempt);
@@ -247,6 +252,12 @@ export default function Register() {
                   </p>
                 </div>
                 <span className="num text-[13px] font-bold text-ink shrink-0 flex items-center gap-1.5">
+                  {interactingIds.has(p.id) && (
+                    <span className="num text-[9px] font-bold px-1.5 py-0.5 rounded bg-brick-100 border border-brick-300/60 text-brick-700 flex items-center gap-0.5"
+                      title="Major drug interaction in this basket — pharmacist review required at checkout">
+                      <IAlert size={9} /> interact
+                    </span>
+                  )}
                   {!p.rx && bulkPct(line.qty) > 0 && (
                     <span className="num text-[9px] font-bold px-1.5 py-0.5 rounded bg-honey-100 border border-honey-300/60 text-honey-700">
                       bulk −{bulkPct(line.qty)}%

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { usePos, money, relTime } from "../store";
-import { CATEGORIES, daysUntil, fefoBatches, stockOf, nearestExpiry, newBatchCode, FIELD_SUGGESTIONS, BRANCHES } from "../data";
+import { CATEGORIES, daysUntil, fefoBatches, stockOf, nearestExpiry, newBatchCode, FIELD_SUGGESTIONS, BRANCHES, can } from "../data";
 import type { CategoryId, Product, Batch, TransferStatus } from "../data";
 import { cx, Badge, Modal, StockBar, Empty, CustomFieldsBlock } from "../ui";
 import { ISearch, IPlus, IBox, IAlert, IDownload, IEdit, IX, ICheck, IReport, ICalendar, IClipboard, ITag, ISwap } from "../icons";
@@ -17,6 +17,7 @@ export default function Inventory() {
   const [receiving, setReceiving] = useState<Product | null>(null);
   const [adding, setAdding] = useState(false);
   const [counting, setCounting] = useState(false);
+  const mayAdjust = can(state.user?.role, "adjust_stock");
   const [report, setReport] = useState<"low" | "expiry" | null>(null);
   const [transfersOpen, setTransfersOpen] = useState(false);
 
@@ -239,8 +240,13 @@ export default function Inventory() {
                           className="px-2 py-1.5 rounded-md border border-pine-200 bg-pine-50 text-pine-700 text-[11px] font-bold hover:bg-pine-700 hover:text-pine-50 transition active:scale-95">
                           Receive
                         </button>
-                        <button onClick={() => setAdjusting(p)}
-                          className="grid place-items-center w-7 h-7 rounded-md border border-mist text-inksoft hover:border-pine-400 hover:text-pine-700 transition active:scale-90" aria-label={`Adjust ${p.name}`}>
+                        <button onClick={() => setAdjusting(p)} disabled={!mayAdjust}
+                          title={mayAdjust ? `Adjust stock for ${p.name}` : "Stock adjustments require pharmacist, manager or admin"}
+                          className={cx("grid place-items-center w-7 h-7 rounded-md border transition active:scale-90",
+                            mayAdjust
+                              ? "border-mist text-inksoft hover:border-pine-400 hover:text-pine-700"
+                              : "border-mist/50 text-inksoft/30 cursor-not-allowed")}
+                          aria-label={`Adjust ${p.name}`}>
                           <IEdit size={13} />
                         </button>
                       </div>
@@ -569,6 +575,7 @@ function CountModal({ onClose }: { onClose: () => void }) {
     .filter((r) => r.delta !== 0);
   const netUnits = diffs.reduce((s, r) => s + r.delta, 0);
   const netValue = diffs.reduce((s, r) => s + r.delta * r.p.cost, 0);
+  const mayApply = can(state.user?.role, "apply_count");
 
   const apply = () => {
     dispatch({ type: "COUNT_APPLY", entries: diffs.map((r) => ({ productId: r.p.id, counted: r.counted })) });
@@ -645,10 +652,13 @@ function CountModal({ onClose }: { onClose: () => void }) {
 
         <div className="mt-4 flex justify-end gap-2">
           <button onClick={onClose} className="px-4 py-2 rounded-lg border border-mist text-xs font-semibold text-inksoft hover:text-ink hover:border-ink/30 transition">Cancel</button>
-          <button onClick={apply} disabled={diffs.length === 0}
+          <button onClick={apply} disabled={diffs.length === 0 || !mayApply}
+            title={mayApply ? undefined : "Count variances require a manager or admin"}
             className={cx("flex items-center gap-1.5 px-4 py-2 rounded-lg text-xs font-bold transition active:scale-95",
-              diffs.length > 0 ? "bg-pine-700 text-pine-50 hover:bg-pine-600 shadow-lift" : "bg-mist text-inksoft cursor-not-allowed")}>
-            <ICheck size={13} /> Apply count · {diffs.length} variance{diffs.length === 1 ? "" : "s"}
+              diffs.length > 0 && mayApply ? "bg-pine-700 text-pine-50 hover:bg-pine-600 shadow-lift" : "bg-mist text-inksoft cursor-not-allowed")}>
+            <ICheck size={13} /> {mayApply
+              ? <>Apply count · {diffs.length} variance{diffs.length === 1 ? "" : "s"}</>
+              : "Requires manager approval"}
           </button>
         </div>
       </div>
