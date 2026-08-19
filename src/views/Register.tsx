@@ -1,7 +1,7 @@
 import { useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
-import { usePos, money, relTime } from "../store";
-import { CATEGORIES, TAX_RATE, daysUntil, stockOf, nearestExpiry, bulkPct } from "../data";
+import { usePos, money, relTime, unitPrice } from "../store";
+import { CATEGORIES, TAX_RATE, daysUntil, stockOf, nearestExpiry, bulkPct, fefoBatches } from "../data";
 import type { CategoryId, Product } from "../data";
 import { cx, Badge, Empty } from "../ui";
 import {
@@ -210,7 +210,10 @@ export default function Register() {
               <div className="flex items-start justify-between gap-2">
                 <div className="min-w-0">
                   <p className="text-[13px] font-semibold text-ink leading-tight truncate">{p.name}</p>
-                  <p className="text-[11px] text-inksoft truncate">{p.form} · {money(p.price)} ea</p>
+                  <p className="text-[11px] text-inksoft truncate">
+                    {p.form} ·{" "}
+                    {(() => { const up = unitPrice(state, p.id); return up !== p.price ? (<><span className="num text-brick-700 font-semibold">{money(up)}</span> <span className="num line-through">{money(p.price)}</span> ea</>) : (<>{money(p.price)} ea</>); })()}
+                  </p>
                 </div>
                 <span className="num text-[13px] font-bold text-ink shrink-0 flex items-center gap-1.5">
                   {!p.rx && bulkPct(line.qty) > 0 && (
@@ -218,7 +221,7 @@ export default function Register() {
                       bulk −{bulkPct(line.qty)}%
                     </span>
                   )}
-                  {money((line.priceOverride ?? p.price) * line.qty)}
+                  {money((line.priceOverride ?? unitPrice(state, p.id)) * line.qty)}
                 </span>
               </div>
               <div className="flex items-center justify-between mt-2">
@@ -522,7 +525,19 @@ function ProductCard({ p, hl = [], flashing, flashKey, onAdd }: {
 
       <div className="mt-2.5 pt-2.5 border-t border-dashed border-mist flex items-end justify-between">
         <div>
-          <p className="num text-[16px] font-bold text-ink leading-none">{money(p.price)}</p>
+          {(() => {
+            const lot = fefoBatches(p)[0];
+            const lotPriced = lot?.price !== undefined && lot.price !== p.price;
+            return lotPriced ? (
+              <p className="leading-none">
+                <span className="num text-[16px] font-bold text-brick-700">{money(lot!.price!)}</span>
+                <span className="num text-[11px] text-inksoft line-through ml-1.5">{money(p.price)}</span>
+                <span className="ml-1.5 align-middle px-1 py-0.5 rounded bg-brick-100 border border-brick-300/50 text-[8px] font-bold tracking-wide text-brick-700">LOT SALE</span>
+              </p>
+            ) : (
+              <p className="num text-[16px] font-bold text-ink leading-none">{money(p.price)}</p>
+            );
+          })()}
           <p className={cx("mt-1 text-[10px] font-semibold flex items-center gap-1",
             out ? "text-brick-700" : low ? "text-honey-700" : "text-pine-600")}>
             <span className={cx("w-1.5 h-1.5 rounded-full", (low || out) && "anim-pulse-dot")}

@@ -1,13 +1,13 @@
 import { createContext, useContext, useEffect, useMemo, useReducer } from "react";
 import type { ReactNode, Dispatch } from "react";
 import {
-  makeProducts, makePrescriptions, makeTransactions, makeCustomers, TAX_RATE, CASHIER,
+  makeProducts, makePrescriptions, makeTransactions, makeCustomers, makeTransfers, TAX_RATE, CASHIER,
   stockOf, nearestExpiry, allocFEFO, fefoBatches, newBatchCode, daysUntil,
   bulkPct, REDEEM_CHUNK_PTS, REDEEM_CHUNK_VALUE,
 } from "./data";
 import type {
   Product, Transaction, Prescription, Customer, AuditEntry, AuditKind, User,
-  HeldSale, TxLine, PayMethod, PaymentLeg, RxStatus, Batch,
+  HeldSale, TxLine, PayMethod, PaymentLeg, RxStatus, Batch, Transfer, TransferStatus, Field,
 } from "./data";
 
 export type View = "register" | "dashboard" | "customers" | "inventory" | "prescriptions" | "history";
@@ -17,9 +17,11 @@ export interface Toast { id: number; kind: "success" | "warn" | "error" | "info"
 
 interface State {
   user: User | null;
+  online: boolean;
   products: Product[];
   transactions: Transaction[];
   prescriptions: Prescription[];
+  transfers: Transfer[];
   cart: { productId: string; qty: number; note?: string; priceOverride?: number }[];
   held: HeldSale[];
   customers: Customer[];
@@ -53,6 +55,12 @@ type Action =
   | { type: "RESTOCK"; productId: string; amount: number; batch: string; expiry: string }
   | { type: "SET_NOTE"; productId: string; note: string }
   | { type: "SET_PRICE"; productId: string; price: number | null }
+  | { type: "SET_BATCH_PRICE"; productId: string; batch: string; price: number | null }
+  | { type: "ADD_TRANSFER"; productId: string; qty: number; toBranch: string; note?: string }
+  | { type: "TRANSFER_STATUS"; id: string; status: TransferStatus }
+  | { type: "SET_FIELD"; target: "product" | "customer"; id: string; field: Field }
+  | { type: "CLEAR_FIELD"; target: "product" | "customer"; id: string; key: string }
+  | { type: "SET_ONLINE"; online: boolean }
   | { type: "SET_SALE_CUSTOMER"; id: string | null }
   | { type: "ADD_CUSTOMER"; name: string; phone: string; email?: string; notes?: string }
   | { type: "SET_REDEEM"; points: number }
@@ -73,7 +81,7 @@ let toastSeq = 1;
 let heldSeq = 1;
 let auditSeq = 100;
 
-const seed = (): Pick<State, "products" | "transactions" | "prescriptions" | "customers" | "audit"> => {
+const seed = (): Pick<State, "products" | "transactions" | "prescriptions" | "customers" | "audit" | "transfers"> => {
   const now = Date.now();
   const products = makeProducts(now);
   const customers = makeCustomers(now);
@@ -83,15 +91,17 @@ const seed = (): Pick<State, "products" | "transactions" | "prescriptions" | "cu
   return {
     products, transactions, customers,
     prescriptions: makePrescriptions(now),
-    audit: [{ id: auditSeq++, at: now - 36 * 60_000, actor: "system", kind: "system", detail: "Ledger initialized — demo dataset v4" }],
+    transfers: makeTransfers(now),
+    audit: [{ id: auditSeq++, at: now - 36 * 60_000, actor: "system", kind: "system", detail: "Ledger initialized — demo dataset v5" }],
   };
 };
 
-const LS_KEY = "counterrx:v4";
+const LS_KEY = "counterrx:v5";
 
 function load(): State {
   const base: State = {
-    ...seed(), user: null, cart: [], held: [], saleCustomerId: null, redeemPoints: 0,
+    ...seed(), user: null, online: typeof navigator === "undefined" ? true : navigator.onLine,
+    cart: [], held: [], saleCustomerId: null, redeemPoints: 0,
     view: "register", invPreset: "all",
     payOpen: false, receipt: null, toasts: [], flashId: null, flashKey: 0,
   };
@@ -104,6 +114,7 @@ function load(): State {
           ...base,
           products: saved.products, transactions: saved.transactions,
           prescriptions: saved.prescriptions, customers: saved.customers,
+          transfers: saved.transfers ?? makeTransfers(Date.now()),
           audit: saved.audit ?? [],
         };
       }
@@ -114,16 +125,25 @@ function load(): State {
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
 
+/* Effective unit price: manual override > FEFO lot price > list price (1.4 lot pricing) */
+export function unitPrice(state: State, productId: string): number {
+  const p = state.products.find((x) => x.id === productId);
+  if (!p) return 0;
+  const lotPrice = fefoBatches(p)[0]?.price;
+  return lotPrice !== undefined ? lotPrice : p.price;
+}
+
 export function cartTotals(state: State, discountPct: number, taxExempt = false) {
   const lines: TxLine[] = state.cart.map((c) => {
     const p = state.products.find((x) => x.id === c.productId)!;
-    const overridden = c.priceOverride !== undefined && c.priceOverride > 0 && c.priceOverride !== p.price;
+    const base = unitPrice(state, p.id);
+    const overridden = c.priceOverride !== undefined && c.priceOverride > 0 && c.priceOverride !== base;
     return {
       productId: p.id, name: p.name, form: p.form, qty: c.qty,
-      price: overridden ? c.priceOverride! : p.price,
+      price: overridden ? c.priceOverride! : base,
       rx: p.rx, note: c.note,
       override: overridden || undefined,
-      listPrice: overridden ? p.price : undefined,
+      listPrice: overridden ? p.price : base !== p.price ? p.price : undefined,
     };
   });
   const subtotal = round2(lines.reduce((s, l) => s + l.price * l.qty, 0));
@@ -337,6 +357,77 @@ function reducer(state: State, a: Action): State {
             "success", `${p.name} overridden to ${money(round2(a.price))} (list ${money(p.price)})`);
     }
 
+    case "SET_BATCH_PRICE": {
+      const p = state.products.find((x) => x.id === a.productId);
+      const b = p?.batches.find((x) => x.batch === a.batch);
+      if (!p || !b) return state;
+      const products = state.products.map((x) => x.id !== p.id ? x : {
+        ...x,
+        batches: x.batches.map((bb) => (bb.batch === a.batch ? { ...bb, price: a.price === null ? undefined : round2(a.price) } : bb)),
+      });
+      const next = withAudit({ ...state, products }, "money",
+        `Lot price — ${p.name} · ${a.batch} → ${a.price === null ? `list ${money(p.price)}` : money(round2(a.price))}`);
+      return withToast(next, "success",
+        a.price === null ? `${a.batch} back to list price` : `Lot ${a.batch} priced at ${money(round2(a.price))} (list ${money(p.price)})`);
+    }
+
+    case "ADD_TRANSFER": {
+      const p = state.products.find((x) => x.id === a.productId);
+      if (!p) return state;
+      const onHand = stockOf(p);
+      if (a.qty > onHand) return withToast(state, "error", `Only ${onHand} × ${p.name} on hand`);
+      const id = `TR-${312 + state.transfers.length}`;
+      const tr: Transfer = { id, productId: p.id, qty: a.qty, toBranch: a.toBranch, status: "requested", createdAt: Date.now(), requestedBy: state.user?.name ?? CASHIER, note: a.note?.trim() || undefined };
+      const next = withAudit({ ...state, transfers: [tr, ...state.transfers] }, "stock", `Transfer ${id} requested — ${a.qty} × ${p.name} → ${a.toBranch}`);
+      return withToast(next, "success", `${id} requested — ${a.qty} × ${p.name} → ${a.toBranch}`);
+    }
+
+    case "TRANSFER_STATUS": {
+      const tr = state.transfers.find((x) => x.id === a.id);
+      if (!tr) return state;
+      const p = state.products.find((x) => x.id === tr.productId);
+      let products = state.products;
+      /* shipping pulls stock off our shelf via FEFO allocation */
+      if (a.status === "shipped" && p) {
+        products = state.products.map((x) => (x.id === p.id ? { ...x, batches: allocFEFO(x.batches, tr.qty).batches } : x));
+      }
+      const transfers = state.transfers.map((x) => (x.id === tr.id ? { ...x, status: a.status } : x));
+      const verb = a.status === "approved" ? "approved" : a.status === "shipped" ? "shipped — stock allocated" : a.status === "received" ? "received at destination" : "rejected";
+      const next = withAudit({ ...state, transfers, products }, "stock", `Transfer ${tr.id} ${verb} (${tr.qty} × ${p?.name ?? tr.productId})`);
+      return withToast(next, a.status === "rejected" ? "warn" : "success", `${tr.id} ${verb}`);
+    }
+
+    case "SET_FIELD": {
+      if (a.target === "product") {
+        const products = state.products.map((x) => {
+          if (x.id !== a.id) return x;
+          const rest = (x.fields ?? []).filter((f) => f.key !== a.field.key);
+          return { ...x, fields: a.field.value.trim() ? [...rest, a.field] : rest };
+        });
+        return { ...state, products };
+      }
+      const customers = state.customers.map((x) => {
+        if (x.id !== a.id) return x;
+        const rest = (x.fields ?? []).filter((f) => f.key !== a.field.key);
+        return { ...x, fields: a.field.value.trim() ? [...rest, a.field] : rest };
+      });
+      return { ...state, customers };
+    }
+
+    case "CLEAR_FIELD": {
+      if (a.target === "product") {
+        const products = state.products.map((x) => x.id === a.id ? { ...x, fields: (x.fields ?? []).filter((f) => f.key !== a.key) } : x);
+        return { ...state, products };
+      }
+      const customers = state.customers.map((x) => x.id === a.id ? { ...x, fields: (x.fields ?? []).filter((f) => f.key !== a.key) } : x);
+      return { ...state, customers };
+    }
+
+    case "SET_ONLINE":
+      if (a.online === state.online) return state;
+      return withToast({ ...state, online: a.online }, a.online ? "success" : "warn",
+        a.online ? "Back online — local changes will sync" : "Offline — sales keep working, saved locally");
+
     case "SET_SALE_CUSTOMER":
       return { ...state, saleCustomerId: a.id, redeemPoints: 0 };
 
@@ -549,14 +640,24 @@ const PosCtx = createContext<Ctx | null>(null);
 export function PosProvider({ children }: { children: ReactNode }) {
   const [state, dispatch] = useReducer(reducer, undefined, load);
 
+  /* track connectivity so the UI can show offline state (6.5) */
+  useEffect(() => {
+    const on = () => dispatch({ type: "SET_ONLINE", online: true });
+    const off = () => dispatch({ type: "SET_ONLINE", online: false });
+    window.addEventListener("online", on);
+    window.addEventListener("offline", off);
+    return () => { window.removeEventListener("online", on); window.removeEventListener("offline", off); };
+  }, []);
+
   useEffect(() => {
     try {
       localStorage.setItem(LS_KEY, JSON.stringify({
         products: state.products, transactions: state.transactions.slice(0, 400),
-        prescriptions: state.prescriptions, customers: state.customers, audit: state.audit,
+        prescriptions: state.prescriptions, customers: state.customers,
+        transfers: state.transfers, audit: state.audit,
       }));
     } catch { /* storage full — ignore */ }
-  }, [state.products, state.transactions, state.prescriptions, state.customers, state.audit]);
+  }, [state.products, state.transactions, state.prescriptions, state.customers, state.transfers, state.audit]);
 
   const value = useMemo<Ctx>(() => {
     const product = (id: string) => state.products.find((p) => p.id === id);

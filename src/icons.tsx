@@ -100,6 +100,39 @@ export const IClipboard = (p: P) => (
     <path d="M9 11h6M9 14.5h6M9 18h3.5" strokeLinecap="round" />
   </Base>
 );
+export const ICopy = (p: P) => (
+  <Base {...p}>
+    <rect x="9" y="9" width="11" height="11" rx="2" />
+    <path d="M5 15V5a2 2 0 0 1 2-2h10" />
+  </Base>
+);
+export const ISwap = (p: P) => (
+  <Base {...p}>
+    <path d="M7 4 3.5 7.5 7 11" />
+    <path d="M3.5 7.5H16" />
+    <path d="m17 13 3.5 3.5L17 20" />
+    <path d="M20.5 16.5H8" />
+  </Base>
+);
+export const IWifi = (p: P) => (
+  <Base {...p}>
+    <path d="M3 8.5c5.5-4.5 12.5-4.5 18 0" />
+    <path d="M6.5 12c3.5-2.8 7.5-2.8 11 0" />
+    <path d="M9.8 15.4c1.4-1.1 3-1.1 4.4 0" />
+    <circle cx="12" cy="18.5" r="1.1" fill="currentColor" stroke="none" />
+  </Base>
+);
+export const IWifiOff = (p: P) => (
+  <Base {...p}>
+    <path d="M3 8.5c2.4-2 5.2-3.2 8-3.4" />
+    <path d="M16.5 6.4c1.6.5 3.1 1.2 4.5 2.1" />
+    <path d="M6.5 12c1.5-1.2 3.2-1.9 5-2.1" />
+    <path d="M14.6 10.5c1 .4 1.9 1 2.9 1.5" />
+    <path d="M9.8 15.4c1.4-1.1 3-1.1 4.4 0" />
+    <circle cx="12" cy="18.5" r="1.1" fill="currentColor" stroke="none" />
+    <path d="m4 3 16 18" />
+  </Base>
+);
 export const IGrab = (p: P) => (
   <Base {...p}>
     <circle cx="9" cy="6" r="1.15" fill="currentColor" stroke="none" />

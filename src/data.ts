@@ -21,9 +21,11 @@ export const CATEGORIES: { id: CategoryId; label: string; dot: string }[] = [
 ];
 
 /** A single stock lot on the shelf. Sales consume lots FEFO — first expiry, first out. */
-export interface Batch { batch: string; expiry: string; qty: number; }
+export interface Batch { batch: string; expiry: string; qty: number; price?: number; /* lot-level clearance price (1.4) */ }
 
 export type Schedule = "C-II" | "C-III" | "C-IV" | "C-V";
+
+export interface Field { key: string; value: string; }
 
 export interface Product {
   id: string; sku: string; barcode: string;
@@ -35,7 +37,11 @@ export interface Product {
   supplier: string;
   batches: Batch[];
   controlled?: Schedule; // DEA schedule — ID + audit requirements at the till
+  fields?: Field[];      // user-defined attributes (6.7)
 }
+
+/** Suggested keys when adding custom fields */
+export const FIELD_SUGGESTIONS = ["Storage", "Shelf life", "Hazard class", "Vendor code", "Min order", "Fridge zone", "Recall flag"];
 
 export const stockOf = (p: Product): number => p.batches.reduce((s, b) => s + b.qty, 0);
 
@@ -113,6 +119,7 @@ export interface Customer {
   createdAt: number; notes?: string;
   points: number;           // loyalty balance — 1 pt per $1, 100 pts redeems $5
   taxExempt?: boolean;      // clinics / gov accounts — sales post tax-free
+  fields?: Field[];         // user-defined attributes (6.7)
 }
 
 export interface User { id: string; name: string; role: "cashier" | "pharmacist" | "manager"; pin: string; initials: string; }
@@ -137,6 +144,16 @@ export const REDEEM_CHUNK_PTS = 100;
 export const REDEEM_CHUNK_VALUE = 5;
 
 export interface HeldSale { id: string; label: string; at: number; items: { productId: string; qty: number; note?: string }[]; }
+
+/* Inter-branch stock transfers (2.6) */
+export type TransferStatus = "requested" | "approved" | "shipped" | "received" | "rejected";
+export interface Transfer {
+  id: string; productId: string; qty: number;
+  toBranch: string; status: TransferStatus;
+  createdAt: number; requestedBy: string; note?: string;
+}
+export const HOME_BRANCH = "Branch 04 — Maple & 9th";
+export const BRANCHES = ["Branch 02 — Cedar Mall", "Branch 07 — Northgate", "Branch 11 — Harbor East"];
 
 export const TAX_RATE = 0.08;
 export const CASHIER = "A. Okafor";
@@ -165,7 +182,7 @@ function p(
 
 export function makeProducts(now: number): Product[] {
   void now;
-  return [
+  const base: Product[] = [
     p("amx500", "Amoxicillin 500mg", "Amoxicillin trihydrate", "Novex Pharma", "antibiotics", "Capsule · strip of 10", 8.4, 4.9, 132, 40, true, "AMX-24C11", 240, "MediSource Ltd", ["AMX-25A04", 84, 430]),
     p("azi250", "Azithromycin 250mg", "Azithromycin", "Zithron", "antibiotics", "Tablet · strip of 6", 11.9, 7.2, 14, 20, true, "AZT-24B07", 165, "MediSource Ltd"),
     p("cipro500", "Ciprofloxacin 500mg", "Ciprofloxacin HCl", "Ciprolon", "antibiotics", "Tablet · strip of 10", 9.6, 5.4, 64, 25, true, "CIP-24A19", 310, "PharmaLine Co", ["CIP-25C02", 40, 520]),
@@ -202,6 +219,20 @@ export function makeProducts(now: number): Product[] {
     { ...p("alpr05", "Alprazolam 0.5mg", "Alprazolam", "Xanax", "cns", "Tablet · strip of 15", 9.4, 4.2, 34, 12, true, "ALP-25D06", 300, "MediSource Ltd"), controlled: "C-IV" as Schedule },
     { ...p("zolp5", "Zolpidem 5mg", "Zolpidem tartrate", "Ambien", "cns", "Tablet · strip of 10", 11.6, 5.9, 18, 8, true, "ZOL-25A11", 240, "PharmaLine Co"), controlled: "C-IV" as Schedule },
   ];
+
+  /* Lot-level clearance pricing (1.4): push near-expiry Paracetamol at a discount */
+  const pcm = base.find((x) => x.id === "pcm500");
+  if (pcm) {
+    pcm.batches = pcm.batches.map((b) => (b.batch === "PCM-24E14" ? { ...b, price: 1.2 } : b));
+  }
+  /* Custom fields seeded on a handful of SKUs (6.7) */
+  const withFields: Record<string, Field[]> = {
+    insg: [{ key: "Storage", value: "2–8 °C · fridge zone B" }, { key: "Hazard class", value: "Cold chain" }],
+    oxim: [{ key: "Vendor code", value: "DP-CMD-09" }, { key: "Recall flag", value: "none" }],
+    spd50: [{ key: "Shelf life", value: "36 months" }],
+    tram50: [{ key: "Storage", value: "Locked schedule cabinet" }, { key: "Hazard class", value: "C-IV · count sheet" }],
+  };
+  return base.map((x) => (withFields[x.id] ? { ...x, fields: withFields[x.id] } : x));
 }
 
 export function makePrescriptions(now: number): Prescription[] {
@@ -233,6 +264,15 @@ export function makeCustomers(now: number): Customer[] {
     { id: "C-007", name: "Tom Alvarez", phone: "(555) 130-4486", createdAt: now - 9 * d, notes: "Guardian: mother (pickup)", points: 18 },
     { id: "C-008", name: "Ruth Bello", phone: "(555) 887-3320", createdAt: now - 2 * d, points: 6 },
     { id: "C-009", name: "Maple Family Clinic", phone: "(555) 014-9900", email: "orders@mapleclinic.org", createdAt: now - 130 * d, notes: "Resale certificate on file", points: 0, taxExempt: true },
+  ];
+}
+
+export function makeTransfers(now: number): Transfer[] {
+  const h = 3_600_000;
+  return [
+    { id: "TR-311", productId: "insg", qty: 4, toBranch: BRANCHES[0], status: "requested", createdAt: now - 2.5 * h, requestedBy: "R. Mensah, RPh", note: "Northgate running low on glargine" },
+    { id: "TR-310", productId: "ors5", qty: 24, toBranch: BRANCHES[1], status: "approved", createdAt: now - 9 * h, requestedBy: "A. Okafor" },
+    { id: "TR-309", productId: "salb", qty: 6, toBranch: BRANCHES[2], status: "shipped", createdAt: now - 26 * h, requestedBy: "D. Whitfield", note: "Flu-season demand at Harbor" },
   ];
 }
 

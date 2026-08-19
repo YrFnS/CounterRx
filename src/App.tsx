@@ -13,7 +13,7 @@ import Inventory from "./views/Inventory";
 import Prescriptions from "./views/Prescriptions";
 import History from "./views/History";
 import {
-  ICross, IRegister, IDash, IBox, IRx, IHistory, IBell, IAlert, IChevD, IRecall, IScan, IDownload, IUpload, IUsers,
+  ICross, IRegister, IDash, IBox, IRx, IHistory, IBell, IAlert, IChevD, IRecall, IScan, IDownload, IUpload, IUsers, IWifi, IWifiOff,
 } from "./icons";
 import Customers from "./views/Customers";
 
@@ -346,6 +346,17 @@ function TopBar() {
       </div>
 
       <div className="flex-1" />
+
+      {/* connection status (6.5) */}
+      <span title={state.online ? "Live sync active" : "Offline — sales are saved locally and will sync when back online"}
+        className={cx("flex items-center gap-1.5 px-2.5 py-1.5 rounded-md border text-[11px] font-semibold transition-colors",
+          state.online
+            ? "bg-pine-100/70 border-pine-200 text-pine-800"
+            : "bg-honey-100 border-honey-300 text-honey-700")}>
+        <span className={cx("w-1.5 h-1.5 rounded-full", state.online ? "bg-pine-600 anim-pulse-dot" : "bg-honey-600")} />
+        {state.online ? <IWifi size={13} /> : <IWifiOff size={13} />}
+        <span className="hidden sm:inline">{state.online ? "Online · synced" : "Offline · local"}</span>
+      </span>
 
       <span className="hidden lg:flex items-center gap-1.5 px-2.5 py-1.5 rounded-md bg-pine-100/70 border border-pine-200 text-pine-800 text-[11px] font-semibold">
         <IScan size={12} /> Barcode scanner armed · F2 to scan
