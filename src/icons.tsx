@@ -43,6 +43,9 @@ export const IX = (p: P) => (<Base {...p}><path d="m6 6 12 12M18 6 6 18" /></Bas
 export const IAlert = (p: P) => (
   <Base {...p}><path d="M12 3.5 22 20H2z" /><path d="M12 10v4M12 17v.01" /></Base>
 );
+export const IInfo = (p: P) => (
+  <Base {...p}><circle cx="12" cy="12" r="9" /><path d="M12 11v5M12 7.5v.01" /></Base>
+);
 export const IBell = (p: P) => (
   <Base {...p}><path d="M18 9a6 6 0 1 0-12 0c0 5-2 6-2 6h16s-2-1-2-6" /><path d="M10 19a2.2 2.2 0 0 0 4 0" /></Base>
 );

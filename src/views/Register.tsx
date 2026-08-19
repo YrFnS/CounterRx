@@ -1,12 +1,33 @@
 import { useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
-import { usePos, money, relTime, unitPrice } from "../store";
+import { usePos, money, relTime, unitPrice, cartTotals } from "../store";
 import { CATEGORIES, TAX_RATE, daysUntil, stockOf, nearestExpiry, bulkPct, fefoBatches } from "../data";
 import type { CategoryId, Product } from "../data";
 import { cx, Badge, Empty } from "../ui";
 import {
   ISearch, IScan, IPlus, IMinus, ITrash, IPause, IRecall, IX, ICart, IPill, IChevD, ISpark, IEdit, ITag, IUsers,
 } from "../icons";
+
+/* Tiny WebAudio "scanner beep" — the signature sound of a POS, fired on a real barcode hit. */
+let audioCtx: AudioContext | null = null;
+function playScanBeep() {
+  try {
+    audioCtx = audioCtx ?? new (window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext)();
+    if (audioCtx.state === "suspended") void audioCtx.resume();
+    const t = audioCtx.currentTime;
+    const osc = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
+    osc.type = "sine";
+    osc.frequency.setValueAtTime(1180, t);
+    osc.frequency.exponentialRampToValueAtTime(1560, t + 0.07);
+    gain.gain.setValueAtTime(0.0001, t);
+    gain.gain.exponentialRampToValueAtTime(0.12, t + 0.012);
+    gain.gain.exponentialRampToValueAtTime(0.0001, t + 0.16);
+    osc.connect(gain).connect(audioCtx.destination);
+    osc.start(t);
+    osc.stop(t + 0.18);
+  } catch { /* audio unavailable — stay silent */ }
+}
 
 type SortKey = "name" | "price" | "stock";
 
@@ -39,6 +60,7 @@ export default function Register() {
   const [noteFor, setNoteFor] = useState<string | null>(null);
   const [priceFor, setPriceFor] = useState<string | null>(null);
   const [priceVal, setPriceVal] = useState("");
+  const [scanMiss, setScanMiss] = useState(0);
   const searchRef = useRef<HTMLInputElement>(null);
 
   const saveNote = (productId: string, value: string) => {
@@ -90,14 +112,23 @@ export default function Register() {
     const hit = state.products.find((p) => p.barcode === needle || p.sku.toLowerCase() === needle.toLowerCase());
     if (hit) {
       dispatch({ type: "ADD_CART", productId: hit.id });
+      playScanBeep();
       setQ("");
+      return;
+    }
+    /* looks like a scannable code (no spaces, ≥6 chars) but nothing matched → tell the cashier */
+    const looksScannable = !/\s/.test(needle) && needle.length >= 6;
+    if (looksScannable) {
+      dispatch({ type: "TOAST", kind: "error", msg: `No SKU for code “${needle}” — check the barcode` });
+      setScanMiss((n) => n + 1);
     }
   };
 
   const cartLines = state.cart.map((c) => ({ line: c, p: product(c.productId)! })).filter((x) => x.p);
-  const subtotal = cartLines.reduce((s, x) => s + x.p.price * x.line.qty, 0);
-  const tax = (subtotal) * TAX_RATE;
-  const total = subtotal + tax;
+  /* single source of truth — matches the payment modal exactly */
+  const attachedCustomer = state.customers.find((c) => c.id === state.saleCustomerId) ?? null;
+  const totals = cartTotals(state, 0, !!attachedCustomer?.taxExempt);
+  const { subtotal, tax, total } = totals;
   const itemCount = state.cart.reduce((s, c) => s + c.qty, 0);
   const hasRx = cartLines.some((x) => x.p.rx);
 
@@ -107,7 +138,7 @@ export default function Register() {
       <section className="flex-1 min-w-0 flex flex-col lg:min-h-0">
         <div className="px-3 sm:px-5 pt-4 pb-3 space-y-3">
           <div className="flex gap-2.5 items-center">
-            <div className="relative flex-1">
+            <div key={scanMiss} className={cx("relative flex-1", scanMiss > 0 && "anim-shake")}>
               <ISearch size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-inksoft" />
               <input
                 id="pos-search" ref={searchRef} value={q}
@@ -300,7 +331,16 @@ export default function Register() {
         <div className="border-t border-mist px-4 py-4 bg-card">
           <div className="space-y-1 text-sm">
             <div className="flex justify-between text-inksoft"><span>Subtotal</span><span className="num">{money(subtotal)}</span></div>
-            <div className="flex justify-between text-inksoft"><span>Tax 8%</span><span className="num">{money(tax)}</span></div>
+            {totals.bulkSavings > 0 && (
+              <div className="flex justify-between text-honey-700 font-semibold anim-fade-up"><span>Bulk-tier savings</span><span className="num">−{money(totals.bulkSavings)}</span></div>
+            )}
+            {totals.loyaltyDeduct > 0 && (
+              <div className="flex justify-between text-pine-700 font-semibold anim-fade-up"><span>Points · {state.redeemPoints} pts</span><span className="num">−{money(totals.loyaltyDeduct)}</span></div>
+            )}
+            <div className="flex justify-between text-inksoft">
+              <span>Tax {TAX_RATE * 100}%{attachedCustomer?.taxExempt ? <span className="ml-1.5 px-1 py-px rounded bg-pine-700 text-pine-50 text-[9px] font-bold align-middle">EXEMPT</span> : null}</span>
+              <span className={cx("num", attachedCustomer?.taxExempt && "line-through text-inksoft/50")}>{money(tax)}</span>
+            </div>
             <div className="flex justify-between items-baseline pt-1.5 border-t border-dashed border-mist">
               <span className="font-display font-bold text-ink">Total</span>
               <span className="num text-[26px] font-bold text-pine-800">{money(total)}</span>

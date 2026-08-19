@@ -76,7 +76,6 @@ body {
 @keyframes growW { from { transform: scaleX(0); } to { transform: scaleX(1); } }
 @keyframes pulseDot { 0%, 100% { opacity: 1; transform: scale(1); } 50% { opacity: 0.45; transform: scale(0.72); } }
 @keyframes scanSweep { 0% { transform: translateX(-110%); } 100% { transform: translateX(220%); } }
-@keyframes shake { 0%,100%{transform:translateX(0)} 25%{transform:translateX(-4px)} 75%{transform:translateX(4px)} }
 
 .anim-fade-up { animation: fadeUp 0.35s cubic-bezier(0.22, 1, 0.36, 1) both; }
 
@@ -93,7 +92,6 @@ mark.fuzzy-hl {
 .anim-bar { transform-origin: bottom; animation: barGrow 0.7s cubic-bezier(0.22, 1, 0.36, 1) both; }
 .anim-grow-w { transform-origin: left; animation: growW 0.8s cubic-bezier(0.22, 1, 0.36, 1) both; }
 .anim-pulse-dot { animation: pulseDot 1.6s ease-in-out infinite; }
-.anim-shake { animation: shake 0.3s ease-in-out; }
 
 .scan-chip { position: relative; overflow: hidden; }
 .scan-chip::after {

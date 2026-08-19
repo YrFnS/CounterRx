@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import type { ReactNode } from "react";
 import { usePos } from "./store";
 import type { Toast } from "./store";
-import { IX, ICheck, IAlert, IPlus } from "./icons";
+import { IX, ICheck, IAlert, IInfo, IPlus } from "./icons";
 import type { Field } from "./data";
 
 export const cx = (...parts: (string | false | null | undefined)[]) =>
@@ -66,7 +66,8 @@ function ToastItem({ t }: { t: Toast }) {
   }, [t.id, dispatch]);
   const icon =
     t.kind === "success" ? <ICheck size={14} /> :
-    t.kind === "info" ? <ICheck size={14} /> : <IAlert size={14} />;
+    t.kind === "info" ? <IInfo size={14} /> :
+    t.kind === "warn" ? <IAlert size={14} /> : <IAlert size={14} />;
   const tone =
     t.kind === "success" ? "bg-pine-800 text-pine-50 border-pine-600" :
     t.kind === "info" ? "bg-ink text-paper border-ink" :
