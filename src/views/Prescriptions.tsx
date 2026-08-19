@@ -5,10 +5,10 @@ import {
 } from "@dnd-kit/core";
 import type { DragStartEvent, DragEndEvent, DragOverEvent } from "@dnd-kit/core";
 import { usePos, relTime } from "../store";
-import { stockOf, can } from "../data";
+import { stockOf, can, daysUntil } from "../data";
 import type { RxStatus, Prescription } from "../data";
 import { cx, Badge } from "../ui";
-import { IRx, ICheck, IClock, IRegister, IShield, IGrab, IRefresh, ISend } from "../icons";
+import { IRx, ICheck, IClock, IRegister, IShield, IGrab, IRefresh, ISend, IRecall } from "../icons";
 
 const FLOW: RxStatus[] = ["new", "verifying", "ready", "dispensed"];
 const LABEL: Record<RxStatus, string> = {
@@ -97,6 +97,13 @@ export default function Prescriptions() {
                     filled {r.dispensedAt ? relTime(r.dispensedAt) : "—"} · {r.prescriber}
                     {r.remindedAt && <span className="text-pine-700 font-bold"> · reminded {relTime(r.remindedAt)}</span>}
                   </p>
+                  {r.refillsRemaining !== undefined && (
+                    <p className={cx("mt-0.5 text-[10px] font-bold", r.refillsRemaining === 0 ? "text-brick-700" : "text-pine-700")}>
+                      {r.refillsRemaining === 0
+                        ? "⚠ 0 refills left — needs prescriber re-authorization"
+                        : `${r.refillsRemaining} of ${r.refillsAuthorized ?? "–"} refills remaining`}
+                    </p>
+                  )}
                   <div className="mt-2 flex gap-1.5">
                     <button onClick={() => dispatch({ type: "NEW_REFILL", rxId: r.id })}
                       className="flex-1 flex items-center justify-center gap-1 py-1.5 rounded-md bg-pine-700 text-pine-50 text-[11px] font-bold hover:bg-pine-600 transition active:scale-95">
@@ -204,6 +211,22 @@ function RxCard({ rx, ghost, overlay }: { rx: Prescription; ghost?: boolean; ove
           {!canAttach && p && shelf <= 0 && " — out of stock"}
         </p>
         <p className="text-[10px] text-inksoft">by <span className="font-semibold text-ink">{rx.prescriber}</span></p>
+
+        {rx.refillsRemaining !== undefined && (
+          <div className="mt-1.5 flex items-center gap-1.5 flex-wrap">
+            <span className={cx("num inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-bold",
+              rx.refillsRemaining === 0 ? "bg-brick-100 text-brick-700" : "bg-pine-100 text-pine-700")}>
+              <IRecall size={9} /> Refills {rx.refillsRemaining}/{rx.refillsAuthorized ?? "–"}
+            </span>
+            {rx.rxExpiry && (
+              <span className={cx("num px-1.5 py-0.5 rounded text-[9px] font-bold",
+                daysUntil(rx.rxExpiry) <= 30 ? "bg-honey-100 text-honey-700" : "bg-mist/60 text-inksoft")}>
+                Rx exp {new Date(rx.rxExpiry + "T00:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" })}
+              </span>
+            )}
+          </div>
+        )}
+
         {rx.note && (
           <p className="mt-1.5 text-[10px] leading-snug text-honey-700 bg-honey-100/70 border border-honey-300/50 rounded-md px-2 py-1">
             ⚑ {rx.note}

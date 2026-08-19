@@ -4,7 +4,7 @@ import { usePos, money, clockTime, relTime } from "../store";
 import { can } from "../data";
 import type { PayMethod, Transaction } from "../data";
 import { cx, Badge, Empty, Modal } from "../ui";
-import { IHistory, ISearch, ICash, ICard, IShield, IPill, IX, IRecall, ICalendar, IDownload, IReport } from "../icons";
+import { IHistory, ISearch, ICash, ICard, IShield, IPill, IX, IRecall, ICalendar, IDownload, IReport, IAlert } from "../icons";
 import type { AuditKind } from "../data";
 
 const REFUND_REASONS = ["Customer return", "Wrong item dispensed", "Damaged goods", "Pricing error", "Duplicate charge"];
@@ -16,6 +16,7 @@ export default function History() {
   const [refunding, setRefunding] = useState<Transaction | null>(null);
   const [shiftOpen, setShiftOpen] = useState(false);
   const [auditOpen, setAuditOpen] = useState(false);
+  const [btcOpen, setBtcOpen] = useState(false);
   const canRefund = can(state.user?.role, "refund");
 
   const rows = useMemo(() => {
@@ -66,6 +67,12 @@ export default function History() {
             className="flex items-center gap-1.5 px-3.5 py-2 rounded-lg border border-mist bg-card text-xs font-bold text-ink hover:border-pine-400 hover:bg-pine-50 transition active:scale-95">
             <IReport size={14} /> Audit trail
           </button>
+          {state.restrictedLog.length > 0 && (
+            <button onClick={() => setBtcOpen(true)}
+              className="flex items-center gap-1.5 px-3.5 py-2 rounded-lg border border-honey-400 bg-honey-100/60 text-xs font-bold text-honey-800 hover:bg-honey-100 transition active:scale-95">
+              <IAlert size={14} /> BTC log · {state.restrictedLog.length}
+            </button>
+          )}
         </div>
       </div>
 
@@ -152,6 +159,7 @@ export default function History() {
       {refunding && <RefundModal tx={refunding} onClose={() => setRefunding(null)} />}
       {shiftOpen && <ShiftModal onClose={() => setShiftOpen(false)} />}
       {auditOpen && <AuditTrail onClose={() => setAuditOpen(false)} />}
+      {btcOpen && <BtcLog onClose={() => setBtcOpen(false)} />}
     </div>
   );
 }
@@ -356,6 +364,73 @@ const KIND_META: Record<AuditKind, { label: string; dot: string }> = {
   rx: { label: "Rx", dot: "#4f7d9e" },
   system: { label: "System", dot: "#5c6b66" },
 };
+
+/* Behind-the-counter purchase log — mandatory ID-capture record (§3) */
+function BtcLog({ onClose }: { onClose: () => void }) {
+  const { state, product } = usePos();
+  const exportCsv = () => {
+    const head = ["id", "date", "time", "product", "qty", "purchaser", "id_type", "id_last4", "cashier"];
+    const rows = state.restrictedLog.map((e) => [
+      e.id, new Date(e.at).toISOString().slice(0, 10), clockTime(e.at),
+      `"${product(e.productId)?.name ?? e.productId}"`, e.qty, `"${e.purchaser}"`, e.idType, e.idLast4, `"${e.cashier}"`,
+    ].join(","));
+    const blob = new Blob([[head.join(","), ...rows].join("\n")], { type: "text/csv" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url; a.download = `btc-log-${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click(); URL.revokeObjectURL(url);
+  };
+  return (
+    <Modal onClose={onClose} width={640} labelledBy="btc-title">
+      <div className="px-5 py-4 border-b border-mist flex items-start justify-between">
+        <div>
+          <h2 id="btc-title" className="font-display font-bold text-ink flex items-center gap-2">
+            <IAlert size={17} className="text-honey-600" /> Behind-the-counter log
+          </h2>
+          <p className="text-xs text-inksoft mt-0.5">Monitored-OTC sales with purchaser ID — retained for compliance</p>
+        </div>
+        <button onClick={onClose} className="p-1.5 rounded-md hover:bg-mist/60 text-inksoft" aria-label="Close"><IX size={14} /></button>
+      </div>
+      <div className="p-5">
+        <div className="max-h-[380px] overflow-auto scroll-slim rounded-lg border border-mist">
+          <table className="w-full text-xs border-collapse min-w-[560px]">
+            <thead className="sticky top-0">
+              <tr className="bg-pine-900 text-pine-100 text-left text-[9px] uppercase tracking-[0.14em]">
+                <th className="px-3 py-2 font-bold">When</th>
+                <th className="px-2 py-2 font-bold">Product</th>
+                <th className="px-2 py-2 font-bold text-center">Qty</th>
+                <th className="px-2 py-2 font-bold">Purchaser</th>
+                <th className="px-2 py-2 font-bold">ID</th>
+                <th className="px-3 py-2 font-bold">Cashier</th>
+              </tr>
+            </thead>
+            <tbody>
+              {state.restrictedLog.map((e, i) => (
+                <tr key={e.id} className={cx("border-t border-mist/70", i % 2 === 1 && "bg-paper/60")}>
+                  <td className="px-3 py-2 num text-inksoft whitespace-nowrap">
+                    {new Date(e.at).toLocaleDateString("en-US", { month: "short", day: "numeric" })} · {clockTime(e.at)}
+                  </td>
+                  <td className="px-2 py-2 font-semibold text-ink">{product(e.productId)?.name ?? e.productId}</td>
+                  <td className="px-2 py-2 text-center num font-bold text-honey-700">{e.qty}</td>
+                  <td className="px-2 py-2 text-ink">{e.purchaser}</td>
+                  <td className="px-2 py-2 num text-inksoft">{e.idType} ····{e.idLast4}</td>
+                  <td className="px-3 py-2 text-inksoft">{e.cashier}</td>
+                </tr>
+              ))}
+              {state.restrictedLog.length === 0 && <tr><td colSpan={6} className="px-3 py-8 text-center text-inksoft">No monitored sales logged yet.</td></tr>}
+            </tbody>
+          </table>
+        </div>
+        <div className="mt-4 flex justify-end">
+          <button onClick={exportCsv}
+            className="flex items-center gap-1.5 px-4 py-2 rounded-lg bg-pine-700 text-pine-50 text-xs font-bold hover:bg-pine-600 transition active:scale-95">
+            <IDownload size={13} /> Export CSV
+          </button>
+        </div>
+      </div>
+    </Modal>
+  );
+}
 
 function AuditTrail({ onClose }: { onClose: () => void }) {
   const { state } = usePos();

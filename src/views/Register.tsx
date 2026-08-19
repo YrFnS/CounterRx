@@ -567,6 +567,7 @@ function ProductCard({ p, hl = [], flashing, flashKey, onAdd }: {
         <span className="flex items-center gap-1">
           {p.rx && <Badge tone="brick">℞</Badge>}
           {p.controlled && <span className="px-1.5 py-0.5 rounded bg-ink text-paper text-[9px] font-bold tracking-wide">{p.controlled}</span>}
+          {p.restricted && <span className="px-1.5 py-0.5 rounded bg-honey-500 text-pine-950 text-[9px] font-bold tracking-wide">BTC</span>}
         </span>
       </div>
       <p className="mt-1.5 font-display font-semibold text-[14px] text-ink leading-snug line-clamp-2 min-h-[2.5em]">

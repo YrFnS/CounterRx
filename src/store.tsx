@@ -714,11 +714,21 @@ function reducer(state: State, a: Action): State {
         a.status === "dispensed" ? `${rx.id} dispensed — logged` : `${rx.id} reopened`;
       let next: State = {
         ...state,
-        prescriptions: state.prescriptions.map((x) => (x.id === a.id
-          ? { ...x, status: a.status, dispensedAt: a.status === "dispensed" ? (x.dispensedAt ?? Date.now()) : x.dispensedAt }
-          : x)),
+        prescriptions: state.prescriptions.map((x) => {
+          if (x.id !== a.id) return x;
+          /* on dispense: stamp the time and consume one authorized refill (§3) */
+          const dispensing = a.status === "dispensed" && x.status !== "dispensed";
+          return {
+            ...x, status: a.status,
+            dispensedAt: dispensing ? (x.dispensedAt ?? Date.now()) : x.dispensedAt,
+            refillsRemaining: dispensing && x.refillsRemaining !== undefined
+              ? Math.max(0, x.refillsRemaining - 1) : x.refillsRemaining,
+          };
+        }),
       };
-      if (a.status === "dispensed") next = withAudit(next, "rx", `${rx.id} dispensed — ${rx.patient} · ${rx.qty} × ${rx.productId}`);
+      if (a.status === "dispensed") {
+        next = withAudit(next, "rx", `${rx.id} dispensed — ${rx.patient} · ${rx.qty} × ${rx.productId}${rx.refillsRemaining !== undefined ? ` · ${Math.max(0, rx.refillsRemaining - 1)} refill(s) left` : ""}`);
+      }
       return withToast(next, "success", msg);
     }
 

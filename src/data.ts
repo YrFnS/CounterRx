@@ -109,9 +109,12 @@ export type RxStatus = "new" | "verifying" | "ready" | "dispensed";
 export interface Prescription {
   id: string; patient: string; age: number; productId: string; qty: number;
   prescriber: string; status: RxStatus; createdAt: number; note?: string;
-  daysSupply?: number;      // days of therapy in this fill — drives refill radar
-  dispensedAt?: number;     // set when moved to dispensed
-  remindedAt?: number;      // last refill reminder sent
+  daysSupply?: number;        // days of therapy in this fill — drives refill radar
+  dispensedAt?: number;       // set when moved to dispensed
+  remindedAt?: number;        // last refill reminder sent
+  refillsAuthorized?: number; // total refills the prescriber allowed
+  refillsRemaining?: number;  // decremented on each dispense (§3 refill tracking)
+  rxExpiry?: string;          // ISO date the prescription itself expires
   insurance?: { plan: string; memberId: string; status: "pending" | "verified" | "rejected" };
 }
 
@@ -412,14 +415,14 @@ export function makePrescriptions(now: number): Prescription[] {
   const d = 24 * h;
   return [
     { id: "RX-2481", patient: "Marta Kessler", age: 34, productId: "amx500", qty: 2, prescriber: "Dr. I. Bello", status: "new", createdAt: now - 14 * m, note: "Take 1 capsule every 8h after food" },
-    { id: "RX-2480", patient: "Daniel Osei", age: 61, productId: "atv20", qty: 2, prescriber: "Dr. R. Vance", status: "verifying", createdAt: now - 52 * m, note: "Refill — check interaction with amlodipine", daysSupply: 30, insurance: { plan: "BlueCross PBM", memberId: "XCB-9917-31", status: "pending" } },
-    { id: "RX-2479", patient: "Priya Nair", age: 45, productId: "met500", qty: 4, prescriber: "Dr. S. Adeyemi", status: "ready", createdAt: now - 2.1 * h, daysSupply: 90 },
+    { id: "RX-2480", patient: "Daniel Osei", age: 61, productId: "atv20", qty: 2, prescriber: "Dr. R. Vance", status: "verifying", createdAt: now - 52 * m, note: "Refill — check interaction with amlodipine", daysSupply: 30, refillsAuthorized: 5, refillsRemaining: 2, rxExpiry: iso(now + 180 * d), insurance: { plan: "BlueCross PBM", memberId: "XCB-9917-31", status: "pending" } },
+    { id: "RX-2479", patient: "Priya Nair", age: 45, productId: "met500", qty: 4, prescriber: "Dr. S. Adeyemi", status: "ready", createdAt: now - 2.1 * h, daysSupply: 90, refillsAuthorized: 3, refillsRemaining: 3, rxExpiry: iso(now + 320 * d) },
     { id: "RX-2478", patient: "Tom Alvarez", age: 8, productId: "salb", qty: 1, prescriber: "Dr. I. Bello", status: "ready", createdAt: now - 3.4 * h, note: "Guardian pickup — mother" },
     { id: "RX-2477", patient: "Grace Lin", age: 52, productId: "insg", qty: 2, prescriber: "Dr. S. Adeyemi", status: "verifying", createdAt: now - 5.2 * h, note: "Cold-chain — keep refrigerated", daysSupply: 28, insurance: { plan: "Aetna Rx", memberId: "AET-8830-19", status: "pending" } },
     { id: "RX-2476", patient: "Samuel Eze", age: 29, productId: "azi250", qty: 1, prescriber: "Dr. R. Vance", status: "dispensed", createdAt: now - 8.6 * h, dispensedAt: now - 8.6 * h, daysSupply: 6 },
     /* maintenance fills from earlier this month — feed the refill radar */
-    { id: "RX-2441", patient: "Helen Okafor", age: 67, productId: "atv20", qty: 2, prescriber: "Dr. R. Vance", status: "dispensed", createdAt: now - 29 * d, dispensedAt: now - 29 * d, daysSupply: 30, note: "Monthly maintenance — auto-refill allowed", insurance: { plan: "BlueCross PBM", memberId: "XCB-4471-02", status: "verified" } },
-    { id: "RX-2436", patient: "Victor Adeyemi", age: 58, productId: "met500", qty: 4, prescriber: "Dr. S. Adeyemi", status: "dispensed", createdAt: now - 33 * d, dispensedAt: now - 33 * d, daysSupply: 30, insurance: { plan: "MediPlan Rx", memberId: "MPX-2210-44", status: "verified" } },
+    { id: "RX-2441", patient: "Helen Okafor", age: 67, productId: "atv20", qty: 2, prescriber: "Dr. R. Vance", status: "dispensed", createdAt: now - 29 * d, dispensedAt: now - 29 * d, daysSupply: 30, refillsAuthorized: 5, refillsRemaining: 1, rxExpiry: iso(now + 150 * d), note: "Monthly maintenance — auto-refill allowed", insurance: { plan: "BlueCross PBM", memberId: "XCB-4471-02", status: "verified" } },
+    { id: "RX-2436", patient: "Victor Adeyemi", age: 58, productId: "met500", qty: 4, prescriber: "Dr. S. Adeyemi", status: "dispensed", createdAt: now - 33 * d, dispensedAt: now - 33 * d, daysSupply: 30, refillsAuthorized: 3, refillsRemaining: 0, rxExpiry: iso(now + 60 * d), insurance: { plan: "MediPlan Rx", memberId: "MPX-2210-44", status: "verified" } },
   ];
 }
 
