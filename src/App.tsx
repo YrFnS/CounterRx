@@ -2,8 +2,8 @@ import { useEffect, useRef, useState } from "react";
 import type { ReactNode, ChangeEvent } from "react";
 import { PosProvider, usePos } from "./store";
 import type { View } from "./store";
-import { CASHIER, STORE, daysUntil, nearestExpiry, stockOf } from "./data";
-import type { Product, Transaction, Prescription } from "./data";
+import { CASHIER, STORE, daysUntil, nearestExpiry, stockOf, USERS } from "./data";
+import type { Product, Transaction, Prescription, User } from "./data";
 import { cx } from "./ui";
 import { PaymentModal, ReceiptModal } from "./modals";
 import { ToastHost } from "./ui";
@@ -43,8 +43,129 @@ export default function App() {
   );
 }
 
+/* ------------------------------------------------------------------ */
+/*  Lock screen — multi-user PIN sign-in (6.1)                         */
+/* ------------------------------------------------------------------ */
+function LockScreen() {
+  const { dispatch } = usePos();
+  const [selected, setSelected] = useState<User>(USERS[0]);
+  const [pin, setPin] = useState("");
+  const [shake, setShake] = useState(false);
+  const [error, setError] = useState(false);
+
+  const submit = (code: string) => {
+    if (code === selected.pin) {
+      dispatch({ type: "LOGIN", user: selected });
+    } else {
+      setError(true);
+      setShake(true);
+      setPin("");
+      setTimeout(() => setShake(false), 450);
+    }
+  };
+
+  const press = (d: string) => {
+    setError(false);
+    const next = (pin + d).slice(0, 4);
+    setPin(next);
+    if (next.length === 4) setTimeout(() => submit(next), 120);
+  };
+
+  /* physical keyboard support */
+  useEffect(() => {
+    const h = (e: KeyboardEvent) => {
+      if (/^[0-9]$/.test(e.key)) press(e.key);
+      if (e.key === "Backspace") { setError(false); setPin((p) => p.slice(0, -1)); }
+      if (e.key === "Enter" && pin.length === 4) submit(pin);
+    };
+    window.addEventListener("keydown", h);
+    return () => window.removeEventListener("keydown", h);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pin, selected]);
+
+  const roleTone: Record<User["role"], string> = {
+    cashier: "bg-pine-700 text-pine-100",
+    pharmacist: "bg-honey-500 text-pine-950",
+    manager: "bg-brick-500 text-brick-100",
+  };
+
+  return (
+    <div className="h-full grid place-items-center px-6 relative overflow-hidden">
+      <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[820px] h-[420px] rounded-full bg-pine-200/25 blur-[110px] pointer-events-none" />
+      <div className="w-full max-w-[380px] relative">
+        <div className="text-center mb-5">
+          <span className="inline-grid place-items-center w-14 h-14 rounded-2xl bg-pine-800 text-pine-50 shadow-pop mx-auto">
+            <ICross size={28} />
+          </span>
+          <h1 className="font-display font-bold text-[26px] text-ink mt-3 tracking-tight">CounterRx</h1>
+          <p className="text-[11px] font-bold uppercase tracking-[0.22em] text-inksoft mt-0.5">Terminal 01 · locked</p>
+        </div>
+
+        <div className="bg-card border border-mist rounded-2xl shadow-pop p-5">
+          <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-inksoft mb-2">Who's on the till?</p>
+          <div className="grid grid-cols-3 gap-2">
+            {USERS.map((u) => (
+              <button key={u.id} onClick={() => { setSelected(u); setPin(""); setError(false); }}
+                className={cx("flex flex-col items-center gap-1.5 p-2.5 rounded-xl border-2 transition-all duration-200",
+                  selected.id === u.id
+                    ? "border-pine-600 bg-pine-50 shadow-lift -translate-y-0.5"
+                    : "border-mist bg-paper hover:border-pine-300")}>
+                <span className="grid place-items-center w-9 h-9 rounded-full bg-pine-900 text-pine-100 font-display font-bold text-xs">
+                  {u.initials}
+                </span>
+                <span className="text-[11px] font-bold text-ink leading-tight text-center">{u.name.replace(", RPh", "")}</span>
+                <span className={cx("px-1.5 py-0.5 rounded text-[8px] font-bold uppercase tracking-wide", roleTone[u.role])}>{u.role}</span>
+              </button>
+            ))}
+          </div>
+
+          <div className={cx("mt-5 flex justify-center gap-3", shake && "anim-shake")}>
+            {[0, 1, 2, 3].map((i) => (
+              <span key={i}
+                className={cx("w-3.5 h-3.5 rounded-full border-2 transition-all duration-150",
+                  error ? "border-brick-500 bg-brick-500" : i < pin.length ? "border-pine-700 bg-pine-700 scale-110" : "border-inksoft/40")} />
+            ))}
+          </div>
+          <p className={cx("text-center text-[11px] mt-2 h-4 font-semibold transition-colors", error ? "text-brick-700" : "text-inksoft/70")}>
+            {error ? "Wrong PIN — try again" : `Enter ${selected.name.split(",")[0]}'s 4-digit PIN`}
+          </p>
+
+          <div className="mt-4 grid grid-cols-3 gap-2">
+            {["1", "2", "3", "4", "5", "6", "7", "8", "9"].map((d) => (
+              <button key={d} onClick={() => press(d)}
+                className="py-3 rounded-xl bg-paper border border-mist font-display font-bold text-lg text-ink hover:bg-pine-50 hover:border-pine-300 active:scale-95 active:bg-pine-100 transition-all duration-100">
+                {d}
+              </button>
+            ))}
+            <button onClick={() => { setError(false); setPin(""); }}
+              className="py-3 rounded-xl bg-paper border border-mist text-[11px] font-bold text-inksoft hover:bg-brick-100 hover:text-brick-700 hover:border-brick-300 active:scale-95 transition-all duration-100">
+              CLR
+            </button>
+            <button onClick={() => press("0")}
+              className="py-3 rounded-xl bg-paper border border-mist font-display font-bold text-lg text-ink hover:bg-pine-50 hover:border-pine-300 active:scale-95 transition-all duration-100">
+              0
+            </button>
+            <button onClick={() => { setError(false); setPin((p) => p.slice(0, -1)); }}
+              className="py-3 rounded-xl bg-paper border border-mist grid place-items-center text-inksoft hover:bg-honey-100 hover:text-honey-700 hover:border-honey-300 active:scale-95 transition-all duration-100"
+              aria-label="Delete digit">
+              <IChevD size={16} className="rotate-90" />
+            </button>
+          </div>
+        </div>
+
+        <p className="text-center text-[10px] text-inksoft mt-4 num">
+          Demo PINs — cashier <span className="font-bold text-ink">1111</span> · pharmacist <span className="font-bold text-ink">2222</span> · manager <span className="font-bold text-ink">3333</span>
+        </p>
+      </div>
+    </div>
+  );
+}
+
 function Shell() {
   const { state, dispatch, lowStock, expiring, newRx } = usePos();
+
+  /* multi-user session — the till locks until someone signs in */
+  if (!state.user) return <LockScreen />;
 
   /* global keyboard shortcuts */
   useEffect(() => {
@@ -145,9 +266,23 @@ function Shell() {
 
         <div className="relative px-4 pb-4 space-y-3">
           <div className="bg-pine-900/80 border border-pine-800 rounded-lg px-3 py-2.5">
-            <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-pine-300">On shift</p>
-            <p className="text-[13px] font-semibold text-paper mt-0.5">{CASHIER}</p>
-            <p className="text-[10px] text-pine-300 num">Terminal 01 · drawer synced</p>
+            <div className="flex items-center justify-between">
+              <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-pine-300">On shift</p>
+              <span className={cx("px-1.5 py-0.5 rounded text-[8px] font-bold uppercase tracking-wide",
+                state.user.role === "pharmacist" ? "bg-honey-500 text-pine-950"
+                  : state.user.role === "manager" ? "bg-brick-500 text-brick-100"
+                  : "bg-pine-700 text-pine-100")}>
+                {state.user.role}
+              </span>
+            </div>
+            <p className="text-[13px] font-semibold text-paper mt-0.5">{state.user.name}</p>
+            <div className="flex items-center justify-between mt-0.5">
+              <p className="text-[10px] text-pine-300 num">Terminal 01 · drawer synced</p>
+              <button onClick={() => dispatch({ type: "LOGOUT" })}
+                className="text-[10px] font-bold text-pine-300 hover:text-paper underline underline-offset-2 transition">
+                Switch
+              </button>
+            </div>
           </div>
           <div className="grid grid-cols-2 gap-2">
             <button onClick={backup}

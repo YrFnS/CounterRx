@@ -5,7 +5,7 @@ import { usePos, money, cartTotals } from "./store";
 import { TAX_RATE, STORE, REDEEM_CHUNK_PTS, REDEEM_CHUNK_VALUE } from "./data";
 import type { PayMethod, PaymentLeg, Transaction } from "./data";
 import { Modal, cx } from "./ui";
-import { ICash, ICard, IShield, IX, IPrint, ICheck, ISplit, IUsers, IStar } from "./icons";
+import { ICash, ICard, IShield, IX, IPrint, ICheck, ISplit, IUsers, IStar, IAlert } from "./icons";
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
 
@@ -17,9 +17,13 @@ export function PaymentModal() {
   const [leg1Amt, setLeg1Amt] = useState("");
   const [discountPct, setDiscountPct] = useState(0);
   const [tendered, setTendered] = useState("");
+  const [exemptToggle, setExemptToggle] = useState(false);
+  const [idChecked, setIdChecked] = useState(false);
 
-  const t = useMemo(() => cartTotals(state, discountPct), [state, discountPct]);
   const customer = state.customers.find((c) => c.id === state.saleCustomerId) ?? null;
+  const taxExempt = !!(customer?.taxExempt || exemptToggle);
+  const t = useMemo(() => cartTotals(state, discountPct, taxExempt), [state, discountPct, taxExempt]);
+  const hasControlled = state.cart.some((c) => product(c.productId)?.controlled);
   /* redeemable chunks: 100 pts = $5, capped by payable balance */
   const payableNow = Math.max(0, t.subtotal - t.bulkSavings - t.discount);
   const maxChunks = customer ? Math.min(Math.floor(customer.points / REDEEM_CHUNK_PTS), Math.floor(payableNow / REDEEM_CHUNK_VALUE)) : 0;
@@ -30,7 +34,9 @@ export function PaymentModal() {
   const l1 = Math.min(Math.max(0, parseFloat(leg1Amt) || 0), t.total);
   const l2 = round2(t.total - l1);
   const splitValid = split && l1 > 0 && l2 > 0;
-  const canConfirm = split ? splitValid : leg1 !== "cash" || tenderedNum >= t.total;
+  const paymentOk = split ? splitValid : leg1 !== "cash" || tenderedNum >= t.total;
+  const controlledOk = !hasControlled || (!!customer && idChecked);
+  const canConfirm = paymentOk && controlledOk;
   const hasRx = state.cart.some((c) => product(c.productId)?.rx);
 
   const methods: { id: PayMethod; label: string; icon: ReactNode; hint: string }[] = [
@@ -46,7 +52,7 @@ export function PaymentModal() {
       ? [{ method: leg1, amount: round2(l1) }, { method: leg2, amount: l2 }]
       : [{ method: leg1, amount: t.total }];
     dispatch({
-      type: "COMPLETE_SALE", payments, discountPct,
+      type: "COMPLETE_SALE", payments, discountPct, taxExempt, idChecked,
       tendered: !split && leg1 === "cash" ? tenderedNum : undefined,
     });
   };
@@ -89,7 +95,20 @@ export function PaymentModal() {
               </span>
             </div>
             {t.loyaltyDeduct > 0 && <Row k={<span className="text-pine-700 font-semibold">Points redeemed · {state.redeemPoints} pts</span>} v={<span className="text-pine-700">−{money(t.loyaltyDeduct)}</span>} />}
-            <Row k={`Tax (${(TAX_RATE * 100).toFixed(0)}%)`} v={money(t.tax)} />
+            <Row
+              k={
+                <span className="flex items-center gap-2">
+                  {`Tax (${(TAX_RATE * 100).toFixed(0)}%)`}
+                  {taxExempt && <span className="px-1.5 py-px rounded bg-pine-700 text-pine-50 text-[9px] font-bold tracking-wide">EXEMPT</span>}
+                  {!taxExempt && !customer?.taxExempt && (
+                    <button onClick={() => setExemptToggle(true)}
+                      className="text-[9px] font-bold uppercase tracking-wide text-inksoft hover:text-pine-700 border border-mist hover:border-pine-400 rounded px-1 py-px transition">
+                      exempt
+                    </button>
+                  )}
+                </span>
+              }
+              v={<span className={taxExempt ? "line-through text-inksoft" : ""}>{money(taxExempt ? round2(t.tax === 0 ? (t.subtotal - t.bulkSavings - t.discount - t.loyaltyDeduct) * TAX_RATE : t.tax) : t.tax)}</span>} />
             <div className="receipt-dash pt-2 mt-2">
               <Row k={<span className="font-semibold text-ink">Total</span>} v={<span className="font-bold text-pine-800">{money(t.total)}</span>} />
             </div>
@@ -112,6 +131,35 @@ export function PaymentModal() {
                   <span className="flex items-center gap-1.5"><IStar size={12} /> {redeeming ? `Redeeming ${state.redeemPoints} pts` : `Redeem ${maxChunks * REDEEM_CHUNK_PTS} pts`}</span>
                   <span className="num">{redeeming ? `−${money(t.loyaltyDeduct)} ✓` : `−${money(maxChunks * REDEEM_CHUNK_VALUE)}`}</span>
                 </button>
+              )}
+              {customer.taxExempt && (
+                <p className="mt-2 flex items-center gap-1.5 text-[10px] font-bold text-pine-700">
+                  <ICheck size={11} /> Tax-exempt account — resale certificate on file
+                </p>
+              )}
+            </div>
+          )}
+
+          {hasControlled && (
+            <div className="mt-3 rounded-lg border-2 border-brick-400 bg-brick-100/60 px-3 py-2.5 anim-fade-up">
+              <p className="text-xs font-bold text-brick-800 flex items-center gap-1.5">
+                <IAlert size={13} className="shrink-0" /> Controlled substance — DEA record required
+              </p>
+              {!customer ? (
+                <p className="text-[11px] text-brick-700 mt-1 font-semibold">
+                  Attach a customer on the register before payment — photo ID must be sighted.
+                </p>
+              ) : (
+                <label className="mt-1.5 flex items-center gap-2 cursor-pointer select-none">
+                  <button onClick={() => setIdChecked(!idChecked)} aria-pressed={idChecked}
+                    className={cx("grid place-items-center w-5 h-5 rounded border-2 transition-all",
+                      idChecked ? "bg-pine-700 border-pine-700 text-pine-50 scale-105" : "bg-card border-brick-400")}>
+                    {idChecked && <ICheck size={11} />}
+                  </button>
+                  <span className={cx("text-[11px] font-bold", idChecked ? "text-pine-800" : "text-brick-700")}>
+                    I sighted {customer.name}'s photo ID — log the sale
+                  </span>
+                </label>
               )}
             </div>
           )}
@@ -318,7 +366,10 @@ function ReceiptBody({ tx }: { tx: Transaction }) {
       {tx.bulkSavings && tx.bulkSavings > 0 && <div className="flex justify-between"><span>Bulk-tier savings</span><span>−{money(tx.bulkSavings)}</span></div>}
       {tx.discount > 0 && <div className="flex justify-between"><span>Discount</span><span>−{money(tx.discount)}</span></div>}
       {tx.loyaltyDeduct && tx.loyaltyDeduct > 0 && <div className="flex justify-between"><span>Points · {tx.pointsRedeemed} pts</span><span>−{money(tx.loyaltyDeduct)}</span></div>}
-      <div className="flex justify-between"><span>Tax 8%</span><span>{money(tx.tax)}</span></div>
+      <div className="flex justify-between">
+        <span>Tax 8%{tx.taxExempt && <span className="ml-1 px-1 py-px bg-ink text-paper text-[8px] font-bold tracking-widest">EXEMPT</span>}</span>
+        <span className={tx.taxExempt ? "text-inksoft" : ""}>{money(tx.tax)}</span>
+      </div>
       <div className="flex justify-between font-bold text-[14px] mt-1"><span>TOTAL</span><span>{money(tx.total)}</span></div>
       <div className="receipt-dash my-3" />
       {(tx.payments ?? [{ method: tx.method, amount: tx.total }]).map((pg, i) => (

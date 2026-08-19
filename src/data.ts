@@ -4,7 +4,7 @@
 
 export type CategoryId =
   | "antibiotics" | "pain" | "coldflu" | "vitamins" | "diabetes"
-  | "cardio" | "derma" | "devices" | "firstaid" | "baby";
+  | "cardio" | "derma" | "devices" | "firstaid" | "baby" | "cns";
 
 export const CATEGORIES: { id: CategoryId; label: string; dot: string }[] = [
   { id: "antibiotics", label: "Antibiotics", dot: "#c24a2e" },
@@ -14,6 +14,7 @@ export const CATEGORIES: { id: CategoryId; label: string; dot: string }[] = [
   { id: "diabetes", label: "Diabetes", dot: "#4f7d9e" },
   { id: "cardio", label: "Cardio", dot: "#a05a79" },
   { id: "derma", label: "Skin care", dot: "#c98d5f" },
+  { id: "cns", label: "CNS & sleep", dot: "#6b7f8c" },
   { id: "devices", label: "Devices", dot: "#5c6b66" },
   { id: "firstaid", label: "First aid", dot: "#b8543f" },
   { id: "baby", label: "Baby care", dot: "#8a7fb5" },
@@ -21,6 +22,8 @@ export const CATEGORIES: { id: CategoryId; label: string; dot: string }[] = [
 
 /** A single stock lot on the shelf. Sales consume lots FEFO — first expiry, first out. */
 export interface Batch { batch: string; expiry: string; qty: number; }
+
+export type Schedule = "C-II" | "C-III" | "C-IV" | "C-V";
 
 export interface Product {
   id: string; sku: string; barcode: string;
@@ -31,6 +34,7 @@ export interface Product {
   rx: boolean;
   supplier: string;
   batches: Batch[];
+  controlled?: Schedule; // DEA schedule — ID + audit requirements at the till
 }
 
 export const stockOf = (p: Product): number => p.batches.reduce((s, b) => s + b.qty, 0);
@@ -86,6 +90,7 @@ export interface Transaction {
   refundedAt?: number;   // original sale was refunded
   refundOf?: string;     // this record is the refund of the given sale
   reason?: string;
+  taxExempt?: boolean;
   customerId?: string;
   bulkSavings?: number;      // quantity-tier savings across lines
   loyaltyDeduct?: number;    // value of redeemed points
@@ -107,7 +112,15 @@ export interface Customer {
   id: string; name: string; phone: string; email?: string;
   createdAt: number; notes?: string;
   points: number;           // loyalty balance — 1 pt per $1, 100 pts redeems $5
+  taxExempt?: boolean;      // clinics / gov accounts — sales post tax-free
 }
+
+export interface User { id: string; name: string; role: "cashier" | "pharmacist" | "manager"; pin: string; initials: string; }
+export const USERS: User[] = [
+  { id: "U1", name: "A. Okafor", role: "cashier", pin: "1111", initials: "AO" },
+  { id: "U2", name: "R. Mensah, RPh", role: "pharmacist", pin: "2222", initials: "RM" },
+  { id: "U3", name: "D. Whitfield", role: "manager", pin: "3333", initials: "DW" },
+];
 
 export type AuditKind = "sale" | "stock" | "money" | "rx" | "system";
 export interface AuditEntry { id: number; at: number; actor: string; kind: AuditKind; detail: string; }
@@ -183,6 +196,11 @@ export function makeProducts(now: number): Product[] {
     p("salb", "Salbutamol Inhaler", "Salbutamol 100mcg", "Ventolin", "coldflu", "Inhaler · 200 doses", 14.8, 9.1, 22, 10, true, "VNT-25I06", 28, "ColdChain Direct", ["VNT-25N19", 14, 190]),
     p("babyl", "Baby Lotion", "Gentle moisturizing lotion", "Johnson's", "baby", "Lotion · 200ml", 6.2, 3.5, 68, 20, false, "JNJ-25J18", 430, "Vital Trade"),
     p("gripe", "Gripe Water", "Dill oil preparation", "Woodward's", "baby", "Liquid · 200ml", 3.6, 1.7, 90, 25, false, "WWD-25K21", 350, "Apex Distributors"),
+    /* controlled substances — DEA scheduled, ID + audit at the till */
+    { ...p("tram50", "Tramadol 50mg", "Tramadol HCl", "Ultram", "pain", "Tablet · strip of 10", 7.2, 3.8, 46, 15, true, "TRM-25C18", 260, "MediSource Ltd"), controlled: "C-IV" as Schedule },
+    { ...p("codsyr", "Codeine Cough Syrup", "Codeine phosphate 10mg/5ml", "Cheratussin AC", "coldflu", "Syrup · 118ml", 8.9, 4.6, 28, 10, true, "COD-25B09", 190, "Apex Distributors"), controlled: "C-V" as Schedule },
+    { ...p("alpr05", "Alprazolam 0.5mg", "Alprazolam", "Xanax", "cns", "Tablet · strip of 15", 9.4, 4.2, 34, 12, true, "ALP-25D06", 300, "MediSource Ltd"), controlled: "C-IV" as Schedule },
+    { ...p("zolp5", "Zolpidem 5mg", "Zolpidem tartrate", "Ambien", "cns", "Tablet · strip of 10", 11.6, 5.9, 18, 8, true, "ZOL-25A11", 240, "PharmaLine Co"), controlled: "C-IV" as Schedule },
   ];
 }
 
@@ -214,6 +232,7 @@ export function makeCustomers(now: number): Customer[] {
     { id: "C-006", name: "Grace Lin", phone: "(555) 655-7702", createdAt: now - 23 * d, notes: "Insulin — cold chain pickup", points: 71 },
     { id: "C-007", name: "Tom Alvarez", phone: "(555) 130-4486", createdAt: now - 9 * d, notes: "Guardian: mother (pickup)", points: 18 },
     { id: "C-008", name: "Ruth Bello", phone: "(555) 887-3320", createdAt: now - 2 * d, points: 6 },
+    { id: "C-009", name: "Maple Family Clinic", phone: "(555) 014-9900", email: "orders@mapleclinic.org", createdAt: now - 130 * d, notes: "Resale certificate on file", points: 0, taxExempt: true },
   ];
 }
 

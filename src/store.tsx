@@ -6,7 +6,7 @@ import {
   bulkPct, REDEEM_CHUNK_PTS, REDEEM_CHUNK_VALUE,
 } from "./data";
 import type {
-  Product, Transaction, Prescription, Customer, AuditEntry, AuditKind,
+  Product, Transaction, Prescription, Customer, AuditEntry, AuditKind, User,
   HeldSale, TxLine, PayMethod, PaymentLeg, RxStatus, Batch,
 } from "./data";
 
@@ -16,6 +16,7 @@ export type InventoryPreset = "all" | "low" | "expiring";
 export interface Toast { id: number; kind: "success" | "warn" | "error" | "info"; msg: string; }
 
 interface State {
+  user: User | null;
   products: Product[];
   transactions: Transaction[];
   prescriptions: Prescription[];
@@ -35,6 +36,8 @@ interface State {
 }
 
 type Action =
+  | { type: "LOGIN"; user: User }
+  | { type: "LOGOUT" }
   | { type: "GO"; view: View; invPreset?: InventoryPreset }
   | { type: "ADD_CART"; productId: string }
   | { type: "SET_QTY"; productId: string; qty: number }
@@ -44,7 +47,7 @@ type Action =
   | { type: "RECALL_HELD"; id: string }
   | { type: "DROP_HELD"; id: string }
   | { type: "OPEN_PAY"; open: boolean }
-  | { type: "COMPLETE_SALE"; payments: PaymentLeg[]; tendered?: number; discountPct: number }
+  | { type: "COMPLETE_SALE"; payments: PaymentLeg[]; tendered?: number; discountPct: number; taxExempt: boolean; idChecked: boolean }
   | { type: "OPEN_RECEIPT"; tx: Transaction | null }
   | { type: "ADJUST_BATCH"; productId: string; batch: string; newQty: number; reason: string }
   | { type: "RESTOCK"; productId: string; amount: number; batch: string; expiry: string }
@@ -88,7 +91,7 @@ const LS_KEY = "counterrx:v4";
 
 function load(): State {
   const base: State = {
-    ...seed(), cart: [], held: [], saleCustomerId: null, redeemPoints: 0,
+    ...seed(), user: null, cart: [], held: [], saleCustomerId: null, redeemPoints: 0,
     view: "register", invPreset: "all",
     payOpen: false, receipt: null, toasts: [], flashId: null, flashKey: 0,
   };
@@ -111,7 +114,7 @@ function load(): State {
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
 
-export function cartTotals(state: State, discountPct: number) {
+export function cartTotals(state: State, discountPct: number, taxExempt = false) {
   const lines: TxLine[] = state.cart.map((c) => {
     const p = state.products.find((x) => x.id === c.productId)!;
     const overridden = c.priceOverride !== undefined && c.priceOverride > 0 && c.priceOverride !== p.price;
@@ -130,7 +133,7 @@ export function cartTotals(state: State, discountPct: number) {
   /* loyalty redemption — chunks of 100 pts = $5, capped by the payable balance */
   const payable = Math.max(0, subtotal - bulkSavings - discount);
   const loyaltyDeduct = round2(Math.min((state.redeemPoints / REDEEM_CHUNK_PTS) * REDEEM_CHUNK_VALUE, payable));
-  const tax = round2((payable - loyaltyDeduct) * TAX_RATE);
+  const tax = taxExempt ? 0 : round2((payable - loyaltyDeduct) * TAX_RATE);
   return {
     lines, subtotal, bulkSavings, discount, loyaltyDeduct, tax,
     total: round2(payable - loyaltyDeduct + tax),
@@ -142,11 +145,21 @@ function withToast(s: State, kind: Toast["kind"], msg: string): State {
 }
 
 function withAudit(s: State, kind: AuditKind, detail: string): State {
-  return { ...s, audit: [{ id: auditSeq++, at: Date.now(), actor: CASHIER, kind, detail }, ...s.audit].slice(0, 250) };
+  return { ...s, audit: [{ id: auditSeq++, at: Date.now(), actor: s.user?.name ?? CASHIER, kind, detail }, ...s.audit].slice(0, 250) };
 }
 
 function reducer(state: State, a: Action): State {
   switch (a.type) {
+    case "LOGIN":
+      return withAudit(
+        withToast({ ...state, user: a.user }, "success", `Signed in — ${a.user.name} (${a.user.role})`),
+        "system", `${a.user.name} signed in · role ${a.user.role} · Terminal 01`);
+
+    case "LOGOUT":
+      return withAudit(
+        withToast({ ...state, user: null, payOpen: false }, "info", `${state.user?.name ?? "User"} signed out — terminal locked`),
+        "system", `${state.user?.name ?? "User"} signed out`);
+
     case "GO":
       return { ...state, view: a.view, invPreset: a.invPreset ?? state.invPreset, payOpen: false };
 
@@ -213,7 +226,14 @@ function reducer(state: State, a: Action): State {
 
     case "COMPLETE_SALE": {
       if (state.cart.length === 0) return state;
-      const t = cartTotals(state, a.discountPct);
+      const t = cartTotals(state, a.discountPct, a.taxExempt);
+      const customer = state.customers.find((c) => c.id === state.saleCustomerId) ?? null;
+      /* DEA controlled substances — require an identified customer and an ID check */
+      const controlledLines = t.lines.filter((l) => state.products.find((p) => p.id === l.productId)?.controlled);
+      if (controlledLines.length > 0) {
+        if (!customer) return withToast(state, "error", "Controlled substance in cart — attach a customer (photo ID required)");
+        if (!a.idChecked) return withToast(state, "error", "Confirm the ID check before completing a controlled sale");
+      }
       /* guard: every cart line must be coverable by on-hand lots */
       for (const l of t.lines) {
         const p = state.products.find((x) => x.id === l.productId)!;
@@ -231,7 +251,6 @@ function reducer(state: State, a: Action): State {
       const singleCash = a.payments.length === 1 && primary.method === "cash";
       /* loyalty: earn 1 pt/$1, spend redeemed points */
       const pointsEarned = Math.floor(t.total);
-      const customer = state.customers.find((c) => c.id === state.saleCustomerId) ?? null;
       const customers = customer
         ? state.customers.map((c) => (c.id === customer.id
             ? { ...c, points: Math.max(0, c.points + pointsEarned - state.redeemPoints) }
@@ -241,7 +260,8 @@ function reducer(state: State, a: Action): State {
         id: `T-${Date.now().toString(36).toUpperCase().slice(-6)}`,
         at: Date.now(), lines: t.lines,
         subtotal: t.subtotal, discount: t.discount, tax: t.tax, total: t.total,
-        method: primary.method, cashier: CASHIER,
+        method: primary.method, cashier: state.user?.name ?? CASHIER,
+        taxExempt: a.taxExempt || undefined,
         payments: a.payments.length > 1 ? a.payments : undefined,
         tendered: singleCash ? (a.tendered ?? primary.amount) : undefined,
         change: singleCash ? round2((a.tendered ?? primary.amount) - t.total) : undefined,
@@ -261,7 +281,10 @@ function reducer(state: State, a: Action): State {
         cart: [], payOpen: false, receipt: tx,
         saleCustomerId: null, redeemPoints: 0,
       };
-      next = withAudit(next, "sale", `${tx.id} · $${t.total.toFixed(2)} · ${tenderLabel}${customer ? ` · ${customer.name}` : ""}`);
+      next = withAudit(next, "sale", `${tx.id} · $${t.total.toFixed(2)} · ${tenderLabel}${customer ? ` · ${customer.name}` : ""}${a.taxExempt ? " · TAX EXEMPT" : ""}`);
+      if (controlledLines.length > 0 && customer) {
+        next = withAudit(next, "rx", `⚠ Controlled sale ${tx.id} — ${controlledLines.map((l) => `${l.name} ×${l.qty}`).join(", ")} · ${customer.name} · ID verified ✓`);
+      }
       return withToast(next, "success", `Payment captured — ${tx.id} · $${t.total.toFixed(2)} · ${tenderLabel}${ptsLabel}`);
     }
 
@@ -340,6 +363,9 @@ function reducer(state: State, a: Action): State {
     case "VERIFY_RX": {
       const rx = state.prescriptions.find((x) => x.id === a.id);
       if (!rx?.insurance) return state;
+      if (state.user?.role === "cashier") {
+        return withToast(state, "error", "Eligibility checks require a pharmacist or manager sign-in");
+      }
       /* simulated PBM adjudication — member ids ending in 9 fail eligibility */
       const ok = !/9$/.test(rx.insurance.memberId);
       const status = ok ? "verified" as const : "rejected" as const;

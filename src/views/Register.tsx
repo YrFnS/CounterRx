@@ -228,6 +228,7 @@ export default function Register() {
                   <QtyBtn onClick={() => dispatch({ type: "ADD_CART", productId: p.id })} label="Increase" disabled={line.qty >= stockOf(p)}><IPlus size={12} /></QtyBtn>
                   {line.qty >= stockOf(p) && <Badge tone="honey">max</Badge>}
                   {p.rx && <Badge tone="brick">℞</Badge>}
+                  {p.controlled && <span className="px-1.5 py-0.5 rounded bg-ink text-paper text-[9px] font-bold tracking-wide">{p.controlled}</span>}
                 </div>
                 <button onClick={() => dispatch({ type: "REMOVE_LINE", productId: p.id })}
                   className="p-1.5 rounded-md text-inksoft opacity-40 group-hover:opacity-100 hover:text-brick-700 hover:bg-brick-100 transition" aria-label={`Remove ${p.name}`}>
@@ -508,7 +509,10 @@ function ProductCard({ p, hl = [], flashing, flashKey, onAdd }: {
           <span className="w-2 h-2 rounded-full" style={{ background: CATEGORIES.find((c) => c.id === p.category)?.dot }} />
           {p.brand}
         </span>
-        {p.rx && <Badge tone="brick">℞</Badge>}
+        <span className="flex items-center gap-1">
+          {p.rx && <Badge tone="brick">℞</Badge>}
+          {p.controlled && <span className="px-1.5 py-0.5 rounded bg-ink text-paper text-[9px] font-bold tracking-wide">{p.controlled}</span>}
+        </span>
       </div>
       <p className="mt-1.5 font-display font-semibold text-[14px] text-ink leading-snug line-clamp-2 min-h-[2.5em]">
         <Highlight text={p.name} idx={hl} />

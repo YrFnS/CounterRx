@@ -5,7 +5,7 @@ import type { CategoryId, Product, Batch } from "../data";
 import { cx, Badge, Modal, StockBar, Empty } from "../ui";
 import { ISearch, IPlus, IBox, IAlert, IDownload, IEdit, IX, ICheck, IReport, ICalendar, IClipboard } from "../icons";
 
-type Filter = "all" | "low" | "expiring" | "rx";
+type Filter = "all" | "low" | "expiring" | "rx" | "controlled";
 
 export default function Inventory() {
   const { state, dispatch } = usePos();
@@ -57,6 +57,7 @@ export default function Inventory() {
       const near = nearestExpiry(p);
       if (filter === "low" && stock > p.reorderLevel) return false;
       if (filter === "rx" && !p.rx) return false;
+      if (filter === "controlled" && !p.controlled) return false;
       if (filter === "expiring" && (!near || daysUntil(near) > 60)) return false;
       if (monthFilter) {
         const hit = p.batches.some((b) =>
@@ -89,6 +90,7 @@ export default function Inventory() {
     { id: "low", label: "Low stock", count: state.products.filter((p) => stockOf(p) <= p.reorderLevel).length, tone: "#e0a63c" },
     { id: "expiring", label: "Expiring ≤60d", count: state.products.filter((p) => { const e = nearestExpiry(p); return e !== null && daysUntil(e) <= 60; }).length, tone: "#c24a2e" },
     { id: "rx", label: "℞ only", count: state.products.filter((p) => p.rx).length },
+    { id: "controlled", label: "Controlled", count: state.products.filter((p) => p.controlled).length, tone: "#222a27" },
   ];
 
   const maxBucket = Math.max(...horizon.buckets.map((b) => b.units), horizon.expired.units, 1);
@@ -200,6 +202,7 @@ export default function Inventory() {
                         <div className="min-w-0">
                           <p className="font-semibold text-ink leading-tight truncate max-w-[260px]">
                             {p.name} {p.rx && <span className="text-brick-700 font-bold">℞</span>}
+                            {p.controlled && <span className="ml-1 px-1.5 py-0.5 rounded bg-ink text-paper text-[9px] font-bold tracking-wide align-middle">{p.controlled}</span>}
                           </p>
                           <p className="num text-[10px] text-inksoft">{p.sku} · {p.barcode} · {p.supplier}</p>
                         </div>

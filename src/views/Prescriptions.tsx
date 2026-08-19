@@ -167,7 +167,7 @@ function Column({ status, items, highlight, dimmed, ghostId }: {
 }
 
 function RxCard({ rx, ghost, overlay }: { rx: Prescription; ghost?: boolean; overlay?: boolean }) {
-  const { dispatch, product } = usePos();
+  const { state, dispatch, product } = usePos();
   const { attributes, listeners, setNodeRef } = useDraggable({ id: rx.id });
   const p = product(rx.productId);
   const shelf = p ? stockOf(p) : 0;
@@ -196,6 +196,7 @@ function RxCard({ rx, ghost, overlay }: { rx: Prescription; ghost?: boolean; ove
         <p className="text-[13px] font-semibold text-ink flex items-center gap-1.5">
           <span className="text-brick-700 font-display">℞</span>
           <span className="truncate">{p?.name ?? rx.productId}</span>
+          {p?.controlled && <span className="px-1.5 py-0.5 rounded bg-ink text-paper text-[9px] font-bold tracking-wide shrink-0">{p.controlled}</span>}
           <span className="num text-xs font-bold text-inksoft shrink-0">× {rx.qty}</span>
         </p>
         <p className={cx("text-[10px] mt-0.5 font-semibold", canAttach ? "text-inksoft" : "text-brick-700")}>
@@ -229,12 +230,14 @@ function RxCard({ rx, ghost, overlay }: { rx: Prescription; ghost?: boolean; ove
               </span>
             </div>
             <p className="num text-[9px] text-inksoft mt-0.5">member {rx.insurance.memberId}</p>
-            {rx.insurance.status === "pending" && (
+            {rx.insurance.status === "pending" && (state.user?.role === "cashier" ? (
+              <p className="mt-1 py-1 text-center rounded bg-mist/70 text-[10px] font-bold text-inksoft">🔒 Pharmacist sign-in required to verify</p>
+            ) : (
               <button onClick={() => dispatch({ type: "VERIFY_RX", id: rx.id })}
                 className="mt-1 w-full py-1 rounded bg-ink text-paper text-[10px] font-bold hover:bg-pine-900 transition active:scale-95">
                 Run eligibility check
               </button>
-            )}
+            ))}
             {rx.insurance.status === "rejected" && (
               <p className="text-[9px] font-semibold text-brick-700 mt-0.5">Eligibility failed — collect cash or re-verify member id</p>
             )}

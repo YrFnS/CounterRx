@@ -54,6 +54,36 @@ export default function Dashboard() {
   const maxQty = Math.max(...topSellers.map((t) => t.qty), 1);
   const recent = state.transactions.slice(0, 7);
 
+  /* inventory trends (4.2) — 14-day sell-through burn vs shelf stock */
+  const burn = useMemo(() => {
+    const DAYS = 14;
+    const per = new Map<string, number[]>();
+    for (const t of state.transactions) {
+      if (t.refundOf) continue;
+      const age = Math.floor((t0 + DAY - t.at) / DAY);
+      if (age < 0 || age >= DAYS) continue;
+      const idx = DAYS - 1 - age;
+      for (const l of t.lines) {
+        const arr = per.get(l.productId) ?? Array.from({ length: DAYS }, () => 0);
+        arr[idx] += l.qty;
+        per.set(l.productId, arr);
+      }
+    }
+    return [...per.entries()]
+      .map(([id, arr]) => {
+        const p = state.products.find((x) => x.id === id);
+        if (!p) return null;
+        const total = arr.reduce((s, n) => s + n, 0);
+        const perDay = total / DAYS;
+        const stock = stockOf(p);
+        return { p, arr, total, perDay, daysLeft: perDay > 0 ? Math.floor(stock / perDay) : null };
+      })
+      .filter((x): x is NonNullable<typeof x> => !!x)
+      .sort((a, b) => b.total - a.total)
+      .slice(0, 6);
+  }, [state.transactions, state.products, t0]);
+  const maxSpark = Math.max(...burn.flatMap((b) => b.arr), 1);
+
   /* customer insights (4.3) */
   const custStats = useMemo(() => {
     const now = Date.now();
@@ -304,6 +334,46 @@ export default function Dashboard() {
               </div>
             ))}
             {custStats.top.length === 0 && <p className="text-xs text-inksoft">No linked sales yet — attach customers at the register.</p>}
+          </div>
+        </div>
+
+        {/* inventory trends — 14-day burn vs stock (4.2) */}
+        <div className="bg-card border border-mist rounded-xl shadow-lift p-5">
+          <div className="flex items-center justify-between">
+            <h2 className="font-display font-bold text-ink text-[15px]">Stock burn · 14 days</h2>
+            <button onClick={() => dispatch({ type: "GO", view: "inventory" })}
+              className="text-xs font-bold text-pine-700 hover:text-pine-600 transition">Inventory →</button>
+          </div>
+          <p className="text-[10px] text-inksoft mt-0.5">Units/day sold vs. shelf — projected days to run-out</p>
+          <div className="mt-3 space-y-2.5">
+            {burn.map((b, i) => {
+              const stock = stockOf(b.p);
+              const danger = b.daysLeft !== null && b.daysLeft <= 7;
+              const warn = !danger && b.daysLeft !== null && b.daysLeft <= 14;
+              return (
+                <div key={b.p.id} className="anim-fade-up flex items-center gap-2.5" style={{ animationDelay: `${i * 50}ms` }}>
+                  <div className="w-32 min-w-0">
+                    <p className="text-xs font-semibold text-ink truncate leading-tight">{b.p.name}</p>
+                    <p className="num text-[10px] text-inksoft">{b.perDay.toFixed(1)}/day · {stock} on shelf</p>
+                  </div>
+                  <div className="flex-1 flex items-end gap-[3px] h-8">
+                    {b.arr.map((n, j) => (
+                      <div key={j} className="anim-grow-w flex-1 rounded-sm min-w-[3px]"
+                        style={{
+                          height: `${Math.max(8, (n / maxSpark) * 100)}%`,
+                          animationDelay: `${i * 50 + j * 20}ms`,
+                          background: j === b.arr.length - 1 ? "#0f4437" : n > 0 ? "#8fbfa9" : "#e4e6de",
+                        }} />
+                    ))}
+                  </div>
+                  <span className={cx("num text-[10px] font-bold px-2 py-1 rounded-md shrink-0 w-[74px] text-center",
+                    danger ? "bg-brick-100 text-brick-700" : warn ? "bg-honey-100 text-honey-700" : "bg-pine-100 text-pine-700")}>
+                    {b.daysLeft === null ? "no pull" : `≈ ${b.daysLeft}d left`}
+                  </span>
+                </div>
+              );
+            })}
+            {burn.length === 0 && <p className="text-xs text-inksoft">No sales in the window yet.</p>}
           </div>
         </div>
       </div>
