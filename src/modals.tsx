@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import type { ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { usePos, money, cartTotals } from "./store";
-import { TAX_RATE, STORE, REDEEM_CHUNK_PTS, REDEEM_CHUNK_VALUE } from "./data";
+import { TAX_RATE } from "./data";
 import type { PayMethod, PaymentLeg, Transaction } from "./data";
 import { Modal, cx } from "./ui";
 import { ICash, ICard, IShield, IX, IPrint, ICheck, ISplit, IUsers, IStar, IAlert, ICode, ICopy, IDownload } from "./icons";
@@ -26,7 +26,8 @@ export function PaymentModal() {
   const hasControlled = state.cart.some((c) => product(c.productId)?.controlled);
   /* redeemable chunks: 100 pts = $5, capped by payable balance */
   const payableNow = Math.max(0, t.subtotal - t.bulkSavings - t.discount);
-  const maxChunks = customer ? Math.min(Math.floor(customer.points / REDEEM_CHUNK_PTS), Math.floor(payableNow / REDEEM_CHUNK_VALUE)) : 0;
+  const loy = state.settings.loyalty;
+  const maxChunks = customer ? Math.min(Math.floor(customer.points / Math.max(1, loy.chunkPts)), Math.floor(payableNow / Math.max(0.01, loy.chunkValue))) : 0;
   const redeeming = state.redeemPoints > 0;
 
   const tenderedNum = parseFloat(tendered) || 0;
@@ -123,13 +124,13 @@ export function PaymentModal() {
                 </p>
               </div>
               {maxChunks > 0 && (
-                <button onClick={() => dispatch({ type: "SET_REDEEM", points: redeeming ? 0 : maxChunks * REDEEM_CHUNK_PTS })}
+                <button onClick={() => dispatch({ type: "SET_REDEEM", points: redeeming ? 0 : maxChunks * loy.chunkPts })}
                   className={cx("mt-2 w-full flex items-center justify-between px-2.5 py-2 rounded-md border text-xs font-bold transition-all",
                     redeeming
                       ? "border-pine-600 bg-pine-700 text-pine-50"
                       : "border-honey-400 bg-card text-honey-700 hover:bg-honey-100")}>
-                  <span className="flex items-center gap-1.5"><IStar size={12} /> {redeeming ? `Redeeming ${state.redeemPoints} pts` : `Redeem ${maxChunks * REDEEM_CHUNK_PTS} pts`}</span>
-                  <span className="num">{redeeming ? `−${money(t.loyaltyDeduct)} ✓` : `−${money(maxChunks * REDEEM_CHUNK_VALUE)}`}</span>
+                  <span className="flex items-center gap-1.5"><IStar size={12} /> {redeeming ? `Redeeming ${state.redeemPoints} pts` : `Redeem ${maxChunks * loy.chunkPts} pts`}</span>
+                  <span className="num">{redeeming ? `−${money(t.loyaltyDeduct)} ✓` : `−${money(maxChunks * loy.chunkValue)}`}</span>
                 </button>
               )}
               {customer.taxExempt && (
@@ -326,10 +327,10 @@ function ReceiptBody({ tx }: { tx: Transaction }) {
   return (
     <div className="bg-white border border-mist rounded-lg p-5 num text-[12px] text-ink leading-relaxed">
       <div className="text-center">
-        <p className="font-bold text-[14px] tracking-wide">{STORE.name.toUpperCase()}</p>
-        <p className="text-inksoft">{STORE.branch}</p>
-        <p className="text-inksoft">{STORE.address} · {STORE.phone}</p>
-        <p className="text-inksoft">{STORE.gstin}</p>
+        <p className="font-bold text-[14px] tracking-wide">{state.settings.orgName.toUpperCase()}</p>
+        <p className="text-inksoft">{state.settings.branch}</p>
+        <p className="text-inksoft">{state.settings.address} · {state.settings.phone}</p>
+        <p className="text-inksoft">{state.settings.license}</p>
       </div>
       <div className="receipt-dash my-3" />
       {tx.refundOf && (
@@ -387,12 +388,18 @@ function ReceiptBody({ tx }: { tx: Transaction }) {
           <div className="flex justify-between"><span>Change</span><span>{money(tx.change ?? 0)}</span></div>
         </>
       )}
-      {tx.lines.some((l) => l.rx) && (
-        <p className="mt-3 text-center text-[10px] text-inksoft">℞ items verified & dispensed by licensed pharmacist</p>
+      {tx.lines.some((l) => l.rx) && state.settings.receiptTerms && (
+        <p className="mt-3 text-center text-[10px] text-inksoft">{state.settings.receiptTerms}</p>
       )}
-      <div className="mt-4 h-8 barcode-stripes opacity-90" />
-      <p className="text-center text-[10px] mt-1.5 tracking-[0.3em] text-inksoft">{tx.id.replace("T-", "8 9 0 ")}</p>
-      <p className="text-center text-[10px] text-inksoft mt-2">Get well soon — returns within 7 days with receipt</p>
+      {state.settings.showBarcode && (
+        <>
+          <div className="mt-4 h-8 barcode-stripes opacity-90" />
+          <p className="text-center text-[10px] mt-1.5 tracking-[0.3em] text-inksoft">{tx.id.replace("T-", "8 9 0 ")}</p>
+        </>
+      )}
+      {state.settings.receiptFooter && (
+        <p className="text-center text-[10px] text-inksoft mt-2">{state.settings.receiptFooter}</p>
+      )}
     </div>
   );
 }

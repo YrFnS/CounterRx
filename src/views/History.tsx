@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import type { ReactNode } from "react";
 import { usePos, money, clockTime, relTime } from "../store";
+import { can } from "../data";
 import type { PayMethod, Transaction } from "../data";
 import { cx, Badge, Empty, Modal } from "../ui";
 import { IHistory, ISearch, ICash, ICard, IShield, IPill, IX, IRecall, ICalendar, IDownload, IReport } from "../icons";
@@ -15,6 +16,7 @@ export default function History() {
   const [refunding, setRefunding] = useState<Transaction | null>(null);
   const [shiftOpen, setShiftOpen] = useState(false);
   const [auditOpen, setAuditOpen] = useState(false);
+  const canRefund = can(state.user?.role, "refund");
 
   const rows = useMemo(() => {
     const needle = q.trim().toLowerCase();
@@ -127,7 +129,7 @@ export default function History() {
                   </td>
                   <td className="px-4 py-2.5">
                     <div className="flex justify-end items-center gap-1.5">
-                      {!t.refundOf && !t.refundedAt && (
+                      {!t.refundOf && !t.refundedAt && canRefund && (
                         <button
                           onClick={(e) => { e.stopPropagation(); setRefunding(t); }}
                           className="px-2 py-1 rounded-md border border-mist text-[10px] font-bold text-inksoft hover:border-brick-500 hover:text-brick-700 hover:bg-brick-100/60 transition active:scale-95 opacity-0 hover-cell">

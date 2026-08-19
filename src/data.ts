@@ -122,12 +122,141 @@ export interface Customer {
   fields?: Field[];         // user-defined attributes (6.7)
 }
 
-export interface User { id: string; name: string; role: "cashier" | "pharmacist" | "manager"; pin: string; initials: string; }
-export const USERS: User[] = [
-  { id: "U1", name: "A. Okafor", role: "cashier", pin: "1111", initials: "AO" },
-  { id: "U2", name: "R. Mensah, RPh", role: "pharmacist", pin: "2222", initials: "RM" },
-  { id: "U3", name: "D. Whitfield", role: "manager", pin: "3333", initials: "DW" },
-];
+/* ------------------------------------------------------------------ */
+/*  Staff, roles & permissions (§0)                                    */
+/* ------------------------------------------------------------------ */
+
+export type Role = "pharmacy_admin" | "pharmacist" | "manager" | "cashier";
+
+export interface Staff {
+  id: string; name: string; role: Role;
+  pinHash: string;              // SHA-256 — plaintext PINs are never stored
+  initials: string; active: boolean; createdAt: number;
+}
+
+export const ROLE_LABEL: Record<Role, string> = {
+  pharmacy_admin: "Admin", pharmacist: "Pharmacist", manager: "Manager", cashier: "Cashier",
+};
+
+export type Perm =
+  | "refund" | "approve_transfer" | "adjust_stock" | "apply_count"
+  | "edit_settings" | "manage_staff" | "restore_snapshot" | "verify_rx";
+
+/* Permission matrix — enforced in the UI layer now, mirrors the future RLS checks */
+export const PERMS: Record<Perm, Role[]> = {
+  refund: ["manager", "pharmacy_admin"],
+  approve_transfer: ["manager", "pharmacy_admin"],
+  adjust_stock: ["pharmacist", "manager", "pharmacy_admin"],
+  apply_count: ["manager", "pharmacy_admin"],
+  edit_settings: ["pharmacy_admin"],
+  manage_staff: ["pharmacy_admin"],
+  restore_snapshot: ["pharmacy_admin"],
+  verify_rx: ["pharmacist", "pharmacy_admin"],
+};
+
+export const can = (role: Role | undefined, perm: Perm): boolean =>
+  !!role && PERMS[perm].includes(role);
+
+/* Compact synchronous SHA-256 (FIPS 180-4) — keeps PIN verification off async paths */
+export function sha256(msg: string): string {
+  const K = [
+    0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5,
+    0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3, 0x72be5d74, 0x80deb1fe, 0x9bdc06a7, 0xc19bf174,
+    0xe49b69c1, 0xefbe4786, 0x0fc19dc6, 0x240ca1cc, 0x2de92c6f, 0x4a7484aa, 0x5cb0a9dc, 0x76f988da,
+    0x983e5152, 0xa831c66d, 0xb00327c8, 0xbf597fc7, 0xc6e00bf3, 0xd5a79147, 0x06ca6351, 0x14292967,
+    0x27b70a85, 0x2e1b2138, 0x4d2c6dfc, 0x53380d13, 0x650a7354, 0x766a0abb, 0x81c2c92e, 0x92722c85,
+    0xa2bfe8a1, 0xa81a664b, 0xc24b8b70, 0xc76c51a3, 0xd192e819, 0xd6990624, 0xf40e3585, 0x106aa070,
+    0x19a4c116, 0x1e376c08, 0x2748774c, 0x34b0bcb5, 0x391c0cb3, 0x4ed8aa4a, 0x5b9cca4f, 0x682e6ff3,
+    0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208, 0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2,
+  ];
+  const bytes = new TextEncoder().encode(msg);
+  const bitLen = bytes.length * 8;
+  const padded = new Uint8Array(((bytes.length + 8) >> 6 << 6) + 64);
+  padded.set(bytes);
+  padded[bytes.length] = 0x80;
+  const dv = new DataView(padded.buffer);
+  dv.setUint32(padded.length - 8, Math.floor(bitLen / 0x100000000));
+  dv.setUint32(padded.length - 4, bitLen >>> 0);
+  const H = [0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a, 0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19];
+  const w = new Int32Array(64);
+  const rotr = (x: number, n: number) => (x >>> n) | (x << (32 - n));
+  for (let i = 0; i < padded.length; i += 64) {
+    for (let j = 0; j < 16; j++) w[j] = dv.getInt32(i + j * 4);
+    for (let j = 16; j < 64; j++) {
+      const s0 = rotr(w[j - 15], 7) ^ rotr(w[j - 15], 18) ^ (w[j - 15] >>> 3);
+      const s1 = rotr(w[j - 2], 17) ^ rotr(w[j - 2], 19) ^ (w[j - 2] >>> 10);
+      w[j] = (w[j - 16] + s0 + w[j - 7] + s1) | 0;
+    }
+    let [a, b, c, d, e, f, g, h] = H;
+    for (let j = 0; j < 64; j++) {
+      const S1 = rotr(e, 6) ^ rotr(e, 11) ^ rotr(e, 25);
+      const ch = (e & f) ^ (~e & g);
+      const t1 = (h + S1 + ch + K[j] + w[j]) | 0;
+      const S0 = rotr(a, 2) ^ rotr(a, 13) ^ rotr(a, 22);
+      const maj = (a & b) ^ (a & c) ^ (b & c);
+      const t2 = (S0 + maj) | 0;
+      h = g; g = f; f = e; e = (d + t1) | 0; d = c; c = b; b = a; a = (t1 + t2) | 0;
+    }
+    H[0] = (H[0] + a) | 0; H[1] = (H[1] + b) | 0; H[2] = (H[2] + c) | 0; H[3] = (H[3] + d) | 0;
+    H[4] = (H[4] + e) | 0; H[5] = (H[5] + f) | 0; H[6] = (H[6] + g) | 0; H[7] = (H[7] + h) | 0;
+  }
+  return H.map((x) => (x >>> 0).toString(16).padStart(8, "0")).join("");
+}
+
+export const hashPin = (pin: string) => sha256(`counterrx:${pin}`);
+
+const initialsOf = (name: string) =>
+  name.replace(/,.*$/, "").split(/\s+/).map((w) => w[0]).filter(Boolean).slice(0, 2).join("").toUpperCase();
+
+export function makeStaff(now: number): Staff[] {
+  const mk = (id: string, name: string, role: Role, pin: string, ageDays: number): Staff => ({
+    id, name, role, pinHash: hashPin(pin), initials: initialsOf(name), active: true, createdAt: now - ageDays * 86_400_000,
+  });
+  return [
+    mk("S-001", "D. Whitfield", "pharmacy_admin", "3333", 240),
+    mk("S-002", "R. Mensah, RPh", "pharmacist", "2222", 180),
+    mk("S-003", "A. Okafor", "cashier", "1111", 120),
+    mk("S-004", "J. Boateng", "cashier", "4444", 45),
+  ];
+}
+
+export const randomPin = () => String(Math.floor(1000 + Math.random() * 9000));
+
+/* ------------------------------------------------------------------ */
+/*  Organization settings (§8) — replaces hardcoded STORE constants    */
+/* ------------------------------------------------------------------ */
+
+export interface OrgSettings {
+  orgName: string; branch: string; address: string; phone: string; license: string;
+  currency: string;
+  receiptFooter: string; receiptTerms: string; showBarcode: boolean;
+  loyalty: { ptsPerUnit: number; chunkPts: number; chunkValue: number; silverAt: number; goldAt: number };
+  scanBeep: boolean;
+  idleLockMins: number;            // 0 = never
+  autoSnapshotMins: number;        // 0 = off
+  terminalId: string;
+}
+
+export const CURRENCIES = ["USD", "EUR", "GBP", "NGN", "KES", "ZAR", "GHS", "INR", "CAD"];
+
+export function makeSettings(): OrgSettings {
+  return {
+    orgName: STORE.name, branch: STORE.branch, address: STORE.address, phone: STORE.phone, license: STORE.gstin,
+    currency: "USD",
+    receiptFooter: "Get well soon — returns within 7 days with receipt",
+    receiptTerms: "℞ items verified & dispensed by licensed pharmacist",
+    showBarcode: true,
+    loyalty: { ptsPerUnit: 1, chunkPts: 100, chunkValue: 5, silverAt: 100, goldAt: 300 },
+    scanBeep: true,
+    idleLockMins: 10,
+    autoSnapshotMins: 15,
+    terminalId: "T-01",
+  };
+}
+
+export interface SnapshotMeta { id: string; at: number; label: string; auto: boolean; }
+export interface Snapshot { meta: SnapshotMeta; data: Record<string, unknown>; }
+export const SNAPS_KEY = "counterrx:snapshots";
 
 export type AuditKind = "sale" | "stock" | "money" | "rx" | "system";
 export interface AuditEntry { id: number; at: number; actor: string; kind: AuditKind; detail: string; }

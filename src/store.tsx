@@ -6,17 +6,22 @@ import {
   bulkPct, REDEEM_CHUNK_PTS, REDEEM_CHUNK_VALUE,
 } from "./data";
 import type {
-  Product, Transaction, Prescription, Customer, AuditEntry, AuditKind, User,
+  Product, Transaction, Prescription, Customer, AuditEntry, AuditKind, Staff, Role, OrgSettings,
   HeldSale, TxLine, PayMethod, PaymentLeg, RxStatus, Batch, Transfer, TransferStatus, Field,
+  Snapshot, SnapshotMeta,
 } from "./data";
+import { makeStaff, makeSettings, SNAPS_KEY, hashPin, ROLE_LABEL } from "./data";
 
-export type View = "register" | "dashboard" | "customers" | "inventory" | "prescriptions" | "history";
+export type View = "register" | "dashboard" | "customers" | "inventory" | "prescriptions" | "history" | "settings";
 export type InventoryPreset = "all" | "low" | "expiring";
 
 export interface Toast { id: number; kind: "success" | "warn" | "error" | "info"; msg: string; }
 
 interface State {
-  user: User | null;
+  user: Staff | null;
+  staff: Staff[];
+  settings: OrgSettings;
+  lockouts: Record<string, { fails: number; until: number }>;
   online: boolean;
   products: Product[];
   transactions: Transaction[];
@@ -38,8 +43,15 @@ interface State {
 }
 
 type Action =
-  | { type: "LOGIN"; user: User }
-  | { type: "LOGOUT" }
+  | { type: "LOGIN"; staffId: string; pin: string }
+  | { type: "LOGOUT"; auto?: boolean }
+  | { type: "ADD_STAFF"; name: string; role: Role; pin: string }
+  | { type: "UPDATE_STAFF"; id: string; patch: Partial<Pick<Staff, "name" | "role" | "active">> }
+  | { type: "SET_STAFF_PIN"; id: string; pin: string }
+  | { type: "UPDATE_SETTINGS"; patch: Partial<Omit<OrgSettings, "loyalty">> & { loyalty?: Partial<OrgSettings["loyalty"]> } }
+  | { type: "SNAPSHOT_SAVE"; label: string; auto: boolean }
+  | { type: "SNAPSHOT_DELETE"; id: string }
+  | { type: "SNAPSHOT_RESTORE"; id: string }
   | { type: "GO"; view: View; invPreset?: InventoryPreset }
   | { type: "ADD_CART"; productId: string }
   | { type: "SET_QTY"; productId: string; qty: number }
@@ -81,7 +93,7 @@ let toastSeq = 1;
 let heldSeq = 1;
 let auditSeq = 100;
 
-const seed = (): Pick<State, "products" | "transactions" | "prescriptions" | "customers" | "audit" | "transfers"> => {
+const seed = (): Pick<State, "products" | "transactions" | "prescriptions" | "customers" | "audit" | "transfers" | "staff" | "settings"> => {
   const now = Date.now();
   const products = makeProducts(now);
   const customers = makeCustomers(now);
@@ -92,15 +104,17 @@ const seed = (): Pick<State, "products" | "transactions" | "prescriptions" | "cu
     products, transactions, customers,
     prescriptions: makePrescriptions(now),
     transfers: makeTransfers(now),
-    audit: [{ id: auditSeq++, at: now - 36 * 60_000, actor: "system", kind: "system", detail: "Ledger initialized — demo dataset v5" }],
+    staff: makeStaff(now),
+    settings: makeSettings(),
+    audit: [{ id: auditSeq++, at: now - 36 * 60_000, actor: "system", kind: "system", detail: "Ledger initialized — demo dataset v6" }],
   };
 };
 
-const LS_KEY = "counterrx:v5";
+const LS_KEY = "counterrx:v6";
 
 function load(): State {
   const base: State = {
-    ...seed(), user: null, online: typeof navigator === "undefined" ? true : navigator.onLine,
+    ...seed(), user: null, lockouts: {}, online: typeof navigator === "undefined" ? true : navigator.onLine,
     cart: [], held: [], saleCustomerId: null, redeemPoints: 0,
     view: "register", invPreset: "all",
     payOpen: false, receipt: null, toasts: [], flashId: null, flashKey: 0,
@@ -115,6 +129,8 @@ function load(): State {
           products: saved.products, transactions: saved.transactions,
           prescriptions: saved.prescriptions, customers: saved.customers,
           transfers: saved.transfers ?? makeTransfers(Date.now()),
+          staff: saved.staff ?? makeStaff(Date.now()),
+          settings: { ...makeSettings(), ...(saved.settings ?? {}) },
           audit: saved.audit ?? [],
         };
       }
@@ -150,9 +166,10 @@ export function cartTotals(state: State, discountPct: number, taxExempt = false)
   /* bulk tiers apply per non-Rx line */
   const bulkSavings = round2(lines.reduce((s, l) => s + (l.rx ? 0 : (l.price * l.qty * bulkPct(l.qty)) / 100), 0));
   const discount = round2((subtotal * discountPct) / 100);
-  /* loyalty redemption — chunks of 100 pts = $5, capped by the payable balance */
+  /* loyalty redemption — org-configurable chunks (§7), capped by the payable balance */
+  const loy = state.settings.loyalty;
   const payable = Math.max(0, subtotal - bulkSavings - discount);
-  const loyaltyDeduct = round2(Math.min((state.redeemPoints / REDEEM_CHUNK_PTS) * REDEEM_CHUNK_VALUE, payable));
+  const loyaltyDeduct = round2(Math.min((state.redeemPoints / Math.max(1, loy.chunkPts)) * loy.chunkValue, payable));
   const tax = taxExempt ? 0 : round2((payable - loyaltyDeduct) * TAX_RATE);
   return {
     lines, subtotal, bulkSavings, discount, loyaltyDeduct, tax,
@@ -168,17 +185,113 @@ function withAudit(s: State, kind: AuditKind, detail: string): State {
   return { ...s, audit: [{ id: auditSeq++, at: Date.now(), actor: s.user?.name ?? CASHIER, kind, detail }, ...s.audit].slice(0, 250) };
 }
 
+/* ---------------- snapshot persistence (§9 automated backups) ---------------- */
+export function listSnapshots(): Snapshot[] {
+  try { return JSON.parse(localStorage.getItem(SNAPS_KEY) ?? "[]") as Snapshot[]; } catch { return []; }
+}
+function writeSnapshots(snaps: Snapshot[]) {
+  try { localStorage.setItem(SNAPS_KEY, JSON.stringify(snaps.slice(0, 8))); } catch { /* full — drop oldest and retry once */
+    try { localStorage.setItem(SNAPS_KEY, JSON.stringify(snaps.slice(0, 4))); } catch { /* give up */ }
+  }
+}
+
+const LOCK_AFTER = 5;          // failed attempts before lockout
+const LOCK_MS = 60_000;        // 60s lockout window
+
 function reducer(state: State, a: Action): State {
   switch (a.type) {
-    case "LOGIN":
+    case "LOGIN": {
+      const s = state.staff.find((x) => x.id === a.staffId);
+      if (!s || !s.active) return state;
+      const lock = state.lockouts[s.id];
+      if (lock && lock.until > Date.now()) return state; // still locked
+      if (s.pinHash !== hashPin(a.pin)) {
+        const fails = (lock && lock.until <= Date.now() ? 0 : lock?.fails ?? 0) + 1;
+        const lockouts = { ...state.lockouts, [s.id]: { fails, until: fails >= LOCK_AFTER ? Date.now() + LOCK_MS : 0 } };
+        return { ...state, lockouts };
+      }
+      const lockouts = { ...state.lockouts };
+      delete lockouts[s.id];
       return withAudit(
-        withToast({ ...state, user: a.user }, "success", `Signed in — ${a.user.name} (${a.user.role})`),
-        "system", `${a.user.name} signed in · role ${a.user.role} · Terminal 01`);
+        withToast({ ...state, user: s, lockouts }, "success", `Signed in — ${s.name} (${ROLE_LABEL[s.role]})`),
+        "system", `${s.name} signed in · role ${s.role} · ${state.settings.terminalId}`);
+    }
 
     case "LOGOUT":
       return withAudit(
-        withToast({ ...state, user: null, payOpen: false }, "info", `${state.user?.name ?? "User"} signed out — terminal locked`),
-        "system", `${state.user?.name ?? "User"} signed out`);
+        withToast({ ...state, user: null, payOpen: false }, "info",
+          a.auto ? "Terminal locked after inactivity" : `${state.user?.name ?? "User"} signed out — terminal locked`),
+        "system", `${state.user?.name ?? "User"} ${a.auto ? "auto-locked (idle)" : "signed out"}`);
+
+    case "ADD_STAFF": {
+      const id = `S-${String(state.staff.length + 1).padStart(3, "0")}`;
+      const s: Staff = {
+        id, name: a.name.trim(), role: a.role, pinHash: hashPin(a.pin),
+        initials: a.name.trim().replace(/,.*$/, "").split(/\s+/).map((w) => w[0]).filter(Boolean).slice(0, 2).join("").toUpperCase(),
+        active: true, createdAt: Date.now(),
+      };
+      return withAudit(
+        withToast({ ...state, staff: [s, ...state.staff] }, "success", `${s.name} added as ${ROLE_LABEL[a.role]} · PIN set`),
+        "system", `Staff created — ${s.name} (${id}, ${a.role})`);
+    }
+
+    case "UPDATE_STAFF": {
+      const prev = state.staff.find((x) => x.id === a.id);
+      if (!prev) return state;
+      const staff = state.staff.map((x) => (x.id === a.id ? { ...x, ...a.patch } : x));
+      const user = state.user?.id === a.id ? { ...state.user, ...a.patch } : state.user;
+      const what = a.patch.active === false ? "deactivated" : a.patch.active === true ? "reactivated" : "updated";
+      return withAudit(
+        withToast({ ...state, staff, user }, "success", `${prev.name} ${what}`),
+        "system", `Staff ${what} — ${prev.name}${a.patch.role && a.patch.role !== prev.role ? ` → ${a.patch.role}` : ""}`);
+    }
+
+    case "SET_STAFF_PIN": {
+      const staff = state.staff.map((x) => (x.id === a.id ? { ...x, pinHash: hashPin(a.pin) } : x));
+      const lockouts = { ...state.lockouts }; delete lockouts[a.id];
+      return withAudit(
+        withToast({ ...state, staff, lockouts }, "success", "PIN reset — share it securely, it won't be shown again"),
+        "system", `PIN reset for ${state.staff.find((x) => x.id === a.id)?.name ?? a.id}`);
+    }
+
+    case "UPDATE_SETTINGS": {
+      const settings = { ...state.settings, ...a.patch, loyalty: { ...state.settings.loyalty, ...(a.patch.loyalty ?? {}) } };
+      return withAudit({ ...state, settings }, "system", "Organization settings updated");
+    }
+
+    case "SNAPSHOT_SAVE": {
+      const meta: SnapshotMeta = {
+        id: `snap-${Date.now().toString(36)}`, at: Date.now(), label: a.label, auto: a.auto,
+      };
+      const data = {
+        products: state.products, transactions: state.transactions.slice(0, 400),
+        prescriptions: state.prescriptions, customers: state.customers,
+        transfers: state.transfers, audit: state.audit, staff: state.staff, settings: state.settings,
+      };
+      writeSnapshots([{ meta, data }, ...listSnapshots()]);
+      return withToast(state, "success", `Snapshot saved — “${a.label}”`);
+    }
+
+    case "SNAPSHOT_DELETE": {
+      writeSnapshots(listSnapshots().filter((s) => s.meta.id !== a.id));
+      return withToast(state, "info", "Snapshot deleted");
+    }
+
+    case "SNAPSHOT_RESTORE": {
+      const snap = listSnapshots().find((s) => s.meta.id === a.id);
+      if (!snap) return withToast(state, "error", "Snapshot not found");
+      const d = snap.data as Partial<State>;
+      return withToast(
+        withAudit({
+          ...state,
+          products: d.products ?? state.products, transactions: d.transactions ?? state.transactions,
+          prescriptions: d.prescriptions ?? state.prescriptions, customers: d.customers ?? state.customers,
+          transfers: d.transfers ?? state.transfers, staff: d.staff ?? state.staff,
+          settings: { ...makeSettings(), ...(d.settings ?? {}) }, audit: d.audit ?? state.audit,
+          cart: [], held: [], receipt: null, payOpen: false, saleCustomerId: null, redeemPoints: 0,
+        }, "system", `Snapshot restored — ${snap.meta.label}`),
+        "success", `Restored from “${snap.meta.label}” (${new Date(snap.meta.at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })})`);
+    }
 
     case "GO":
       return { ...state, view: a.view, invPreset: a.invPreset ?? state.invPreset, payOpen: false };
@@ -269,8 +382,8 @@ function reducer(state: State, a: Action): State {
       });
       const primary = a.payments[0];
       const singleCash = a.payments.length === 1 && primary.method === "cash";
-      /* loyalty: earn 1 pt/$1, spend redeemed points */
-      const pointsEarned = Math.floor(t.total);
+      /* loyalty: earn at the org-configured rate, spend redeemed points */
+      const pointsEarned = Math.floor(t.total * state.settings.loyalty.ptsPerUnit);
       const customers = customer
         ? state.customers.map((c) => (c.id === customer.id
             ? { ...c, points: Math.max(0, c.points + pointsEarned - state.redeemPoints) }
@@ -649,6 +762,19 @@ export function PosProvider({ children }: { children: ReactNode }) {
     return () => { window.removeEventListener("online", on); window.removeEventListener("offline", off); };
   }, []);
 
+  /* keep the money formatter in sync with the org currency (§8) */
+  useEffect(() => { setCurrency(state.settings.currency); }, [state.settings.currency]);
+
+  /* automated backup snapshots (§9) */
+  const autoMins = state.settings.autoSnapshotMins;
+  useEffect(() => {
+    if (!autoMins || autoMins <= 0) return;
+    const id = setInterval(() => {
+      dispatch({ type: "SNAPSHOT_SAVE", label: `Auto · ${new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`, auto: true });
+    }, autoMins * 60_000);
+    return () => clearInterval(id);
+  }, [autoMins]);
+
   useEffect(() => {
     try {
       localStorage.setItem(LS_KEY, JSON.stringify({
@@ -689,8 +815,13 @@ export function usePos(): Ctx {
   return ctx;
 }
 
-export const money = (n: number) =>
-  n.toLocaleString("en-US", { style: "currency", currency: "USD" });
+/* currency is org-scoped (§8) — module-level so the 100+ call sites stay simple */
+let CURRENCY = "USD";
+export const setCurrency = (c: string) => { CURRENCY = c; };
+export const money = (n: number) => {
+  try { return n.toLocaleString("en-US", { style: "currency", currency: CURRENCY }); }
+  catch { return `$${n.toFixed(2)}`; }
+};
 
 export function relTime(ts: number): string {
   const diff = Date.now() - ts;

@@ -2,8 +2,8 @@ import { useEffect, useRef, useState } from "react";
 import type { ReactNode, ChangeEvent } from "react";
 import { PosProvider, usePos } from "./store";
 import type { View } from "./store";
-import { CASHIER, STORE, daysUntil, nearestExpiry, stockOf, USERS } from "./data";
-import type { Product, Transaction, Prescription, User } from "./data";
+import { CASHIER, daysUntil, nearestExpiry, stockOf, hashPin, ROLE_LABEL } from "./data";
+import type { Product, Transaction, Prescription, Staff } from "./data";
 import { cx } from "./ui";
 import { PaymentModal, ReceiptModal, DataExchangeModal } from "./modals";
 import { ToastHost } from "./ui";
@@ -13,9 +13,10 @@ import Inventory from "./views/Inventory";
 import Prescriptions from "./views/Prescriptions";
 import History from "./views/History";
 import {
-  ICross, IRegister, IDash, IBox, IRx, IHistory, IBell, IAlert, IChevD, IRecall, IScan, IDownload, IUpload, IUsers, IWifi, IWifiOff, ICode, IMenu, IX,
+  ICross, IRegister, IDash, IBox, IRx, IHistory, IBell, IAlert, IChevD, IRecall, IScan, IDownload, IUpload, IUsers, IWifi, IWifiOff, ICode, IMenu, IX, IGear,
 } from "./icons";
 import Customers from "./views/Customers";
+import Settings from "./views/Settings";
 
 const TITLES: Record<View, { title: string; sub: string }> = {
   register: { title: "Register · Terminal 01", sub: "Scan, sell, dispense — one lane" },
@@ -24,6 +25,7 @@ const TITLES: Record<View, { title: string; sub: string }> = {
   inventory: { title: "Inventory & batches", sub: "Stock on hand, expiry windows, reorder points" },
   prescriptions: { title: "Prescription queue", sub: "Pharmacist workflow · drop-off to dispense" },
   history: { title: "Sales ledger", sub: "Every receipt this terminal has printed" },
+  settings: { title: "Settings & staff", sub: "Organization profile, team, loyalty, backups" },
 };
 
 const NAV: { id: View; label: string; icon: ReactNode; key: string }[] = [
@@ -33,6 +35,7 @@ const NAV: { id: View; label: string; icon: ReactNode; key: string }[] = [
   { id: "inventory", label: "Inventory", icon: <IBox size={17} />, key: "F4" },
   { id: "prescriptions", label: "Prescriptions", icon: <IRx size={17} />, key: "F5" },
   { id: "history", label: "Sales ledger", icon: <IHistory size={17} />, key: "F6" },
+  { id: "settings", label: "Settings", icon: <IGear size={17} />, key: "F9" },
 ];
 
 export default function App() {
@@ -47,19 +50,30 @@ export default function App() {
 /*  Lock screen — multi-user PIN sign-in (6.1)                         */
 /* ------------------------------------------------------------------ */
 function LockScreen() {
-  const { dispatch } = usePos();
-  const [selected, setSelected] = useState<User>(USERS[0]);
+  const { state, dispatch } = usePos();
+  const roster = state.staff.filter((s) => s.active);
+  const [selected, setSelected] = useState<Staff | null>(null);
   const [pin, setPin] = useState("");
   const [shake, setShake] = useState(false);
   const [error, setError] = useState(false);
+  const [, tick] = useState(0);
+
+  /* live countdown while a profile is locked out */
+  const lock = selected ? state.lockouts[selected.id] : undefined;
+  const lockedMs = lock && lock.until > Date.now() ? lock.until - Date.now() : 0;
+  useEffect(() => {
+    if (lockedMs <= 0) return;
+    const id = setInterval(() => tick((n) => n + 1), 500);
+    return () => clearInterval(id);
+  }, [lockedMs > 0]);
 
   const submit = (code: string) => {
-    if (code === selected.pin) {
-      dispatch({ type: "LOGIN", user: selected });
-    } else {
-      setError(true);
-      setShake(true);
-      setPin("");
+    if (!selected) return;
+    if (lockedMs > 0) { setPin(""); return; }
+    const ok = hashPin(code) === selected.pinHash;
+    dispatch({ type: "LOGIN", staffId: selected.id, pin: code });
+    if (!ok) {
+      setError(true); setShake(true); setPin("");
       setTimeout(() => setShake(false), 450);
     }
   };
@@ -83,11 +97,55 @@ function LockScreen() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pin, selected]);
 
-  const roleTone: Record<User["role"], string> = {
+  const roleTone: Record<Staff["role"], string> = {
     cashier: "bg-pine-700 text-pine-100",
     pharmacist: "bg-honey-500 text-pine-950",
     manager: "bg-brick-500 text-brick-100",
+    pharmacy_admin: "bg-ink text-paper",
   };
+
+  /* no profile picked yet → roster chooser */
+  if (!selected) {
+    return (
+      <div className="h-full grid place-items-center px-6 relative overflow-hidden">
+        <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[820px] h-[420px] rounded-full bg-pine-200/25 blur-[110px] pointer-events-none" />
+        <div className="w-full max-w-[420px] relative">
+          <div className="text-center mb-5">
+            <span className="inline-grid place-items-center w-14 h-14 rounded-2xl bg-pine-800 text-pine-50 shadow-pop mx-auto">
+              <ICross size={28} />
+            </span>
+            <h1 className="font-display font-bold text-[26px] text-ink mt-3 tracking-tight">CounterRx</h1>
+            <p className="text-[11px] font-bold uppercase tracking-[0.22em] text-inksoft mt-0.5">{state.settings.terminalId} · locked</p>
+          </div>
+          <div className="bg-card border border-mist rounded-2xl shadow-pop p-5">
+            <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-inksoft mb-2.5">Who's on the till?</p>
+            <div className="space-y-2">
+              {roster.map((u, i) => (
+                <button key={u.id} onClick={() => { setSelected(u); setPin(""); setError(false); }}
+                  style={{ animationDelay: `${i * 60}ms` }}
+                  className="anim-fade-up w-full flex items-center gap-3 p-2.5 rounded-xl border-2 border-mist bg-paper hover:border-pine-400 hover:bg-pine-50 hover:-translate-y-0.5 transition-all duration-200 text-left">
+                  <span className="grid place-items-center w-9 h-9 rounded-full bg-pine-900 text-pine-100 font-display font-bold text-xs shrink-0">
+                    {u.initials}
+                  </span>
+                  <span className="flex-1 min-w-0">
+                    <span className="block text-[13px] font-bold text-ink truncate">{u.name}</span>
+                    <span className="block text-[10px] text-inksoft num">staff since {new Date(u.createdAt).toLocaleDateString("en-US", { month: "short", year: "numeric" })}</span>
+                  </span>
+                  <span className={cx("px-1.5 py-0.5 rounded text-[8px] font-bold uppercase tracking-wide shrink-0", roleTone[u.role])}>
+                    {ROLE_LABEL[u.role]}
+                  </span>
+                  <IChevD size={14} className="-rotate-90 text-inksoft shrink-0" />
+                </button>
+              ))}
+              {roster.length === 0 && <p className="text-xs text-inksoft text-center py-4">No active staff — contact an administrator.</p>}
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  /* PIN entry for the chosen profile */
 
   return (
     <div className="h-full grid place-items-center px-6 relative overflow-hidden">
@@ -98,25 +156,24 @@ function LockScreen() {
             <ICross size={28} />
           </span>
           <h1 className="font-display font-bold text-[26px] text-ink mt-3 tracking-tight">CounterRx</h1>
-          <p className="text-[11px] font-bold uppercase tracking-[0.22em] text-inksoft mt-0.5">Terminal 01 · locked</p>
+          <p className="text-[11px] font-bold uppercase tracking-[0.22em] text-inksoft mt-0.5">{state.settings.terminalId} · locked</p>
         </div>
 
         <div className="bg-card border border-mist rounded-2xl shadow-pop p-5">
-          <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-inksoft mb-2">Who's on the till?</p>
-          <div className="grid grid-cols-3 gap-2">
-            {USERS.map((u) => (
-              <button key={u.id} onClick={() => { setSelected(u); setPin(""); setError(false); }}
-                className={cx("flex flex-col items-center gap-1.5 p-2.5 rounded-xl border-2 transition-all duration-200",
-                  selected.id === u.id
-                    ? "border-pine-600 bg-pine-50 shadow-lift -translate-y-0.5"
-                    : "border-mist bg-paper hover:border-pine-300")}>
-                <span className="grid place-items-center w-9 h-9 rounded-full bg-pine-900 text-pine-100 font-display font-bold text-xs">
-                  {u.initials}
-                </span>
-                <span className="text-[11px] font-bold text-ink leading-tight text-center">{u.name.replace(", RPh", "")}</span>
-                <span className={cx("px-1.5 py-0.5 rounded text-[8px] font-bold uppercase tracking-wide", roleTone[u.role])}>{u.role}</span>
-              </button>
-            ))}
+          <button onClick={() => { setSelected(null); setPin(""); setError(false); }}
+            className="flex items-center gap-1.5 text-[11px] font-bold text-inksoft hover:text-pine-700 transition mb-3">
+            <IChevD size={12} className="rotate-90" /> Switch profile
+          </button>
+          <div className="flex items-center gap-3 pb-3 border-b border-mist">
+            <span className="grid place-items-center w-11 h-11 rounded-full bg-pine-900 text-pine-100 font-display font-bold text-sm shrink-0">
+              {selected.initials}
+            </span>
+            <div className="min-w-0">
+              <p className="text-[14px] font-bold text-ink truncate">{selected.name}</p>
+              <span className={cx("inline-block px-1.5 py-0.5 rounded text-[8px] font-bold uppercase tracking-wide mt-0.5", roleTone[selected.role])}>
+                {ROLE_LABEL[selected.role]}
+              </span>
+            </div>
           </div>
 
           <div className={cx("mt-5 flex justify-center gap-3", shake && "anim-shake")}>
@@ -126,8 +183,13 @@ function LockScreen() {
                   error ? "border-brick-500 bg-brick-500" : i < pin.length ? "border-pine-700 bg-pine-700 scale-110" : "border-inksoft/40")} />
             ))}
           </div>
-          <p className={cx("text-center text-[11px] mt-2 h-4 font-semibold transition-colors", error ? "text-brick-700" : "text-inksoft/70")}>
-            {error ? "Wrong PIN — try again" : `Enter ${selected.name.split(",")[0]}'s 4-digit PIN`}
+          <p className={cx("text-center text-[11px] mt-2 h-4 font-semibold transition-colors",
+            lockedMs > 0 ? "text-brick-700" : error ? "text-brick-700" : "text-inksoft/70")}>
+            {lockedMs > 0
+              ? `Locked — retry in ${Math.ceil(lockedMs / 1000)}s`
+              : error
+                ? `Wrong PIN — ${Math.max(0, 5 - (state.lockouts[selected.id]?.fails ?? 0))} attempts left`
+                : `Enter ${selected.name.split(",")[0]}'s 4-digit PIN`}
           </p>
 
           <div className="mt-4 grid grid-cols-3 gap-2">
@@ -177,7 +239,7 @@ function Shell() {
   /* global keyboard shortcuts */
   useEffect(() => {
     const h = (e: KeyboardEvent) => {
-      const map: Record<string, View> = { F1: "register", F3: "dashboard", F4: "inventory", F5: "prescriptions", F6: "history", F7: "customers" };
+      const map: Record<string, View> = { F1: "register", F3: "dashboard", F4: "inventory", F5: "prescriptions", F6: "history", F7: "customers", F9: "settings" };
       if (map[e.key]) { e.preventDefault(); dispatch({ type: "GO", view: map[e.key] }); setNavOpen(false); return; }
       if (e.key === "F2") {
         e.preventDefault();
@@ -229,6 +291,24 @@ function Shell() {
     reader.readAsText(f);
     e.target.value = "";
   };
+
+  /* idle auto-lock (§0 sessions) — any activity resets the timer */
+  const idleMins = state.settings.idleLockMins;
+  useEffect(() => {
+    if (!state.user || idleMins <= 0) return;
+    let t = window.setTimeout(() => dispatch({ type: "LOGOUT", auto: true }), idleMins * 60_000);
+    const reset = () => {
+      window.clearTimeout(t);
+      t = window.setTimeout(() => dispatch({ type: "LOGOUT", auto: true }), idleMins * 60_000);
+    };
+    window.addEventListener("pointerdown", reset);
+    window.addEventListener("keydown", reset);
+    return () => {
+      window.clearTimeout(t);
+      window.removeEventListener("pointerdown", reset);
+      window.removeEventListener("keydown", reset);
+    };
+  }, [state.user, idleMins, dispatch]);
 
   /* multi-user session — the till locks until someone signs in (after all hooks) */
   if (!state.user) return <LockScreen />;
@@ -328,7 +408,7 @@ function Shell() {
             className="w-full flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg border border-pine-800 text-pine-300 text-[11px] font-semibold hover:border-pine-600 hover:text-paper transition">
             <IRecall size={12} /> Reset demo data
           </button>
-          <p className="text-center text-[9px] text-pine-200/40 num">v2.4.1 · local ledger · {STORE.branch.split("—")[0]}</p>
+          <p className="text-center text-[9px] text-pine-200/40 num">v3.0 · local ledger · {state.settings.branch.split("—")[0]}</p>
         </div>
       </aside>
 
@@ -342,6 +422,7 @@ function Shell() {
           {state.view === "inventory" && <Inventory />}
           {state.view === "prescriptions" && <Prescriptions />}
           {state.view === "history" && <History />}
+          {state.view === "settings" && <Settings />}
         </main>
       </div>
 

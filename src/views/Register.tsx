@@ -112,7 +112,7 @@ export default function Register() {
     const hit = state.products.find((p) => p.barcode === needle || p.sku.toLowerCase() === needle.toLowerCase());
     if (hit) {
       dispatch({ type: "ADD_CART", productId: hit.id });
-      playScanBeep();
+      if (state.settings.scanBeep) playScanBeep();
       setQ("");
       return;
     }
