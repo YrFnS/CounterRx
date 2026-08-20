@@ -134,6 +134,10 @@ export interface Prescription {
   phone?: string;             // patient contact for "ready for pickup" notifications
   notifiedAt?: number;        // waiting-bin pickup notification sent
   insurance?: { plan: string; memberId: string; status: "pending" | "verified" | "rejected" };
+  pa?: {                      // prior-authorization lifecycle with the payer (§3)
+    status: "pending" | "approved" | "rejected";
+    requestedAt: number; decidedAt?: number; note?: string;
+  };
 }
 
 export interface Customer {
@@ -454,8 +458,9 @@ export function makePrescriptions(now: number): Prescription[] {
     { id: "RX-2478", patient: "Tom Alvarez", age: 8, productId: "salb", qty: 1, prescriberId: "DR-01", status: "waiting", createdAt: now - 3.4 * h, notifiedAt: now - 1.1 * h, note: "Guardian pickup — mother", phone: "(555) 130-4486" },
     { id: "RX-2477", patient: "Grace Lin", age: 52, productId: "insg", qty: 2, prescriberId: "DR-03", status: "verifying", createdAt: now - 5.2 * h, note: "Cold-chain — keep refrigerated", daysSupply: 28, phone: "(555) 655-7702", insurance: { plan: "Aetna Rx", memberId: "AET-8830-19", status: "pending" } },
     { id: "RX-2476", patient: "Samuel Eze", age: 29, productId: "azi250", qty: 1, prescriberId: "DR-02", status: "dispensed", createdAt: now - 8.6 * h, dispensedAt: now - 8.6 * h, daysSupply: 6 },
+    { id: "RX-2475", patient: "Esther Mensah", age: 47, productId: "insg", qty: 3, prescriberId: "DR-03", status: "verifying", createdAt: now - 11 * h, note: "High-cost biologic — payer requires PA before fill", daysSupply: 84, phone: "(555) 209-8814", insurance: { plan: "BlueCross PBM", memberId: "XCB-5521-08", status: "verified" }, pa: { status: "pending", requestedAt: now - 9 * h, note: "Submitted via payer portal — awaiting clinical review" } },
     /* maintenance fills from earlier this month — feed the refill radar */
-    { id: "RX-2441", patient: "Helen Okafor", age: 67, productId: "atv20", qty: 2, prescriberId: "DR-02", status: "dispensed", createdAt: now - 29 * d, dispensedAt: now - 29 * d, daysSupply: 30, refillsAuthorized: 5, refillsRemaining: 1, rxExpiry: iso(now + 150 * d), note: "Monthly maintenance — auto-refill allowed", insurance: { plan: "BlueCross PBM", memberId: "XCB-4471-02", status: "verified" } },
+    { id: "RX-2441", patient: "Helen Okafor", age: 67, productId: "atv20", qty: 2, prescriberId: "DR-02", status: "dispensed", createdAt: now - 29 * d, dispensedAt: now - 29 * d, daysSupply: 30, refillsAuthorized: 5, refillsRemaining: 1, rxExpiry: iso(now + 150 * d), note: "Monthly maintenance — auto-refill allowed", insurance: { plan: "BlueCross PBM", memberId: "XCB-4471-02", status: "verified" }, pa: { status: "approved", requestedAt: now - 40 * d, decidedAt: now - 38 * d, note: "Approved 12 months — step therapy documented" } },
     { id: "RX-2436", patient: "Victor Adeyemi", age: 58, productId: "met500", qty: 4, prescriberId: "DR-03", status: "dispensed", createdAt: now - 33 * d, dispensedAt: now - 33 * d, daysSupply: 30, refillsAuthorized: 3, refillsRemaining: 0, rxExpiry: iso(now + 60 * d), insurance: { plan: "MediPlan Rx", memberId: "MPX-2210-44", status: "verified" } },
   ];
 }
@@ -472,6 +477,24 @@ export function makeCustomers(now: number): Customer[] {
     { id: "C-007", name: "Tom Alvarez", phone: "(555) 130-4486", createdAt: now - 9 * d, notes: "Guardian: mother (pickup)", points: 18 },
     { id: "C-008", name: "Ruth Bello", phone: "(555) 887-3320", createdAt: now - 2 * d, points: 6 },
     { id: "C-009", name: "Maple Family Clinic", phone: "(555) 014-9900", email: "orders@mapleclinic.org", createdAt: now - 130 * d, notes: "Resale certificate on file", points: 0, taxExempt: true },
+  ];
+}
+
+/** Patient back-order — out-of-stock Rx ordered for a named patient (§3) */
+export type BackOrderStatus = "ordered" | "arrived" | "notified" | "fulfilled" | "cancelled";
+export interface BackOrder {
+  id: string; patient: string; phone?: string; productId: string; qty: number;
+  createdAt: number; status: BackOrderStatus;
+  etaDays: number; supplier: string;
+  arrivedAt?: number; notifiedAt?: number;
+}
+
+export function makeBackOrders(now: number): BackOrder[] {
+  const h = 3_600_000; const d = 24 * h;
+  return [
+    { id: "BO-101", patient: "Victor Adeyemi", phone: "(555) 318-0021", productId: "aml5", qty: 6, createdAt: now - 1.2 * d, status: "ordered", etaDays: 3, supplier: "MediSource Ltd" },
+    { id: "BO-102", patient: "Samuel Eze", phone: "(555) 481-2209", productId: "oxim", qty: 1, createdAt: now - 2.6 * d, status: "arrived", etaDays: 2, supplier: "DevicePoint", arrivedAt: now - 2 * h },
+    { id: "BO-103", patient: "Marta Kessler", phone: "(555) 774-2910", productId: "diclo50", qty: 3, createdAt: now - 3.4 * d, status: "notified", etaDays: 2, supplier: "PharmaLine Co", arrivedAt: now - 1.1 * d, notifiedAt: now - 5 * h },
   ];
 }
 

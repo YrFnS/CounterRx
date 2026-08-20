@@ -9,9 +9,9 @@ import {
 import type {
   Product, Transaction, Prescription, Customer, AuditEntry, AuditKind, Staff, Role, OrgSettings,
   HeldSale, TxLine, PayMethod, PaymentLeg, RxStatus, Batch, Transfer, TransferStatus, Field,
-  Snapshot, SnapshotMeta, RestrictedLogEntry, Prescriber,
+  Snapshot, SnapshotMeta, RestrictedLogEntry, Prescriber, BackOrder, BackOrderStatus,
 } from "./data";
-import { makeStaff, makeSettings, SNAPS_KEY, hashPin, ROLE_LABEL } from "./data";
+import { makeStaff, makeSettings, makeBackOrders, SNAPS_KEY, hashPin, ROLE_LABEL } from "./data";
 
 export type View = "register" | "dashboard" | "customers" | "inventory" | "prescriptions" | "history" | "settings";
 export type InventoryPreset = "all" | "low" | "expiring";
@@ -30,6 +30,7 @@ interface State {
   prescriptions: Prescription[];
   prescribers: Prescriber[];
   transfers: Transfer[];
+  backorders: BackOrder[];
   cart: { productId: string; qty: number; note?: string; priceOverride?: number; daw?: number; substitutedFrom?: string }[];
   held: HeldSale[];
   customers: Customer[];
@@ -60,6 +61,11 @@ type Action =
   | { type: "GO"; view: View; invPreset?: InventoryPreset }
   | { type: "ADD_CART"; productId: string; daw?: number; substitutedFrom?: string }
   | { type: "NOTIFY_RX"; id: string }
+  | { type: "PA_SUBMIT"; id: string }
+  | { type: "PA_CHECK"; id: string }
+  | { type: "PA_RESUBMIT"; id: string }
+  | { type: "CREATE_BACKORDER"; patient: string; phone?: string; productId: string; qty: number }
+  | { type: "BACKORDER_STATUS"; id: string; to: BackOrderStatus }
   | { type: "SET_QTY"; productId: string; qty: number }
   | { type: "REMOVE_LINE"; productId: string }
   | { type: "CLEAR_CART" }
@@ -100,7 +106,7 @@ let toastSeq = 1;
 let heldSeq = 1;
 let auditSeq = 100;
 
-const seed = (): Pick<State, "products" | "transactions" | "prescriptions" | "prescribers" | "customers" | "audit" | "transfers" | "staff" | "settings"> => {
+const seed = (): Pick<State, "products" | "transactions" | "prescriptions" | "prescribers" | "customers" | "audit" | "transfers" | "backorders" | "staff" | "settings"> => {
   const now = Date.now();
   const products = makeProducts(now);
   const customers = makeCustomers(now);
@@ -112,13 +118,14 @@ const seed = (): Pick<State, "products" | "transactions" | "prescriptions" | "pr
     prescriptions: makePrescriptions(now),
     prescribers: makePrescribers(),
     transfers: makeTransfers(now),
+    backorders: makeBackOrders(now),
     staff: makeStaff(now),
     settings: makeSettings(),
-    audit: [{ id: auditSeq++, at: now - 36 * 60_000, actor: "system", kind: "system", detail: "Ledger initialized — demo dataset v6" }],
+    audit: [{ id: auditSeq++, at: now - 36 * 60_000, actor: "system", kind: "system", detail: "Ledger initialized — demo dataset v7" }],
   };
 };
 
-const LS_KEY = "counterrx:v6";
+const LS_KEY = "counterrx:v7";
 
 function load(): State {
   const base: State = {
@@ -138,6 +145,7 @@ function load(): State {
           prescriptions: saved.prescriptions, customers: saved.customers,
           prescribers: saved.prescribers ?? makePrescribers(),
           transfers: saved.transfers ?? makeTransfers(Date.now()),
+          backorders: saved.backorders ?? makeBackOrders(Date.now()),
           staff: saved.staff ?? makeStaff(Date.now()),
           settings: { ...makeSettings(), ...(saved.settings ?? {}) },
           restrictedLog: saved.restrictedLog ?? [],
@@ -364,6 +372,77 @@ function reducer(state: State, a: Action): State {
         "success", `"Ready for pickup" sent to ${rx.patient}${rx.phone ? ` · ${rx.phone}` : ""}`);
     }
 
+    /* -------- prior authorization (§3) -------- */
+    case "PA_SUBMIT": {
+      const rx = state.prescriptions.find((x) => x.id === a.id);
+      if (!rx || rx.pa) return state;
+      const prescriptions = state.prescriptions.map((x) => (x.id === a.id
+        ? { ...x, pa: { status: "pending" as const, requestedAt: Date.now(), note: `Submitted to ${x.insurance?.plan ?? "payer"} — awaiting clinical review` } }
+        : x));
+      return withToast(
+        withAudit({ ...state, prescriptions }, "rx", `Prior auth requested — ${rx.id} · ${rx.patient} · ${rx.insurance?.plan ?? "payer"}`),
+        "success", `PA submitted for ${rx.id} — tracking with ${rx.insurance?.plan ?? "the payer"}`);
+    }
+
+    case "PA_CHECK": {
+      const rx = state.prescriptions.find((x) => x.id === a.id);
+      if (!rx?.pa || rx.pa.status !== "pending") return state;
+      /* simulated payer adjudication — deterministic, consistent with eligibility rule */
+      const ok = !/9$/.test(rx.insurance?.memberId ?? "");
+      const pa = ok
+        ? { status: "approved" as const, requestedAt: rx.pa.requestedAt, decidedAt: Date.now(), note: "Approved — clinical criteria met" }
+        : { status: "rejected" as const, requestedAt: rx.pa.requestedAt, decidedAt: Date.now(), note: "Clinical criteria not met — resubmit with chart notes" };
+      const prescriptions = state.prescriptions.map((x) => (x.id === a.id ? { ...x, pa } : x));
+      const next = withAudit({ ...state, prescriptions }, "rx",
+        `Prior auth ${pa.status} — ${rx.id} · ${rx.patient}${pa.note ? ` · ${pa.note}` : ""}`);
+      return ok
+        ? withToast(next, "success", `${rx.id} prior auth APPROVED — safe to fill`)
+        : withToast(next, "error", `${rx.id} prior auth REJECTED — ${pa.note}`);
+    }
+
+    case "PA_RESUBMIT": {
+      const rx = state.prescriptions.find((x) => x.id === a.id);
+      if (!rx?.pa || rx.pa.status !== "rejected") return state;
+      const prescriptions = state.prescriptions.map((x) => (x.id === a.id
+        ? { ...x, pa: { status: "pending" as const, requestedAt: Date.now(), note: "Resubmitted with supporting chart notes" } }
+        : x));
+      return withToast(
+        withAudit({ ...state, prescriptions }, "rx", `Prior auth resubmitted — ${rx.id} · ${rx.patient}`),
+        "info", `${rx.id} PA resubmitted — back in the payer queue`);
+    }
+
+    /* -------- patient back-orders (§3) -------- */
+    case "CREATE_BACKORDER": {
+      const p = state.products.find((x) => x.id === a.productId);
+      if (!p) return state;
+      const dupe = state.backorders.find((b) => b.productId === a.productId && b.patient === a.patient && (b.status === "ordered" || b.status === "arrived" || b.status === "notified"));
+      if (dupe) return withToast(state, "warn", `${a.patient} already has an open back-order for ${p.name}`);
+      const id = `BO-${101 + state.backorders.length}`;
+      const bo: BackOrder = {
+        id, patient: a.patient, phone: a.phone, productId: a.productId, qty: a.qty,
+        createdAt: Date.now(), status: "ordered", etaDays: 3, supplier: p.supplier,
+      };
+      return withToast(
+        withAudit({ ...state, backorders: [bo, ...state.backorders] }, "stock", `Back-order ${id} — ${a.qty} × ${p.name} for ${a.patient} · ETA 3d · ${p.supplier}`),
+        "success", `Back-order ${id} placed for ${a.patient} — we'll notify when it lands`);
+    }
+
+    case "BACKORDER_STATUS": {
+      const bo = state.backorders.find((x) => x.id === a.id);
+      if (!bo) return state;
+      const p = state.products.find((x) => x.id === bo.productId);
+      const now = Date.now();
+      const backorders = state.backorders.map((x) => (x.id === a.id ? {
+        ...x, status: a.to,
+        arrivedAt: a.to === "arrived" ? (x.arrivedAt ?? now) : x.arrivedAt,
+        notifiedAt: a.to === "notified" ? (x.notifiedAt ?? now) : x.notifiedAt,
+      } : x));
+      const verb = a.to === "arrived" ? "stock arrived" : a.to === "notified" ? "patient notified" : a.to === "fulfilled" ? "handed over & fulfilled" : "cancelled";
+      return withToast(
+        withAudit({ ...state, backorders }, "stock", `Back-order ${bo.id} ${verb} — ${bo.qty} × ${p?.name ?? bo.productId} · ${bo.patient}`),
+        a.to === "cancelled" ? "info" : "success", `${bo.id} ${verb}`);
+    }
+
     case "SET_QTY": {
       const p = state.products.find((x) => x.id === a.productId);
       if (!p) return state;
@@ -512,8 +591,14 @@ function reducer(state: State, a: Action): State {
       if (!p) return state;
       const lot: Batch = { batch: a.batch, expiry: a.expiry, qty: a.amount };
       const products = state.products.map((x) => (x.id === a.productId ? { ...x, batches: [...x.batches, lot] } : x));
-      const next = withAudit({ ...state, products }, "stock", `Received +${a.amount} × ${p.name} → lot ${a.batch} (exp ${a.expiry})`);
-      return withToast(next, "success", `Received +${a.amount} × ${p.name} → lot ${a.batch} (exp ${a.expiry})`);
+      /* receiving stock flips any matching open back-orders to "arrived" (§3) */
+      const matched = state.backorders.filter((b) => b.productId === a.productId && b.status === "ordered");
+      const backorders = matched.length > 0
+        ? state.backorders.map((b) => (b.productId === a.productId && b.status === "ordered" ? { ...b, status: "arrived" as const, arrivedAt: Date.now() } : b))
+        : state.backorders;
+      const suffix = matched.length > 0 ? ` — ${matched.length} back-order${matched.length === 1 ? "" : "s"} now in` : "";
+      const next = withAudit({ ...state, products, backorders }, "stock", `Received +${a.amount} × ${p.name} → lot ${a.batch} (exp ${a.expiry})${suffix}`);
+      return withToast(next, "success", `Received +${a.amount} × ${p.name} → lot ${a.batch}${suffix}`);
     }
 
     case "SET_NOTE": {
@@ -864,9 +949,10 @@ export function PosProvider({ children }: { children: ReactNode }) {
         customers: state.customers,
         transfers: state.transfers, audit: state.audit,
         staff: state.staff, settings: state.settings, restrictedLog: state.restrictedLog,
+        backorders: state.backorders,
       }));
     } catch { /* storage full — ignore */ }
-  }, [state.products, state.transactions, state.prescriptions, state.prescribers, state.customers, state.transfers, state.audit, state.staff, state.settings, state.restrictedLog]);
+  }, [state.products, state.transactions, state.prescriptions, state.prescribers, state.customers, state.transfers, state.audit, state.staff, state.settings, state.restrictedLog, state.backorders]);
 
   const value = useMemo<Ctx>(() => {
     const product = (id: string) => state.products.find((p) => p.id === id);

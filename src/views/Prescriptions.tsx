@@ -6,9 +6,9 @@ import {
 import type { DragStartEvent, DragEndEvent, DragOverEvent } from "@dnd-kit/core";
 import { usePos, relTime } from "../store";
 import { stockOf, can, daysUntil } from "../data";
-import type { RxStatus, Prescription } from "../data";
+import type { RxStatus, Prescription, BackOrderStatus } from "../data";
 import { cx, Badge, Modal } from "../ui";
-import { IRx, ICheck, IClock, IRegister, IShield, IGrab, IRefresh, ISend, IRecall, IX } from "../icons";
+import { IRx, ICheck, IClock, IRegister, IShield, IGrab, IRefresh, ISend, IRecall, IX, IBox } from "../icons";
 
 const FLOW: RxStatus[] = ["new", "verifying", "ready", "waiting", "dispensed"];
 const LABEL: Record<RxStatus, string> = {
@@ -70,6 +70,8 @@ export default function Prescriptions() {
           <IShield size={14} className="text-pine-600" /> Pharmacist on duty: <span className="font-semibold text-ink">R. Mensah, RPh</span>
         </p>
       </div>
+
+      <BackorderStrip />
 
       {dueRefills.length > 0 && (
         <div className="mt-3.5 rounded-xl border border-honey-300/60 bg-honey-100/40 p-3 anim-fade-up">
@@ -177,6 +179,96 @@ function Column({ status, items, highlight, dimmed, ghostId }: {
   );
 }
 
+/* Patient back-order queue — order out-of-stock Rx for a patient, notify on arrival (§3) */
+const BO_TONE: Record<BackOrderStatus, { chip: string; dot: string }> = {
+  ordered: { chip: "bg-honey-100 text-honey-700", dot: "bg-honey-500" },
+  arrived: { chip: "bg-pine-100 text-pine-700", dot: "bg-pine-500" },
+  notified: { chip: "bg-mist/70 text-ink", dot: "bg-inksoft" },
+  fulfilled: { chip: "bg-pine-700 text-pine-50", dot: "bg-pine-300" },
+  cancelled: { chip: "bg-brick-100 text-brick-700", dot: "bg-brick-500" },
+};
+
+function BackorderStrip() {
+  const { state, dispatch, product } = usePos();
+  const open = state.backorders.filter((b) => ["ordered", "arrived", "notified"].includes(b.status));
+  const done = state.backorders.filter((b) => b.status === "fulfilled").length;
+
+  if (state.backorders.length === 0) return null;
+
+  const etaLeft = (b: { createdAt: number; etaDays: number }) =>
+    b.etaDays - Math.floor((Date.now() - b.createdAt) / 86_400_000);
+
+  return (
+    <div className="mt-3.5 rounded-xl border border-mist bg-card/60 p-3 anim-fade-up">
+      <div className="flex items-center justify-between gap-2">
+        <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-inksoft flex items-center gap-1.5">
+          <IBox size={12} className="text-pine-600" /> Back-order queue · {open.length} open
+          {done > 0 && <span className="normal-case tracking-normal text-pine-700">· {done} fulfilled</span>}
+        </p>
+      </div>
+
+      {open.length === 0 ? (
+        <p className="mt-2 text-[11px] text-inksoft">No open back-orders — every patient order has been handed over.</p>
+      ) : (
+        <div className="mt-2 flex gap-2.5 overflow-x-auto scroll-slim pb-1">
+          {open.map((b, i) => {
+            const p = product(b.productId);
+            const left = etaLeft(b);
+            return (
+              <div key={b.id} style={{ animationDelay: `${i * 60}ms` }}
+                className="anim-fade-up shrink-0 w-64 rounded-lg border border-mist bg-card p-3 shadow-lift transition-transform hover:-translate-y-0.5 flex flex-col">
+                <div className="flex items-center justify-between gap-2">
+                  <p className="text-xs font-bold text-ink truncate">{b.patient}</p>
+                  <span className={cx("num shrink-0 text-[9px] font-bold px-1.5 py-0.5 rounded uppercase", BO_TONE[b.status].chip)}>{b.status}</span>
+                </div>
+                <p className="mt-1 text-[11px] text-inksoft truncate">
+                  <span className="font-semibold text-ink">{p?.name ?? b.productId}</span> × {b.qty}
+                </p>
+                <p className="text-[10px] text-inksoft num">
+                  {b.supplier}
+                  {b.status === "ordered" && (
+                    <span className={cx("ml-1.5 font-bold", left < 0 ? "text-brick-700" : "text-honey-700")}>
+                      · ETA {left < 0 ? `${Math.abs(left)}d overdue` : `${left}d`}
+                    </span>
+                  )}
+                  {b.arrivedAt && b.status !== "ordered" && <span className="ml-1.5 text-pine-700 font-bold">· in {relTime(b.arrivedAt)}</span>}
+                </p>
+                {b.phone && <p className="text-[10px] text-inksoft num">{b.phone}</p>}
+
+                <div className="mt-auto pt-2 flex gap-1.5">
+                  {b.status === "ordered" && (
+                    <button onClick={() => dispatch({ type: "BACKORDER_STATUS", id: b.id, to: "arrived" })}
+                      className="flex-1 flex items-center justify-center gap-1 py-1.5 rounded-md bg-pine-700 text-pine-50 text-[11px] font-bold hover:bg-pine-600 transition active:scale-95">
+                      <IBox size={11} /> Mark arrived
+                    </button>
+                  )}
+                  {b.status === "arrived" && (
+                    <button onClick={() => dispatch({ type: "BACKORDER_STATUS", id: b.id, to: "notified" })}
+                      className="flex-1 flex items-center justify-center gap-1 py-1.5 rounded-md bg-honey-500 text-pine-950 text-[11px] font-bold hover:brightness-105 transition active:scale-95">
+                      <ISend size={11} /> Notify patient
+                    </button>
+                  )}
+                  {b.status === "notified" && (
+                    <button onClick={() => { dispatch({ type: "ADD_CART", productId: b.productId }); dispatch({ type: "BACKORDER_STATUS", id: b.id, to: "fulfilled" }); }}
+                      className="flex-1 flex items-center justify-center gap-1 py-1.5 rounded-md bg-pine-700 text-pine-50 text-[11px] font-bold hover:bg-pine-600 transition active:scale-95">
+                      <IRegister size={11} /> Attach to sale
+                    </button>
+                  )}
+                  <button onClick={() => dispatch({ type: "BACKORDER_STATUS", id: b.id, to: "cancelled" })}
+                    className="px-2 rounded-md border border-mist text-inksoft hover:text-brick-700 hover:border-brick-400 transition active:scale-95"
+                    aria-label={`Cancel ${b.id}`}>
+                    <IX size={11} />
+                  </button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function RxCard({ rx, ghost, overlay }: { rx: Prescription; ghost?: boolean; overlay?: boolean }) {
   const { state, dispatch, product, prescriber } = usePos();
   const { attributes, listeners, setNodeRef } = useDraggable({ id: rx.id });
@@ -186,6 +278,8 @@ function RxCard({ rx, ghost, overlay }: { rx: Prescription; ghost?: boolean; ove
   const stepIdx = FLOW.indexOf(rx.status);
   const next = NEXT[rx.status];
   const canAttach = rx.status !== "dispensed" && p && shelf > 0;
+  const canPa = can(state.user?.role, "verify_rx");
+  const canBackorder = rx.status !== "dispensed" && p && shelf === 0;
 
   return (
     <article ref={setNodeRef} {...listeners} {...attributes}
@@ -297,6 +391,56 @@ function RxCard({ rx, ghost, overlay }: { rx: Prescription; ghost?: boolean; ove
             )}
           </div>
         )}
+
+        {/* prior authorization lifecycle (§3) */}
+        {rx.pa && (
+          <div className={cx("mt-1.5 rounded-md border px-2 py-1.5",
+            rx.pa.status === "approved" ? "bg-pine-100/70 border-pine-300/60" :
+            rx.pa.status === "rejected" ? "bg-brick-100/70 border-brick-300/60" :
+            "bg-honey-100/60 border-honey-300/60")}>
+            <div className="flex items-center justify-between gap-2">
+              <span className={cx("flex items-center gap-1 text-[10px] font-bold",
+                rx.pa.status === "approved" ? "text-pine-700" :
+                rx.pa.status === "rejected" ? "text-brick-700" : "text-honey-700")}>
+                <IClock size={10} /> Prior auth
+              </span>
+              <span className={cx("text-[9px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded",
+                rx.pa.status === "approved" ? "bg-pine-700 text-pine-50" :
+                rx.pa.status === "rejected" ? "bg-brick-600 text-brick-100" :
+                "bg-honey-500 text-pine-950 anim-pulse-dot")}>
+                {rx.pa.status}
+              </span>
+            </div>
+            {rx.pa.note && <p className="text-[9px] text-inksoft mt-0.5 leading-snug">{rx.pa.note}</p>}
+            <p className="num text-[9px] text-inksoft mt-0.5">
+              requested {relTime(rx.pa.requestedAt)}{rx.pa.decidedAt && ` · decided ${relTime(rx.pa.decidedAt)}`}
+            </p>
+            {!canPa ? (
+              <p className="mt-1 py-1 text-center rounded bg-mist/70 text-[10px] font-bold text-inksoft">🔒 Pharmacist sign-in required for PA</p>
+            ) : rx.pa.status === "pending" ? (
+              <button onClick={() => dispatch({ type: "PA_CHECK", id: rx.id })}
+                className="mt-1 w-full py-1 rounded bg-honey-500 text-pine-950 text-[10px] font-bold hover:brightness-105 transition active:scale-95">
+                Check payer decision
+              </button>
+            ) : rx.pa.status === "rejected" ? (
+              <button onClick={() => dispatch({ type: "PA_RESUBMIT", id: rx.id })}
+                className="mt-1 w-full py-1 rounded bg-brick-600 text-brick-100 text-[10px] font-bold hover:bg-brick-500 transition active:scale-95">
+                Resubmit with chart notes
+              </button>
+            ) : (
+              <p className="mt-1 py-0.5 text-center text-[10px] font-bold text-pine-700">✓ Cleared to dispense</p>
+            )}
+          </div>
+        )}
+        {/* offer to initiate PA once coverage is verified but no PA is on file */}
+        {!rx.pa && rx.insurance?.status === "verified" && rx.status !== "dispensed" && (
+          canPa ? (
+            <button onClick={() => dispatch({ type: "PA_SUBMIT", id: rx.id })}
+              className="mt-1.5 w-full py-1.5 rounded-md border border-dashed border-honey-400 text-[10px] font-bold text-honey-700 hover:bg-honey-100/60 transition active:scale-95">
+              + Request prior authorization
+            </button>
+          ) : null
+        )}
       </div>
 
       {/* mini pipeline */}
@@ -319,6 +463,13 @@ function RxCard({ rx, ghost, overlay }: { rx: Prescription; ghost?: boolean; ove
           <button onClick={() => dispatch({ type: "RX_TO_CART", id: rx.id })}
             className="flex-1 py-1.5 rounded-lg border border-pine-200 bg-pine-50 text-pine-800 text-[11px] font-bold hover:bg-pine-100 transition active:scale-[0.97] flex items-center justify-center gap-1">
             <IRegister size={11} /> {rx.status === "waiting" ? "Charge at pickup" : "Attach to sale"}
+          </button>
+        )}
+        {canBackorder && (
+          <button onClick={() => dispatch({ type: "CREATE_BACKORDER", patient: rx.patient, phone: rx.phone, productId: rx.productId, qty: rx.qty })}
+            className="flex-1 py-1.5 rounded-lg border border-dashed border-honey-400 bg-honey-100/50 text-honey-800 text-[11px] font-bold hover:bg-honey-100 transition active:scale-[0.97] flex items-center justify-center gap-1"
+            title="Out of stock — order it for this patient and notify on arrival">
+            <IBox size={11} /> Back-order · out of stock
           </button>
         )}
         {rx.status === "dispensed" && (
