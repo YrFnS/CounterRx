@@ -982,6 +982,84 @@ export interface TimeEntry {
   outAt?: number;
 }
 
+/* ------------------------------------------------------------------ */
+/*  Shift Management (§2) — open/close drawer, X/Z reports, cash       */
+/*  over/short, paid-in/paid-out, manager approvals                    */
+/* ------------------------------------------------------------------ */
+
+export type ShiftStatus = "open" | "closed";
+export type TenderType = "cash" | "card" | "insurance" | "store_credit";
+export type TxType = "sale" | "refund" | "void" | "paid_in" | "paid_out";
+
+export interface CashMovement {
+  id: string;
+  at: number;
+  type: "paid_in" | "paid_out";
+  amount: number;
+  reason: string;
+  cashier: string;
+  approvedBy?: string; // manager approval for large amounts
+}
+
+export interface ShiftTransaction {
+  txId: string;
+  at: number;
+  type: TxType;
+  total: number;
+  tenderType: TenderType;
+  cashier: string;
+  voidReason?: string;
+  approvedBy?: string; // manager approval for voids
+}
+
+export interface Shift {
+  id: string;
+  terminalId: string;
+  cashierId: string;
+  cashierName: string;
+  openedAt: number;
+  closedAt?: number;
+  status: ShiftStatus;
+  openingBalance: number;
+  closingBalance?: number;
+  countedCash?: number; // actual cash counted at close
+  transactions: ShiftTransaction[];
+  cashMovements: CashMovement[];
+  salesTotal: number;
+  refundsTotal: number;
+  cardTotal: number;
+  insuranceTotal: number;
+  storeCreditTotal: number;
+  paidInTotal: number;
+  paidOutTotal: number;
+  expectedCash: number;
+  overShort?: number; // positive = over, negative = short
+  notes?: string;
+}
+
+export interface XReport {
+  generatedAt: number;
+  terminalId: string;
+  cashierName: string;
+  shiftId: string;
+  openedAt: number;
+  transactionCount: number;
+  salesTotal: number;
+  refundsTotal: number;
+  tenderBreakdown: Record<TenderType, number>;
+  cashMovements: CashMovement[];
+  currentCash: number;
+}
+
+export interface ZReport extends XReport {
+  closedAt: number;
+  openingBalance: number;
+  closingBalance: number;
+  countedCash: number;
+  overShort: number;
+  notes?: string;
+}
+
 export function makeTimeEntries(now: number): TimeEntry[] {
   const d = 86_400_000; const h = 3_600_000;
   let seq = 500;
@@ -996,4 +1074,152 @@ export function makeTimeEntries(now: number): TimeEntry[] {
     mk("S-004", 1, 12, 6), mk("S-004", 2, 13, 5.5),
     mk("S-001", 1, 9, 4),
   ];
+}
+
+let shiftSeq = 1;
+/** Create a new open shift for a cashier at a terminal */
+export function createShift(terminalId: string, cashierId: string, cashierName: string, openingBalance: number, now: number): Shift {
+  return {
+    id: `SH-${String(shiftSeq++).padStart(4, "0")}`,
+    terminalId,
+    cashierId,
+    cashierName,
+    openedAt: now,
+    status: "open",
+    openingBalance,
+    transactions: [],
+    cashMovements: [],
+    salesTotal: 0,
+    refundsTotal: 0,
+    cardTotal: 0,
+    insuranceTotal: 0,
+    storeCreditTotal: 0,
+    paidInTotal: openingBalance,
+    paidOutTotal: 0,
+    expectedCash: openingBalance,
+  };
+}
+
+/** Record a transaction in the shift log */
+export function recordShiftTransaction(shift: Shift, tx: Transaction, type: TxType, tenderType: TenderType, voidReason?: string, approvedBy?: string): Shift {
+  const shiftTx: ShiftTransaction = {
+    txId: tx.id,
+    at: tx.at,
+    type,
+    total: tx.total,
+    tenderType,
+    cashier: tx.cashier,
+    voidReason,
+    approvedBy,
+  };
+  
+  const updated = { ...shift, transactions: [...shift.transactions, shiftTx] };
+  
+  // Update totals based on transaction type
+  if (type === "sale") {
+    updated.salesTotal += tx.total;
+    if (tenderType === "cash") updated.expectedCash += tx.total;
+    else if (tenderType === "card") updated.cardTotal += tx.total;
+    else if (tenderType === "insurance") updated.insuranceTotal += tx.total;
+    else if (tenderType === "store_credit") updated.storeCreditTotal += tx.total;
+  } else if (type === "refund") {
+    updated.refundsTotal += tx.total;
+    if (tenderType === "cash") updated.expectedCash -= tx.total;
+  } else if (type === "void") {
+    // Voids don't affect totals directly, just logged
+  }
+  
+  return updated;
+}
+
+/** Record a paid-in/paid-out cash movement */
+export function recordCashMovement(shift: Shift, type: "paid_in" | "paid_out", amount: number, reason: string, cashier: string, approvedBy?: string): Shift {
+  const movement: CashMovement = {
+    id: `CM-${Date.now()}`,
+    at: Date.now(),
+    type,
+    amount,
+    reason,
+    cashier,
+    approvedBy,
+  };
+  
+  const updated = { ...shift, cashMovements: [...shift.cashMovements, movement] };
+  
+  if (type === "paid_in") {
+    updated.paidInTotal += amount;
+    updated.expectedCash += amount;
+  } else {
+    updated.paidOutTotal += amount;
+    updated.expectedCash -= amount;
+  }
+  
+  return updated;
+}
+
+/** Close a shift and calculate over/short */
+export function closeShift(shift: Shift, countedCash: number, notes?: string, now: number = Date.now()): Shift {
+  const closingBalance = shift.openingBalance + shift.salesTotal - shift.refundsTotal + shift.paidInTotal - shift.paidOutTotal;
+  const overShort = countedCash - shift.expectedCash;
+  
+  return {
+    ...shift,
+    closedAt: now,
+    status: "closed",
+    closingBalance,
+    countedCash,
+    overShort,
+    notes,
+  };
+}
+
+/** Generate an X report (mid-shift summary) */
+export function generateXReport(shift: Shift): XReport {
+  const tenderBreakdown: Record<TenderType, number> = {
+    cash: 0,
+    card: 0,
+    insurance: 0,
+    store_credit: 0,
+  };
+  
+  shift.transactions.forEach(tx => {
+    if (tx.type === "sale") {
+      tenderBreakdown[tx.tenderType] += tx.total;
+    } else if (tx.type === "refund" && tx.tenderType === "cash") {
+      tenderBreakdown.cash -= tx.total;
+    }
+  });
+  
+  const currentCash = shift.openingBalance + tenderBreakdown.cash + shift.paidInTotal - shift.paidOutTotal;
+  
+  return {
+    generatedAt: Date.now(),
+    terminalId: shift.terminalId,
+    cashierName: shift.cashierName,
+    shiftId: shift.id,
+    openedAt: shift.openedAt,
+    transactionCount: shift.transactions.filter(tx => tx.type !== "void").length,
+    salesTotal: shift.salesTotal,
+    refundsTotal: shift.refundsTotal,
+    tenderBreakdown,
+    cashMovements: shift.cashMovements,
+    currentCash,
+  };
+}
+
+/** Generate a Z report (end-of-day final report) */
+export function generateZReport(shift: Shift): ZReport | null {
+  if (shift.status !== "closed" || !shift.countedCash) return null;
+  
+  const xReport = generateXReport(shift);
+  
+  return {
+    ...xReport,
+    closedAt: shift.closedAt!,
+    openingBalance: shift.openingBalance,
+    closingBalance: shift.closingBalance!,
+    countedCash: shift.countedCash,
+    overShort: shift.overShort!,
+    notes: shift.notes,
+  };
 }
