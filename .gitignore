@@ -1,5 +1,48 @@
+```
+# Dependencies
 node_modules/
-.next/
+
+# Build outputs
 dist/
 build/
+target/
+
+# Logs
 *.log
+
+# Environment variables
+.env
+.env.local
+*.env.*
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+*.tmp
+
+# Python cache (if present)
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Coverage reports
+coverage/
+htmlcov/
+.coverage
+
+# Local configuration
+.julia/
+zig*/
+*.tar*
+*.zip
+*.gz
+*.rar
+*.7z
+
+# OS generated files
+.DS_Store
+Thumbs.db
+```

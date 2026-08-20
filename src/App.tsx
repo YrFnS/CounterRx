@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import type { ReactNode, ChangeEvent } from "react";
+import { useTranslation } from "react-i18next";
 import { PosProvider, usePos } from "./store";
 import type { View } from "./store";
 import { CASHIER, daysUntil, nearestExpiry, stockOf, hashPin, ROLE_LABEL } from "./data";

@@ -7,6 +7,7 @@ import {
   TAX_RATE, CASHIER,
   stockOf, nearestExpiry, allocFEFO, fefoBatches, newBatchCode, daysUntil,
   bulkPct, REDEEM_CHUNK_PTS, REDEEM_CHUNK_VALUE,
+  createShift, recordShiftTransaction, recordCashMovement, closeShift, generateXReport, generateZReport,
 } from "./data";
 import type {
   Product, Transaction, Prescription, Customer, AuditEntry, AuditKind, Staff, Role, OrgSettings,
@@ -14,6 +15,7 @@ import type {
   Snapshot, SnapshotMeta, RestrictedLogEntry, Prescriber, BackOrder, BackOrderStatus, RxTransfer,
   Supplier, PurchaseOrder, ApInvoice, ApPayMethod, Expense,
   Delivery, DeliveryStatus, WebOrder, WebOrderStatus, TimeEntry,
+  Shift, XReport, ZReport, CashMovement, ShiftTransaction, TxType, TenderType,
 } from "./data";
 import { makeStaff, makeSettings, makeBackOrders, makeRxTransfers, SNAPS_KEY, hashPin, ROLE_LABEL } from "./data";
 
@@ -43,6 +45,8 @@ interface State {
   deliveries: Delivery[];
   webOrders: WebOrder[];
   timeEntries: TimeEntry[];
+  shifts: Shift[];
+  currentShift: Shift | null;
   cart: { productId: string; qty: number; note?: string; priceOverride?: number; daw?: number; substitutedFrom?: string; uom?: string }[];
   held: HeldSale[];
   customers: Customer[];
@@ -138,13 +142,19 @@ type Action =
   | { type: "WEB_CONVERT"; id: string }
   | { type: "CLOCK" }
   | { type: "CUSTOMER_PROFILE"; id: string; patch: Partial<Pick<Customer, "dob" | "gender" | "address" | "bloodType" | "primaryPrescriberId" | "insurancePlan" | "clinicalNotes">> }
+  | { type: "SHIFT_OPEN"; terminalId: string; openingBalance: number }
+  | { type: "SHIFT_CLOSE"; countedCash: number; notes?: string }
+  | { type: "SHIFT_CASH_MOVEMENT"; type: "paid_in" | "paid_out"; amount: number; reason: string; approvedBy?: string }
+  | { type: "VOID_TX"; txId: string; reason: string; approvedBy: string }
+  | { type: "GENERATE_X_REPORT"; shiftId: string }
+  | { type: "GENERATE_Z_REPORT"; shiftId: string }
   | { type: "RESET" };
 
 let toastSeq = 1;
 let heldSeq = 1;
 let auditSeq = 100;
 
-const seed = (): Pick<State, "products" | "transactions" | "prescriptions" | "prescribers" | "customers" | "audit" | "transfers" | "backorders" | "rxTransfers" | "suppliers" | "purchaseOrders" | "apInvoices" | "expenses" | "deliveries" | "webOrders" | "timeEntries" | "staff" | "settings"> => {
+const seed = (): Pick<State, "products" | "transactions" | "prescriptions" | "prescribers" | "customers" | "audit" | "transfers" | "backorders" | "rxTransfers" | "suppliers" | "purchaseOrders" | "apInvoices" | "expenses" | "deliveries" | "webOrders" | "timeEntries" | "staff" | "settings" | "shifts"> => {
   const now = Date.now();
   const products = makeProducts(now);
   const customers = makeCustomers(now);
@@ -165,6 +175,7 @@ const seed = (): Pick<State, "products" | "transactions" | "prescriptions" | "pr
     deliveries: makeDeliveries(now),
     webOrders: makeWebOrders(now),
     timeEntries: makeTimeEntries(now),
+    shifts: [],
     staff: makeStaff(now),
     settings: makeSettings(),
     audit: [{ id: auditSeq++, at: now - 36 * 60_000, actor: "system", kind: "system", detail: "Ledger initialized — demo dataset v10" }],
@@ -1318,8 +1329,75 @@ function reducer(state: State, a: Action): State {
       localStorage.removeItem(LS_KEY);
       return {
         ...state, ...seed(), cart: [], held: [], receipt: null, payOpen: false,
-        saleCustomerId: null, redeemPoints: 0,
+        saleCustomerId: null, redeemPoints: 0, currentShift: null,
       };
+    }
+
+    case "SHIFT_OPEN": {
+      if (!state.user) return state;
+      const terminalId = a.terminalId || `T-${String(state.shifts.length + 1).padStart(2, "0")}`;
+      const shift = createShift(terminalId, state.user.id, state.user.name, a.openingBalance, Date.now());
+      return withToast(withAudit({ ...state, shifts: [...state.shifts, shift], currentShift: shift }, "shift", `Shift ${shift.id} opened by ${state.user.name}`), "success", `Shift opened — ${terminalId}`);
+    }
+
+    case "SHIFT_CLOSE": {
+      if (!state.currentShift) return state;
+      const closed = closeShift(state.currentShift, a.countedCash, a.notes, Date.now());
+      const updatedShifts = state.shifts.map(s => s.id === closed.id ? closed : s);
+      return withToast(withAudit({ ...state, shifts: updatedShifts, currentShift: null }, "shift", `Shift ${closed.id} closed — over/short: ${closed.overShort?.toFixed(2)}`), "info", `Shift closed — ${closed.overShort! >= 0 ? "over" : "short"} $${Math.abs(closed.overShort!).toFixed(2)}`);
+    }
+
+    case "SHIFT_CASH_MOVEMENT": {
+      if (!state.currentShift || !state.user) return state;
+      const managerRoles: Role[] = ["manager", "pharmacy_admin", "super_admin"];
+      const needsApproval = a.amount > 100 && !managerRoles.includes(state.user.role);
+      if (needsApproval && !a.approvedBy) return withToast(state, "error", "Manager approval required for large amounts");
+      
+      const updated = recordCashMovement(state.currentShift, a.type, a.amount, a.reason, state.user.name, a.approvedBy);
+      const updatedShifts = state.shifts.map(s => s.id === updated.id ? updated : s);
+      return withToast(withAudit({ ...state, shifts: updatedShifts, currentShift: updated }, "cash", `${a.type.replace("_", " ")} $${a.toFixed(2)} — ${a.reason}`), "success", `${a.type.replace("_", " ").toUpperCase()} recorded`);
+    }
+
+    case "VOID_TX": {
+      if (!state.user) return state;
+      const managerRoles: Role[] = ["manager", "pharmacy_admin", "super_admin"];
+      if (!managerRoles.includes(state.user.role)) return withToast(state, "error", "Manager approval required for voids");
+      
+      const tx = state.transactions.find(t => t.id === a.txId);
+      if (!tx) return state;
+      
+      // Mark transaction as voided in the transactions list
+      const updatedTransactions = state.transactions.map(t => 
+        t.id === a.txId ? { ...t, refundedAt: Date.now(), reason: `VOID: ${a.reason}`, refundOf: t.id } : t
+      );
+      
+      // Record in shift if there's an open shift
+      let newState: State = { ...state, transactions: updatedTransactions };
+      if (state.currentShift) {
+        const tenderType: TenderType = tx.method === "insurance" ? "insurance" : tx.method === "card" ? "card" : tx.method === "cash" ? "cash" : "store_credit";
+        const updated = recordShiftTransaction(state.currentShift, tx, "void", tenderType, a.reason, a.approvedBy);
+        const updatedShifts = state.shifts.map(s => s.id === updated.id ? updated : s);
+        newState = { ...newState, shifts: updatedShifts, currentShift: updated };
+      }
+      
+      return withToast(withAudit(newState, "void", `Transaction ${a.txId} voided by ${state.user.name} — ${a.reason}`), "warn", "Transaction voided");
+    }
+
+    case "GENERATE_X_REPORT": {
+      const shift = state.shifts.find(s => s.id === a.shiftId);
+      if (!shift) return state;
+      const report = generateXReport(shift);
+      // In a real app, this would show a modal or navigate to a report view
+      return withToast(state, "info", `X Report generated for shift ${shift.id}`);
+    }
+
+    case "GENERATE_Z_REPORT": {
+      const shift = state.shifts.find(s => s.id === a.shiftId);
+      if (!shift || shift.status !== "closed") return state;
+      const report = generateZReport(shift);
+      if (!report) return state;
+      // In a real app, this would show a modal or navigate to a report view
+      return withToast(withAudit(state, "report", `Z Report generated for shift ${shift.id}`), "success", `Z Report generated — ${report.overShort >= 0 ? "over" : "short"} $${Math.abs(report.overShort).toFixed(2)}`);
     }
 
     default:

@@ -1,5 +1,16 @@
 @import "tailwindcss";
 
+/* RTL support for Arabic */
+[dir="rtl"] {
+  direction: rtl;
+  text-align: right;
+}
+
+[dir="rtl"] .num {
+  direction: ltr;
+  unicode-bidi: embed;
+}
+
 @theme {
   --font-display: "Space Grotesk", "IBM Plex Sans", sans-serif;
   --font-body: "IBM Plex Sans", system-ui, sans-serif;
