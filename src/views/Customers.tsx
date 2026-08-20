@@ -96,6 +96,7 @@ function CustomerRow({ c, visits, spend, last, txs, expanded, onToggle }: {
   expanded: boolean; onToggle: () => void;
 }) {
   const { dispatch } = usePos();
+  const [profileOpen, setProfileOpen] = useState(false);
   const tier = c.points >= 300 ? "Gold" : c.points >= 100 ? "Silver" : "Bronze";
   const tierTone = c.points >= 300 ? "bg-honey-100 text-honey-700 border-honey-300/60" : c.points >= 100 ? "bg-mist/60 text-ink border-mist" : "bg-brick-100/60 text-brick-700 border-brick-200/60";
   return (
@@ -140,11 +141,16 @@ function CustomerRow({ c, visits, spend, last, txs, expanded, onToggle }: {
             <div className="flex items-center gap-2 flex-wrap mb-2.5">
               <Badge tone="mist"><IHistory size={10} /> {visits} receipt{visits === 1 ? "" : "s"}</Badge>
               <Badge tone="pine">member since {relTime(c.createdAt)}</Badge>
+              <button onClick={(e) => { e.stopPropagation(); setProfileOpen(true); }}
+                className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md border border-pine-300 bg-pine-50 text-pine-700 text-[11px] font-bold hover:bg-pine-100 transition active:scale-95">
+                <IUsers size={11} /> Full profile
+              </button>
               <button onClick={(e) => { e.stopPropagation(); dispatch({ type: "SET_SALE_CUSTOMER", id: c.id }); dispatch({ type: "GO", view: "register" }); dispatch({ type: "TOAST", kind: "info", msg: `${c.name} attached to the open sale` }); }}
                 className="ml-auto flex items-center gap-1.5 px-2.5 py-1.5 rounded-md bg-pine-700 text-pine-50 text-[11px] font-bold hover:bg-pine-600 transition active:scale-95">
                 <IRegister size={11} /> Start sale for {c.name.split(" ")[0]}
               </button>
             </div>
+            {profileOpen && <ProfileModal c={c} onClose={() => setProfileOpen(false)} />}
             <div className="mb-2.5">
               <CustomFieldsBlock fields={c.fields ?? []} suggestions={["Preferred pickup", "Insurance plan", "Delivery zone", "VIP note"]} listId={`cf-${c.id}`}
                 onSave={(k, v) => dispatch({ type: "SET_FIELD", target: "customer", id: c.id, field: { key: k, value: v } })}

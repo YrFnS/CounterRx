@@ -13,10 +13,11 @@ import Inventory from "./views/Inventory";
 import Prescriptions from "./views/Prescriptions";
 import History from "./views/History";
 import {
-  ICross, IRegister, IDash, IBox, IRx, IHistory, IBell, IAlert, IChevD, IRecall, IScan, IDownload, IUpload, IUsers, IWifi, IWifiOff, ICode, IMenu, IX, IGear, ILedger, ITrendUp,
+  ICross, IRegister, IDash, IBox, IRx, IHistory, IBell, IAlert, IChevD, IRecall, IScan, IDownload, IUpload, IUsers, IWifi, IWifiOff, ICode, IMenu, IX, IGear, ILedger, ITrendUp, ITruck,
 } from "./icons";
 import Customers from "./views/Customers";
 import Settings from "./views/Settings";
+import Deliveries from "./views/Deliveries";
 import Reports from "./views/Reports";
 import Finance from "./views/Finance";
 
@@ -28,6 +29,7 @@ const TITLES: Record<View, { title: string; sub: string }> = {
   finance: { title: "Supply-chain finance", sub: "Purchase orders, accounts payable, expenses, P&L" },
   reports: { title: "Financial reports", sub: "Margin, FIFO valuation, P&L, custom report builder" },
   prescriptions: { title: "Prescription queue", sub: "Pharmacist workflow · drop-off to dispense" },
+  deliveries: { title: "Delivery & e-commerce", sub: "Route board, web intake, proof of delivery" },
   history: { title: "Sales ledger", sub: "Every receipt this terminal has printed" },
   settings: { title: "Settings & staff", sub: "Organization profile, team, loyalty, backups" },
 };
@@ -40,6 +42,7 @@ const NAV: { id: View; label: string; icon: ReactNode; key: string }[] = [
   { id: "finance", label: "Finance", icon: <ILedger size={17} />, key: "F8" },
   { id: "reports", label: "Reports", icon: <ITrendUp size={17} />, key: "F10" },
   { id: "prescriptions", label: "Prescriptions", icon: <IRx size={17} />, key: "F5" },
+  { id: "deliveries", label: "Delivery & web", icon: <ITruck size={17} />, key: "" },
   { id: "history", label: "Sales ledger", icon: <IHistory size={17} />, key: "F6" },
   { id: "settings", label: "Settings", icon: <IGear size={17} />, key: "F9" },
 ];
@@ -353,7 +356,8 @@ function Shell() {
           {NAV.map((n) => {
             const active = state.view === n.id;
             const badge = n.id === "inventory" ? lowStock.length + expiring.length
-              : n.id === "prescriptions" ? newRx : 0;
+              : n.id === "prescriptions" ? newRx
+              : n.id === "deliveries" ? state.webOrders.filter((w) => w.status === "new").length : 0;
             return (
               <button key={n.id} onClick={() => go(n.id)}
                 className={cx("w-full flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-[13px] font-semibold transition-all duration-200 group",
@@ -366,7 +370,7 @@ function Shell() {
                     {badge}
                   </span>
                 )}
-                <span className={cx("num text-[9px]", active ? "text-pine-300" : "text-pine-200/40")}>{n.key}</span>
+                {n.key && <span className={cx("num text-[9px]", active ? "text-pine-300" : "text-pine-200/40")}>{n.key}</span>}
               </button>
             );
           })}
@@ -429,6 +433,7 @@ function Shell() {
           {state.view === "finance" && <Finance />}
           {state.view === "reports" && <Reports />}
           {state.view === "prescriptions" && <Prescriptions />}
+          {state.view === "deliveries" && <Deliveries />}
           {state.view === "history" && <History />}
           {state.view === "settings" && <Settings />}
         </main>

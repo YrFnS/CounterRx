@@ -13,7 +13,7 @@ import type {
   HeldSale, TxLine, PayMethod, PaymentLeg, RxStatus, Batch, Transfer, TransferStatus, Field,
   Snapshot, SnapshotMeta, RestrictedLogEntry, Prescriber, BackOrder, BackOrderStatus, RxTransfer,
   Supplier, PurchaseOrder, ApInvoice, ApPayMethod, Expense,
-  Delivery, DeliveryStatus, WebOrder, TimeEntry,
+  Delivery, DeliveryStatus, WebOrder, WebOrderStatus, TimeEntry,
 } from "./data";
 import { makeStaff, makeSettings, makeBackOrders, makeRxTransfers, SNAPS_KEY, hashPin, ROLE_LABEL } from "./data";
 
@@ -40,6 +40,9 @@ interface State {
   purchaseOrders: PurchaseOrder[];
   apInvoices: ApInvoice[];
   expenses: Expense[];
+  deliveries: Delivery[];
+  webOrders: WebOrder[];
+  timeEntries: TimeEntry[];
   cart: { productId: string; qty: number; note?: string; priceOverride?: number; daw?: number; substitutedFrom?: string }[];
   held: HeldSale[];
   customers: Customer[];
@@ -127,13 +130,18 @@ type Action =
   | { type: "AP_CREDIT"; invoiceId: string; amount: number; note: string }
   | { type: "EXPENSE_ADD"; category: string; amount: number; date: number; payee: string; note?: string; recurring?: boolean }
   | { type: "EXPENSE_DELETE"; id: string }
+  | { type: "DELIVERY_STATUS"; id: string; to: DeliveryStatus; driver?: string; proof?: string }
+  | { type: "WEB_ORDER"; id: string; to: WebOrderStatus; reason?: string }
+  | { type: "WEB_CONVERT"; id: string }
+  | { type: "CLOCK" }
+  | { type: "CUSTOMER_PROFILE"; id: string; patch: Partial<Pick<Customer, "dob" | "gender" | "address" | "bloodType" | "primaryPrescriberId" | "insurancePlan" | "clinicalNotes">> }
   | { type: "RESET" };
 
 let toastSeq = 1;
 let heldSeq = 1;
 let auditSeq = 100;
 
-const seed = (): Pick<State, "products" | "transactions" | "prescriptions" | "prescribers" | "customers" | "audit" | "transfers" | "backorders" | "rxTransfers" | "suppliers" | "purchaseOrders" | "apInvoices" | "expenses" | "staff" | "settings"> => {
+const seed = (): Pick<State, "products" | "transactions" | "prescriptions" | "prescribers" | "customers" | "audit" | "transfers" | "backorders" | "rxTransfers" | "suppliers" | "purchaseOrders" | "apInvoices" | "expenses" | "deliveries" | "webOrders" | "timeEntries" | "staff" | "settings"> => {
   const now = Date.now();
   const products = makeProducts(now);
   const customers = makeCustomers(now);
@@ -151,13 +159,16 @@ const seed = (): Pick<State, "products" | "transactions" | "prescriptions" | "pr
     purchaseOrders: makePurchaseOrders(now),
     apInvoices: makeApInvoices(now),
     expenses: makeExpenses(now),
+    deliveries: makeDeliveries(now),
+    webOrders: makeWebOrders(now),
+    timeEntries: makeTimeEntries(now),
     staff: makeStaff(now),
     settings: makeSettings(),
-    audit: [{ id: auditSeq++, at: now - 36 * 60_000, actor: "system", kind: "system", detail: "Ledger initialized — demo dataset v9" }],
+    audit: [{ id: auditSeq++, at: now - 36 * 60_000, actor: "system", kind: "system", detail: "Ledger initialized — demo dataset v10" }],
   };
 };
 
-const LS_KEY = "counterrx:v9";
+const LS_KEY = "counterrx:v10";
 
 function load(): State {
   const base: State = {
@@ -183,6 +194,9 @@ function load(): State {
           purchaseOrders: saved.purchaseOrders ?? makePurchaseOrders(Date.now()),
           apInvoices: saved.apInvoices ?? makeApInvoices(Date.now()),
           expenses: saved.expenses ?? makeExpenses(Date.now()),
+          deliveries: saved.deliveries ?? makeDeliveries(Date.now()),
+          webOrders: saved.webOrders ?? makeWebOrders(Date.now()),
+          timeEntries: saved.timeEntries ?? makeTimeEntries(Date.now()),
           staff: saved.staff ?? makeStaff(Date.now()),
           settings: { ...makeSettings(), ...(saved.settings ?? {}) },
           restrictedLog: saved.restrictedLog ?? [],
@@ -1175,6 +1189,75 @@ function reducer(state: State, a: Action): State {
     case "EXPENSE_DELETE":
       return { ...state, expenses: state.expenses.filter((x) => x.id !== a.id) };
 
+    case "DELIVERY_STATUS": {
+      const d = state.deliveries.find((x) => x.id === a.id);
+      if (!d) return state;
+      const cust = state.customers.find((c) => c.id === d.customerId);
+      const deliveries = state.deliveries.map((x) => (x.id === a.id
+        ? { ...x, status: a.to, driver: a.driver !== undefined ? a.driver : x.driver, proof: a.proof !== undefined ? a.proof : x.proof }
+        : x));
+      const verb = a.to === "assigned" ? `assigned to ${a.driver ?? "driver"}` : a.to === "out" ? "out for delivery" : a.to === "delivered" ? "delivered ✓" : "queued";
+      return withToast(
+        withAudit({ ...state, deliveries }, "sale", `Delivery ${a.id} ${verb} — ${cust?.name ?? d.customerId}`),
+        "success", `${a.id} ${verb}`);
+    }
+
+    case "WEB_ORDER": {
+      const w = state.webOrders.find((x) => x.id === a.id);
+      if (!w) return state;
+      const webOrders = state.webOrders.map((x) => (x.id === a.id
+        ? { ...x, status: a.to, declineReason: a.to === "declined" ? (a.reason || "Not specified") : x.declineReason }
+        : x));
+      return withToast(
+        withAudit({ ...state, webOrders }, "sale", `Web order ${a.id} ${a.to} — ${w.customerName}`),
+        a.to === "declined" ? "warn" : "success", `${a.id} ${a.to}`);
+    }
+
+    case "WEB_CONVERT": {
+      const w = state.webOrders.find((x) => x.id === a.id);
+      if (!w || w.status === "converted") return state;
+      /* match the shopper to the customer book by name, else keep as walk-in delivery */
+      const cust = state.customers.find((c) => c.name.toLowerCase() === w.customerName.toLowerCase());
+      const id = `DL-${304 + state.deliveries.length}`;
+      const delivery: Delivery = {
+        id, customerId: cust?.id ?? "WALK-IN",
+        address: w.pickup === "in_store" ? "In-store pickup" : (cust?.address ?? "Address on file"),
+        lines: w.items.filter((i) => i.productId).map((i) => ({ productId: i.productId!, qty: i.qty })),
+        fee: w.pickup === "delivery" ? 5 : 0,
+        mode: w.pickup === "curbside" ? "curbside" : "delivery",
+        status: "queued", scheduledAt: Date.now() + 4 * 3_600_000, createdAt: Date.now(),
+      };
+      const webOrders = state.webOrders.map((x) => (x.id === a.id ? { ...x, status: "converted" as const } : x));
+      return withToast(
+        withAudit({ ...state, webOrders, deliveries: [delivery, ...state.deliveries] }, "sale", `Web order ${a.id} → delivery ${id} (${w.pickup})`),
+        "success", `${a.id} converted → ${id} queued`);
+    }
+
+    case "CLOCK": {
+      if (!state.user) return state;
+      const open = state.timeEntries.find((t) => t.staffId === state.user!.id && !t.outAt);
+      if (open) {
+        const timeEntries = state.timeEntries.map((t) => (t.id === open.id ? { ...t, outAt: Date.now() } : t));
+        const hrs = ((Date.now() - open.inAt) / 3_600_000).toFixed(1);
+        return withToast(
+          withAudit({ ...state, timeEntries }, "system", `${state.user.name} clocked out — ${hrs}h shift`),
+          "info", `Clocked out — ${hrs}h on shift`);
+      }
+      const entry: TimeEntry = { id: (state.timeEntries[0]?.id ?? 500) + 1, staffId: state.user.id, inAt: Date.now() };
+      return withToast(
+        withAudit({ ...state, timeEntries: [entry, ...state.timeEntries] }, "system", `${state.user.name} clocked in`),
+        "success", "Clocked in — shift started");
+    }
+
+    case "CUSTOMER_PROFILE": {
+      const c = state.customers.find((x) => x.id === a.id);
+      if (!c) return state;
+      const customers = state.customers.map((x) => (x.id === a.id ? { ...x, ...a.patch } : x));
+      return withToast(
+        withAudit({ ...state, customers }, "rx", `Patient profile updated — ${c.name}`),
+        "success", `${c.name}'s profile saved`);
+    }
+
     case "RESET": {
       localStorage.removeItem(LS_KEY);
       return {
@@ -1238,6 +1321,7 @@ export function PosProvider({ children }: { children: ReactNode }) {
         backorders: state.backorders, rxTransfers: state.rxTransfers,
         suppliers: state.suppliers, purchaseOrders: state.purchaseOrders,
         apInvoices: state.apInvoices, expenses: state.expenses,
+        deliveries: state.deliveries, webOrders: state.webOrders, timeEntries: state.timeEntries,
       }));
     } catch { /* storage full — ignore */ }
   }, [state.products, state.transactions, state.prescriptions, state.prescribers, state.customers, state.transfers, state.audit, state.staff, state.settings, state.restrictedLog, state.backorders, state.rxTransfers, state.suppliers, state.purchaseOrders, state.apInvoices, state.expenses]);

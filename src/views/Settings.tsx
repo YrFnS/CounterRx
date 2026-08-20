@@ -5,16 +5,17 @@ import { CURRENCIES, ROLE_LABEL, can, randomPin } from "../data";
 import type { OrgSettings, Role, Staff, Snapshot } from "../data";
 import { cx, Modal, Badge } from "../ui";
 import {
-  IGear, IPrint, IStar, IUsers, IDownload, IUpload, IPlus, IX, ICheck, ICopy, ITrash, IRecall, IAlert, IScan, IChevD,
+  IGear, IPrint, IStar, IUsers, IDownload, IUpload, IPlus, IX, ICheck, ICopy, ITrash, IRecall, IAlert, IScan, IChevD, IClockIn,
 } from "../icons";
 
-type Tab = "profile" | "receipt" | "loyalty" | "team" | "data";
+type Tab = "profile" | "receipt" | "loyalty" | "team" | "clock" | "data";
 
 const TABS: { id: Tab; label: string; icon: ReactNode }[] = [
   { id: "profile", label: "Store profile", icon: <IGear size={14} /> },
   { id: "receipt", label: "Receipt", icon: <IPrint size={14} /> },
   { id: "loyalty", label: "Loyalty", icon: <IStar size={14} /> },
   { id: "team", label: "Team", icon: <IUsers size={14} /> },
+  { id: "clock", label: "Time clock", icon: <IClockIn size={14} /> },
   { id: "data", label: "Data & backups", icon: <IDownload size={14} /> },
 ];
 
@@ -52,6 +53,7 @@ export default function Settings() {
         {tab === "receipt" && <ReceiptTab admin={admin} />}
         {tab === "loyalty" && <LoyaltyTab admin={admin} />}
         {tab === "team" && teamAdmin && <TeamTab />}
+        {tab === "clock" && <TimeTab />}
         {tab === "data" && <DataTab />}
       </div>
     </div>
@@ -476,5 +478,66 @@ function ToggleRow({ on, onChange, label, hint, icon, disabled }: {
         <span className={cx("absolute top-0.5 w-4 h-4 rounded-full bg-white shadow transition-all duration-200", on ? "left-[18px]" : "left-0.5")} />
       </span>
     </button>
+  );
+}
+
+/* time-clock: punch in/out + weekly hours per staff */
+function TimeTab() {
+  const { state, dispatch } = usePos();
+  const now = Date.now();
+  const me = state.user;
+  const openEntry = state.timeEntries.find((t) => t.staffId === me?.id && !t.outAt);
+  const weekStart = now - 7 * 86_400_000;
+  const hrs = (ms: number) => (ms / 3_600_000).toFixed(1);
+
+  const weekByStaff = state.staff.map((s) => {
+    const entries = state.timeEntries.filter((t) => t.staffId === s.id && t.inAt >= weekStart);
+    const total = entries.reduce((sum, t) => sum + ((t.outAt ?? now) - t.inAt), 0);
+    return { s, total, shifts: entries.length };
+  }).sort((a, b) => b.total - a.total);
+
+  return (
+    <div className="grid lg:grid-cols-2 gap-4">
+      <div className="rounded-xl border border-mist bg-card p-5 shadow-lift">
+        <h3 className="font-display font-bold text-ink text-[15px] flex items-center gap-2">
+          <IClockIn size={16} className="text-pine-700" /> My shift
+        </h3>
+        <div className="mt-4 flex items-center gap-3">
+          <span className="grid place-items-center w-12 h-12 rounded-full bg-pine-900 text-pine-100 font-display font-bold text-base">{me?.initials}</span>
+          <div className="min-w-0">
+            <p className="text-sm font-bold text-ink truncate">{me?.name}</p>
+            <p className="text-[11px] text-inksoft">{ROLE_LABEL[me?.role ?? "cashier"]}</p>
+          </div>
+          <span className={cx("ml-auto px-2.5 py-1 rounded-full text-[11px] font-bold", openEntry ? "bg-pine-100 text-pine-700" : "bg-mist/70 text-inksoft")}>
+            {openEntry ? `On shift · ${hrs(now - openEntry.inAt)}h` : "Off shift"}
+          </span>
+        </div>
+        <button onClick={() => dispatch({ type: "CLOCK" })}
+          className={cx("mt-4 w-full py-2.5 rounded-lg font-display font-bold text-sm transition-all flex items-center justify-center gap-2 active:scale-[0.98]",
+            openEntry ? "bg-brick-600 text-paper hover:bg-brick-700 shadow-lift" : "bg-pine-700 text-pine-50 hover:bg-pine-600 shadow-lift")}>
+          <IClockIn size={15} /> {openEntry ? "Clock out" : "Clock in"}
+        </button>
+      </div>
+
+      <div className="rounded-xl border border-mist bg-card p-5 shadow-lift">
+        <h3 className="font-display font-bold text-ink text-[15px]">Hours this week</h3>
+        <div className="mt-3 space-y-2.5">
+          {weekByStaff.map(({ s, total, shifts }) => (
+            <div key={s.id} className="flex items-center gap-3">
+              <span className="grid place-items-center w-8 h-8 rounded-full bg-pine-800 text-pine-100 font-display font-bold text-[11px] shrink-0">{s.initials}</span>
+              <div className="flex-1 min-w-0">
+                <div className="flex justify-between text-xs mb-0.5">
+                  <span className="font-semibold text-ink truncate">{s.name}</span>
+                  <span className="num text-pine-800 font-bold shrink-0 ml-2">{hrs(total)}h · {shifts} shift{shifts === 1 ? "" : "s"}</span>
+                </div>
+                <div className="h-1.5 rounded-full bg-mist/60 overflow-hidden">
+                  <div className="anim-grow-w h-full rounded-full bg-pine-600" style={{ width: `${Math.min(100, (total / (40 * 3_600_000)) * 100)}%` }} />
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
   );
 }

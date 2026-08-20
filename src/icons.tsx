@@ -229,3 +229,28 @@ export const ILedger = (p: P) => (
     <path d="M9 8h6M9 12h6M9 16h4" />
   </Base>
 );
+export const ITruck = (p: P) => (
+  <Base {...p}>
+    <path d="M1 5h12v11H1zM13 9h4l3 3v4h-7z" />
+    <circle cx="6" cy="18" r="1.8" />
+    <circle cx="16.5" cy="18" r="1.8" />
+  </Base>
+);
+export const IMapPin = (p: P) => (
+  <Base {...p}>
+    <path d="M12 21s-6.5-6.2-6.5-10.5a6.5 6.5 0 0 1 13 0C18.5 14.8 12 21 12 21z" />
+    <circle cx="12" cy="10.3" r="2.3" />
+  </Base>
+);
+export const IWeb = (p: P) => (
+  <Base {...p}>
+    <rect x="3" y="4" width="18" height="16" rx="2" />
+    <path d="M3 8h18M6 6.2h.01M8.5 6.2h.01M11 6.2h.01" />
+  </Base>
+);
+export const IClockIn = (p: P) => (
+  <Base {...p}>
+    <circle cx="12" cy="12" r="9" />
+    <path d="M12 7v5l3.2 1.8" />
+  </Base>
+);
