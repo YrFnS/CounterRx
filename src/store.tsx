@@ -3,6 +3,7 @@ import type { ReactNode, Dispatch } from "react";
 import {
   makeProducts, makePrescriptions, makeTransactions, makeCustomers, makeTransfers, makePrescribers,
   makeSuppliers, makePurchaseOrders, makeApInvoices, makeExpenses, invoiceBalance,
+  makeDeliveries, makeWebOrders, makeTimeEntries,
   TAX_RATE, CASHIER,
   stockOf, nearestExpiry, allocFEFO, fefoBatches, newBatchCode, daysUntil,
   bulkPct, REDEEM_CHUNK_PTS, REDEEM_CHUNK_VALUE,
@@ -12,10 +13,11 @@ import type {
   HeldSale, TxLine, PayMethod, PaymentLeg, RxStatus, Batch, Transfer, TransferStatus, Field,
   Snapshot, SnapshotMeta, RestrictedLogEntry, Prescriber, BackOrder, BackOrderStatus, RxTransfer,
   Supplier, PurchaseOrder, ApInvoice, ApPayMethod, Expense,
+  Delivery, DeliveryStatus, WebOrder, TimeEntry,
 } from "./data";
 import { makeStaff, makeSettings, makeBackOrders, makeRxTransfers, SNAPS_KEY, hashPin, ROLE_LABEL } from "./data";
 
-export type View = "register" | "dashboard" | "customers" | "inventory" | "finance" | "reports" | "prescriptions" | "history" | "settings";
+export type View = "register" | "dashboard" | "customers" | "inventory" | "finance" | "reports" | "prescriptions" | "deliveries" | "history" | "settings";
 export type InventoryPreset = "all" | "low" | "expiring";
 
 export interface Toast { id: number; kind: "success" | "warn" | "error" | "info"; msg: string; }

@@ -325,6 +325,14 @@ export interface Customer {
   taxExempt?: boolean;      // clinics / gov accounts — sales post tax-free
   fields?: Field[];         // user-defined attributes (6.7)
   allergies?: string[];     // structured allergen profile (§3 clinical checks)
+  /* full patient profile (§7) */
+  dob?: string;             // ISO date
+  gender?: "F" | "M" | "O";
+  address?: string;
+  bloodType?: string;
+  primaryPrescriberId?: string;
+  insurancePlan?: string;
+  clinicalNotes?: string;   // pharmacist-only (§3 HIPAA role-scoped)
 }
 
 /* Allergen → ingredient keyword rules for drug–allergy screening (§3) */
@@ -693,12 +701,12 @@ export function makePrescriptions(now: number): Prescription[] {
 export function makeCustomers(now: number): Customer[] {
   const d = 86_400_000;
   return [
-    { id: "C-001", name: "Helen Okafor", phone: "(555) 201-8834", email: "helen.o@mail.com", createdAt: now - 212 * d, notes: "Prefers 90-day fills", points: 342, allergies: ["Penicillin", "Latex"] },
-    { id: "C-002", name: "Victor Adeyemi", phone: "(555) 318-0021", createdAt: now - 156 * d, points: 218 },
-    { id: "C-003", name: "Marta Kessler", phone: "(555) 774-2910", email: "mkessler@mail.com", createdAt: now - 98 * d, notes: "Penicillin allergy on file", points: 126, allergies: ["Penicillin"] },
-    { id: "C-004", name: "Daniel Osei", phone: "(555) 402-5519", createdAt: now - 74 * d, points: 94, allergies: ["Aspirin / NSAID"] },
-    { id: "C-005", name: "Priya Nair", phone: "(555) 909-1147", email: "priya.n@mail.com", createdAt: now - 41 * d, points: 265 },
-    { id: "C-006", name: "Grace Lin", phone: "(555) 655-7702", createdAt: now - 23 * d, notes: "Insulin — cold chain pickup", points: 71, allergies: ["Iodine"] },
+    { id: "C-001", name: "Helen Okafor", phone: "(555) 201-8834", email: "helen.o@mail.com", createdAt: now - 212 * d, notes: "Prefers 90-day fills", points: 342, allergies: ["Penicillin", "Latex"], dob: "1958-03-14", gender: "F", address: "42 Willow Drive, Springfield", bloodType: "O+", primaryPrescriberId: "DR-02", insurancePlan: "BlueCross PBM", clinicalNotes: "Hypertension + hyperlipidemia. Counseled on statin myopathy s/s 01/2026." },
+    { id: "C-002", name: "Victor Adeyemi", phone: "(555) 318-0021", createdAt: now - 156 * d, points: 218, dob: "1967-11-02", gender: "M", address: "240 Cedar Court, Springfield", bloodType: "A+", primaryPrescriberId: "DR-03", insurancePlan: "MediPlan Rx", clinicalNotes: "T2DM. A1c 7.1 last panel. Renal function OK for metformin." },
+    { id: "C-003", name: "Marta Kessler", phone: "(555) 774-2910", email: "mkessler@mail.com", createdAt: now - 98 * d, notes: "Penicillin allergy on file", points: 126, allergies: ["Penicillin"], dob: "1991-07-29", gender: "F", address: "9 Aspen Row, Springfield", bloodType: "B−", primaryPrescriberId: "DR-01", clinicalNotes: "Confirmed penicillin anaphylaxis 2019 — avoid all β-lactams." },
+    { id: "C-004", name: "Daniel Osei", phone: "(555) 402-5519", createdAt: now - 74 * d, points: 94, allergies: ["Aspirin / NSAID"], dob: "1964-05-18", gender: "M", address: "310 Harbor Lane, Springfield", bloodType: "O−", primaryPrescriberId: "DR-02", insurancePlan: "BlueCross PBM" },
+    { id: "C-005", name: "Priya Nair", phone: "(555) 909-1147", email: "priya.n@mail.com", createdAt: now - 41 * d, points: 265, dob: "1981-09-23", gender: "F", address: "77 Birch Street, Springfield", primaryPrescriberId: "DR-03", insurancePlan: "Aetna Rx" },
+    { id: "C-006", name: "Grace Lin", phone: "(555) 655-7702", createdAt: now - 23 * d, notes: "Insulin — cold chain pickup", points: 71, allergies: ["Iodine"], dob: "1973-01-08", gender: "F", address: "18 Harbor Lane, Springfield", bloodType: "AB+", primaryPrescriberId: "DR-03", insurancePlan: "Aetna Rx", clinicalNotes: "Insulin glargine — rotate injection sites; cold chain mandatory." },
     { id: "C-007", name: "Tom Alvarez", phone: "(555) 130-4486", createdAt: now - 9 * d, notes: "Guardian: mother (pickup)", points: 18 },
     { id: "C-008", name: "Ruth Bello", phone: "(555) 887-3320", createdAt: now - 2 * d, points: 6 },
     { id: "C-009", name: "Maple Family Clinic", phone: "(555) 014-9900", email: "orders@mapleclinic.org", createdAt: now - 130 * d, notes: "Resale certificate on file", points: 0, taxExempt: true },
@@ -809,3 +817,117 @@ export const STORE = {
   phone: "(555) 014-2210",
   gstin: "LIC #PH-88412 · GST 29AAKCS4412F1Z8",
 };
+
+/* ------------------------------------------------------------------ */
+/*  Operations — deliveries, e-commerce intake, staff time-clock       */
+/* ------------------------------------------------------------------ */
+
+export const DRIVERS = ["K. Boateng", "S. Mensah", "T. Osei"];
+
+export type DeliveryStatus = "queued" | "assigned" | "out" | "delivered";
+export interface Delivery {
+  id: string;
+  customerId: string;
+  address: string;
+  lines: { productId: string; qty: number }[];
+  fee: number;
+  mode: "delivery" | "curbside";
+  status: DeliveryStatus;
+  driver?: string;
+  scheduledAt: number;
+  proof?: string;          // proof-of-delivery note / signature ref (§7)
+  createdAt: number;
+}
+
+export function makeDeliveries(now: number): Delivery[] {
+  const h = 3_600_000;
+  return [
+    {
+      id: "DL-301", customerId: "C-006", address: "18 Harbor Lane, Springfield",
+      lines: [{ productId: "insg", qty: 2 }], fee: 6, mode: "delivery",
+      status: "queued", scheduledAt: now + 3 * h, createdAt: now - 1 * h,
+    },
+    {
+      id: "DL-302", customerId: "C-002", address: "240 Cedar Court, Springfield",
+      lines: [{ productId: "met500", qty: 4 }, { productId: "vd3", qty: 1 }], fee: 4, mode: "curbside",
+      status: "assigned", driver: DRIVERS[0], scheduledAt: now + 5 * h, createdAt: now - 3 * h,
+    },
+    {
+      id: "DL-303", customerId: "C-005", address: "77 Birch Street, Springfield",
+      lines: [{ productId: "cet10", qty: 2 }], fee: 0, mode: "delivery",
+      status: "delivered", driver: DRIVERS[1], scheduledAt: now - 20 * h, createdAt: now - 26 * h,
+      proof: "Left with reception — signed J.N.",
+    },
+  ];
+}
+
+export type WebOrderType = "refill" | "otc" | "rx_upload";
+export type WebOrderChannel = "web" | "app";
+export type WebPickup = "delivery" | "curbside" | "in_store";
+export type WebOrderStatus = "new" | "accepted" | "converted" | "declined";
+export interface WebOrder {
+  id: string;
+  customerName: string;
+  phone: string;
+  items: { productId?: string; name: string; qty: number }[];
+  type: WebOrderType;
+  channel: WebOrderChannel;
+  pickup: WebPickup;
+  status: WebOrderStatus;
+  note?: string;
+  declineReason?: string;
+  createdAt: number;
+}
+
+export function makeWebOrders(now: number): WebOrder[] {
+  const h = 3_600_000;
+  return [
+    {
+      id: "WEB-118", customerName: "Priya Nair", phone: "(555) 909-1147",
+      items: [{ productId: "met500", name: "Metformin 500mg", qty: 4 }],
+      type: "refill", channel: "app", pickup: "curbside", status: "new",
+      note: "Refill #RX-2479 — same dose", createdAt: now - 2 * h,
+    },
+    {
+      id: "WEB-117", customerName: "Omar Haddad", phone: "(555) 210-7743",
+      items: [{ productId: "cet10", name: "Cetirizine 10mg", qty: 2 }, { productId: "vitc", name: "Vitamin C 1000mg", qty: 1 }],
+      type: "otc", channel: "web", pickup: "delivery", status: "new",
+      note: "Deliver after 5pm please", createdAt: now - 5 * h,
+    },
+    {
+      id: "WEB-116", customerName: "Grace Lin", phone: "(555) 655-7702",
+      items: [{ productId: "insg", name: "Insulin glargine (photo attached)", qty: 2 }],
+      type: "rx_upload", channel: "app", pickup: "in_store", status: "new",
+      note: "Uploaded photo of new Rx from Dr. Adeyemi", createdAt: now - 9 * h,
+    },
+    {
+      id: "WEB-115", customerName: "Daniel Osei", phone: "(555) 402-5519",
+      items: [{ productId: "atv20", name: "Atorvastatin 20mg", qty: 2 }],
+      type: "refill", channel: "web", pickup: "in_store", status: "converted",
+      createdAt: now - 30 * h,
+    },
+  ];
+}
+
+export interface TimeEntry {
+  id: number;
+  staffId: string;
+  inAt: number;
+  outAt?: number;
+}
+
+export function makeTimeEntries(now: number): TimeEntry[] {
+  const d = 86_400_000; const h = 3_600_000;
+  let seq = 500;
+  const mk = (staffId: string, daysAgo: number, inH: number, lenH: number): TimeEntry => ({
+    id: seq++, staffId,
+    inAt: now - daysAgo * d - (24 - inH) * h,
+    outAt: now - daysAgo * d - (24 - inH - lenH) * h,
+  });
+  return [
+    mk("S-003", 1, 9, 8), mk("S-003", 2, 9, 7.5), mk("S-003", 3, 10, 8),
+    mk("S-002", 1, 8, 9), mk("S-002", 2, 8, 8.5),
+    mk("S-004", 1, 12, 6), mk("S-004", 2, 13, 5.5),
+    mk("S-001", 1, 9, 4),
+  ];
+}
