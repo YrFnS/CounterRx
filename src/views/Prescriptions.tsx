@@ -6,7 +6,7 @@ import {
 } from "@dnd-kit/core";
 import type { DragStartEvent, DragEndEvent, DragOverEvent } from "@dnd-kit/core";
 import { usePos, relTime } from "../store";
-import { stockOf, can, daysUntil } from "../data";
+import { stockOf, can, daysUntil, allergyConflicts } from "../data";
 import type { RxStatus, Prescription, BackOrderStatus } from "../data";
 import { cx, Badge, Modal } from "../ui";
 
@@ -32,7 +32,7 @@ function resizeToDataUrl(file: File, maxDim: number): Promise<string> {
     img.src = url;
   });
 }
-import { IRx, ICheck, IClock, IRegister, IShield, IGrab, IRefresh, ISend, IRecall, IX, IBox, ISwap, IArrowIn, IArrowOut, IDownload, IPlus, IScan } from "../icons";
+import { IRx, ICheck, IClock, IRegister, IShield, IGrab, IRefresh, ISend, IRecall, IX, IBox, ISwap, IArrowIn, IArrowOut, IDownload, IPlus, IScan, IAlert } from "../icons";
 
 const FLOW: RxStatus[] = ["new", "verifying", "ready", "waiting", "dispensed"];
 const LABEL: Record<RxStatus, string> = {
@@ -323,12 +323,26 @@ function RxCard({ rx, ghost, overlay }: { rx: Prescription; ghost?: boolean; ove
   const [showPrescriber, setShowPrescriber] = useState(false);
   const [showXferOut, setShowXferOut] = useState(false);
   const [viewScan, setViewScan] = useState(false);
+  const [allergyAck, setAllergyAck] = useState(false);
+  const [allergyReason, setAllergyReason] = useState("");
   const stepIdx = FLOW.indexOf(rx.status);
   const next = NEXT[rx.status];
   const canAttach = rx.status !== "dispensed" && p && shelf > 0 && !rx.transferredOut;
   const canPa = can(state.user?.role, "verify_rx");
   const canBackorder = rx.status !== "dispensed" && p && shelf === 0 && !rx.transferredOut;
   const canTransferOut = rx.status !== "dispensed" && !rx.transferredOut && can(state.user?.role, "transfer_rx");
+
+  /* drug–allergy screen: match patient to the customer book, screen the drug (§3) */
+  const patient = state.customers.find((c) => c.name.toLowerCase() === rx.patient.toLowerCase());
+  const conflicts = allergyConflicts(patient?.allergies, p);
+  const dispensing = next?.to === "dispensed";
+  const allergyBlocked = dispensing && conflicts.length > 0 && !allergyAck;
+  const dispense = () => {
+    if (conflicts.length > 0) {
+      dispatch({ type: "AUDIT_LOG", kind: "rx", detail: `⚠ Allergy override — ${rx.id} · ${rx.patient} (${conflicts.map((c) => c.allergen).join(", ")}) dispensed by ${state.user?.name ?? "?"} · reason: ${allergyReason || "not documented"}` });
+    }
+    dispatch({ type: "RX_STATUS", id: rx.id, status: "dispensed" });
+  };
 
   /* hard-copy scan: pick a photo of the paper Rx, resize client-side, attach (§3) */
   const onScanFile = (e: ChangeEvent<HTMLInputElement>) => {
@@ -376,6 +390,15 @@ function RxCard({ rx, ghost, overlay }: { rx: Prescription; ghost?: boolean; ove
           <IArrowOut size={12} className="text-inksoft shrink-0" />
           <p className="text-[10px] font-semibold text-inksoft">
             Transferred out to <span className="text-ink">{rx.transferredOut.to}</span> · {relTime(rx.transferredOut.at)} — fill authority released
+          </p>
+        </div>
+      )}
+
+      {conflicts.length > 0 && rx.status !== "dispensed" && (
+        <div className="mt-2 anim-fade-up flex items-start gap-1.5 rounded-md border-2 border-brick-500 bg-brick-100/70 px-2 py-1.5">
+          <IAlert size={12} className="text-brick-700 shrink-0 mt-px anim-pulse-dot" />
+          <p className="text-[10px] font-bold text-brick-700 leading-snug">
+            Allergy on file — {patient?.name} is allergic to {conflicts.map((c) => c.allergen).join(", ")}; this drug contains {conflicts.map((c) => c.reason).join(", ")}.
           </p>
         </div>
       )}
@@ -534,11 +557,33 @@ function RxCard({ rx, ghost, overlay }: { rx: Prescription; ghost?: boolean; ove
         ))}
       </div>
 
+      {allergyBlocked && (
+        <div className="mt-2.5 anim-fade-up rounded-lg border-2 border-brick-500 bg-brick-100/60 p-2.5" onPointerDown={(e) => e.stopPropagation()}>
+          <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-brick-700 flex items-center gap-1.5">
+            <IAlert size={11} /> Pharmacist override required
+          </p>
+          {!canPa ? (
+            <p className="mt-1 py-1 text-center rounded bg-mist/70 text-[10px] font-bold text-inksoft">🔒 Pharmacist sign-in required to override</p>
+          ) : (
+            <>
+              <input value={allergyReason} onChange={(e) => setAllergyReason(e.target.value)}
+                placeholder="Clinical reason for dispensing despite allergy…"
+                className="mt-1.5 w-full px-2 py-1.5 rounded-md border border-brick-300 bg-card text-[11px] focus:border-brick-600 focus:outline-none transition" />
+              <button onClick={() => setAllergyAck(true)}
+                className="mt-1.5 w-full py-1.5 rounded-md bg-brick-600 text-paper text-[11px] font-bold hover:bg-brick-500 transition active:scale-[0.97]">
+                Acknowledge risk & enable dispense
+              </button>
+            </>
+          )}
+        </div>
+      )}
+
       <div className="mt-2.5 flex gap-1.5" onPointerDown={(e) => e.stopPropagation()}>
         {next && (
-          <button onClick={() => dispatch({ type: "RX_STATUS", id: rx.id, status: next.to })}
-            className="flex-1 py-1.5 rounded-lg bg-pine-700 text-pine-50 text-[11px] font-bold hover:bg-pine-600 transition active:scale-[0.97] flex items-center justify-center gap-1">
-            <IClock size={11} /> {next.label}
+          <button onClick={() => (dispensing ? dispense() : dispatch({ type: "RX_STATUS", id: rx.id, status: next.to }))}
+            className={cx("flex-1 py-1.5 rounded-lg text-[11px] font-bold transition active:scale-[0.97] flex items-center justify-center gap-1",
+              allergyBlocked ? "bg-brick-600 text-paper hover:bg-brick-500" : "bg-pine-700 text-pine-50 hover:bg-pine-600")}>
+            <IClock size={11} /> {allergyBlocked ? "Allergy — review required" : next.label}
           </button>
         )}
         {canAttach && (

@@ -4,7 +4,7 @@
 
 export type CategoryId =
   | "antibiotics" | "pain" | "coldflu" | "vitamins" | "diabetes"
-  | "cardio" | "derma" | "devices" | "firstaid" | "baby" | "cns";
+  | "cardio" | "derma" | "devices" | "firstaid" | "baby" | "cns" | "compound";
 
 export const CATEGORIES: { id: CategoryId; label: string; dot: string }[] = [
   { id: "antibiotics", label: "Antibiotics", dot: "#c24a2e" },
@@ -18,6 +18,7 @@ export const CATEGORIES: { id: CategoryId; label: string; dot: string }[] = [
   { id: "devices", label: "Devices", dot: "#5c6b66" },
   { id: "firstaid", label: "First aid", dot: "#b8543f" },
   { id: "baby", label: "Baby care", dot: "#8a7fb5" },
+  { id: "compound", label: "Compounds", dot: "#8a6fae" },
 ];
 
 /** A single stock lot on the shelf. Sales consume lots FEFO — first expiry, first out. */
@@ -45,6 +46,7 @@ export interface Product {
   genericOf?: string;    // if set, this SKU is the generic equivalent of the given brand SKU (§3 DAW)
   ndc?: string;          // National Drug Code, 5-4-2 format (§3) — first-class identifier
   gtin?: string;         // GS1 GTIN-14 for scanning (§3)
+  compound?: boolean;    // in-house compounded preparation (§3 compounding)
   fields?: Field[];      // user-defined attributes (6.7)
 }
 
@@ -185,6 +187,31 @@ export interface Customer {
   points: number;           // loyalty balance — 1 pt per $1, 100 pts redeems $5
   taxExempt?: boolean;      // clinics / gov accounts — sales post tax-free
   fields?: Field[];         // user-defined attributes (6.7)
+  allergies?: string[];     // structured allergen profile (§3 clinical checks)
+}
+
+/* Allergen → ingredient keyword rules for drug–allergy screening (§3) */
+export const ALLERGENS = ["Penicillin", "Sulfa", "Aspirin / NSAID", "Codeine / opioid", "Iodine", "Latex"];
+export const ALLERGY_RULES: { allergen: string; keywords: string[] }[] = [
+  { allergen: "Penicillin", keywords: ["amoxicillin", "ampicillin", "penicillin", "cillin", "augmentin"] },
+  { allergen: "Sulfa", keywords: ["sulfa", "sulfamethoxazole", "trimethoprim", "cotrimoxazole"] },
+  { allergen: "Aspirin / NSAID", keywords: ["ibuprofen", "diclofenac", "aspirin", "acetylsalicylic", "naproxen", "indomethacin"] },
+  { allergen: "Codeine / opioid", keywords: ["codeine", "tramadol", "hydrocodone", "oxycodone", "morphine"] },
+  { allergen: "Iodine", keywords: ["iodine", "povidone"] },
+];
+
+/** Screen a product against a patient's allergen profile — returns every conflict */
+export function allergyConflicts(allergies: string[] | undefined, p: Product | undefined): { allergen: string; reason: string }[] {
+  if (!allergies || allergies.length === 0 || !p) return [];
+  const hay = `${p.name} ${p.generic} ${p.brand}`.toLowerCase();
+  const out: { allergen: string; reason: string }[] = [];
+  for (const a of allergies) {
+    const rule = ALLERGY_RULES.find((r) => r.allergen.toLowerCase() === a.toLowerCase());
+    if (!rule) continue;
+    const hit = rule.keywords.find((k) => hay.includes(k));
+    if (hit) out.push({ allergen: a, reason: hit });
+  }
+  return out;
 }
 
 /* ------------------------------------------------------------------ */
@@ -460,6 +487,8 @@ export function makeProducts(now: number): Product[] {
     { ...p("g-met500", "Metformin 500mg", "Metformin HCl", "Generic · Glenmark", "diabetes", "Tablet · strip of 15", 2.9, 1.1, 300, 60, true, "GMT-26A20", 450, "MediSource Ltd"), genericOf: "met500" },
     { ...p("g-cet10", "Cetirizine 10mg", "Cetirizine HCl", "Generic · Dr. Reddy's", "coldflu", "Tablet · strip of 10", 2.2, 0.8, 220, 40, false, "GCT-26C08", 430, "Apex Distributors"), genericOf: "cet10" },
     { ...p("g-salb", "Salbutamol Inhaler", "Salbutamol 100mcg", "Generic · Cipla", "coldflu", "Inhaler · 200 doses", 9.9, 5.6, 30, 10, true, "GSL-26B02", 210, "ColdChain Direct"), genericOf: "salb" },
+    /* in-house compounded preparation (§3) — built from shelf ingredients */
+    { ...p("mmwash", "Magic Mouthwash 240ml", "Diphenhydramine / viscous lidocaine / antacid", "In-house compound", "compound", "Suspension · 240ml bottle", 18.5, 7.4, 6, 2, true, "MMW-26A03", 45, "Compounded in-house"), compound: true },
   ];
 
   /* NDC / GS1 identifiers (§3) — real-format codes on Rx & scanned items */
@@ -522,12 +551,12 @@ export function makePrescriptions(now: number): Prescription[] {
 export function makeCustomers(now: number): Customer[] {
   const d = 86_400_000;
   return [
-    { id: "C-001", name: "Helen Okafor", phone: "(555) 201-8834", email: "helen.o@mail.com", createdAt: now - 212 * d, notes: "Prefers 90-day fills", points: 342 },
+    { id: "C-001", name: "Helen Okafor", phone: "(555) 201-8834", email: "helen.o@mail.com", createdAt: now - 212 * d, notes: "Prefers 90-day fills", points: 342, allergies: ["Penicillin", "Latex"] },
     { id: "C-002", name: "Victor Adeyemi", phone: "(555) 318-0021", createdAt: now - 156 * d, points: 218 },
-    { id: "C-003", name: "Marta Kessler", phone: "(555) 774-2910", email: "mkessler@mail.com", createdAt: now - 98 * d, notes: "Penicillin allergy on file", points: 126 },
-    { id: "C-004", name: "Daniel Osei", phone: "(555) 402-5519", createdAt: now - 74 * d, points: 94 },
+    { id: "C-003", name: "Marta Kessler", phone: "(555) 774-2910", email: "mkessler@mail.com", createdAt: now - 98 * d, notes: "Penicillin allergy on file", points: 126, allergies: ["Penicillin"] },
+    { id: "C-004", name: "Daniel Osei", phone: "(555) 402-5519", createdAt: now - 74 * d, points: 94, allergies: ["Aspirin / NSAID"] },
     { id: "C-005", name: "Priya Nair", phone: "(555) 909-1147", email: "priya.n@mail.com", createdAt: now - 41 * d, points: 265 },
-    { id: "C-006", name: "Grace Lin", phone: "(555) 655-7702", createdAt: now - 23 * d, notes: "Insulin — cold chain pickup", points: 71 },
+    { id: "C-006", name: "Grace Lin", phone: "(555) 655-7702", createdAt: now - 23 * d, notes: "Insulin — cold chain pickup", points: 71, allergies: ["Iodine"] },
     { id: "C-007", name: "Tom Alvarez", phone: "(555) 130-4486", createdAt: now - 9 * d, notes: "Guardian: mother (pickup)", points: 18 },
     { id: "C-008", name: "Ruth Bello", phone: "(555) 887-3320", createdAt: now - 2 * d, points: 6 },
     { id: "C-009", name: "Maple Family Clinic", phone: "(555) 014-9900", email: "orders@mapleclinic.org", createdAt: now - 130 * d, notes: "Resale certificate on file", points: 0, taxExempt: true },

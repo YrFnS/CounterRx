@@ -1,9 +1,10 @@
 import { useMemo, useState } from "react";
 import type { ReactNode } from "react";
 import { usePos, money, relTime, clockTime } from "../store";
+import { ALLERGENS } from "../data";
 import type { Customer } from "../data";
 import { cx, Badge, Modal, Empty, CustomFieldsBlock } from "../ui";
-import { IUsers, ISearch, IPlus, IX, IChevD, IStar, IRegister, IHistory, IPill, ICheck } from "../icons";
+import { IUsers, ISearch, IPlus, IX, IChevD, IStar, IRegister, IHistory, IPill, ICheck, IAlert } from "../icons";
 
 const day = 86_400_000;
 
@@ -145,9 +146,12 @@ function CustomerRow({ c, visits, spend, last, txs, expanded, onToggle }: {
               </button>
             </div>
             <div className="mb-2.5">
-              <CustomFieldsBlock fields={c.fields ?? []} suggestions={["Allergy", "Preferred pickup", "Insurance plan", "Delivery zone", "VIP note"]} listId={`cf-${c.id}`}
+              <CustomFieldsBlock fields={c.fields ?? []} suggestions={["Preferred pickup", "Insurance plan", "Delivery zone", "VIP note"]} listId={`cf-${c.id}`}
                 onSave={(k, v) => dispatch({ type: "SET_FIELD", target: "customer", id: c.id, field: { key: k, value: v } })}
                 onRemove={(k) => dispatch({ type: "CLEAR_FIELD", target: "customer", id: c.id, key: k })} />
+            </div>
+            <div className="mb-2.5">
+              <AllergyEditor customerId={c.id} allergies={c.allergies ?? []} />
             </div>
             {txs.length === 0 ? (
               <p className="text-xs text-inksoft">No purchases yet — attach them at the register to begin earning points.</p>
@@ -169,6 +173,49 @@ function CustomerRow({ c, visits, spend, last, txs, expanded, onToggle }: {
         </tr>
       )}
     </>
+  );
+}
+
+/* Structured allergen profile — screened against every Rx and OTC sale (§3) */
+function AllergyEditor({ customerId, allergies }: { customerId: string; allergies: string[] }) {
+  const { dispatch } = usePos();
+  const [custom, setCustom] = useState("");
+  const toggle = (a: string) =>
+    dispatch({ type: "CUSTOMER_ALLERGIES", id: customerId, allergies: allergies.includes(a) ? allergies.filter((x) => x !== a) : [...allergies, a] });
+  const addCustom = () => {
+    const v = custom.trim();
+    if (!v || allergies.some((x) => x.toLowerCase() === v.toLowerCase())) return;
+    dispatch({ type: "CUSTOMER_ALLERGIES", id: customerId, allergies: [...allergies, v] });
+    setCustom("");
+  };
+  return (
+    <div className="rounded-lg border border-brick-200/70 bg-brick-100/30 px-3 py-2.5">
+      <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-brick-700 flex items-center gap-1.5">
+        <IAlert size={11} /> Allergies on file · {allergies.length || "none"}
+      </p>
+      <div className="mt-2 flex items-center gap-1.5 flex-wrap">
+        {ALLERGENS.map((a) => {
+          const on = allergies.includes(a);
+          return (
+            <button key={a} onClick={() => toggle(a)}
+              className={cx("px-2 py-1 rounded-md border text-[10px] font-bold transition-all active:scale-95",
+                on ? "bg-brick-600 border-brick-600 text-paper shadow-lift" : "bg-card border-mist text-inksoft hover:border-brick-400 hover:text-brick-700")}>
+              {on && <ICheck size={9} className="inline mr-1 -mt-px" />}{a}
+            </button>
+          );
+        })}
+        {allergies.filter((x) => !ALLERGENS.includes(x)).map((x) => (
+          <button key={x} onClick={() => toggle(x)}
+            className="px-2 py-1 rounded-md bg-brick-600 border border-brick-600 text-paper text-[10px] font-bold transition-all active:scale-95 shadow-lift">
+            <ICheck size={9} className="inline mr-1 -mt-px" />{x}
+          </button>
+        ))}
+        <input value={custom} onChange={(e) => setCustom(e.target.value)}
+          onKeyDown={(e) => e.key === "Enter" && addCustom()}
+          placeholder="+ other allergen"
+          className="px-2 py-1 rounded-md border border-dashed border-brick-300 bg-card text-[10px] font-semibold w-28 focus:outline-none focus:border-brick-500 transition" />
+      </div>
+    </div>
   );
 }
 

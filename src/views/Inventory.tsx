@@ -17,7 +17,9 @@ export default function Inventory() {
   const [receiving, setReceiving] = useState<Product | null>(null);
   const [adding, setAdding] = useState(false);
   const [counting, setCounting] = useState(false);
+  const [compounding, setCompounding] = useState(false);
   const mayAdjust = can(state.user?.role, "adjust_stock");
+  const mayCompound = can(state.user?.role, "verify_rx"); /* pharmacists + admins compound */
   const [report, setReport] = useState<"low" | "expiry" | null>(null);
   const [transfersOpen, setTransfersOpen] = useState(false);
 
@@ -135,6 +137,12 @@ export default function Inventory() {
         <button onClick={() => setTransfersOpen(true)}
           className="flex items-center gap-1.5 px-3 py-2 rounded-lg border border-mist bg-card text-xs font-semibold text-ink hover:border-pine-400 hover:bg-pine-50 transition active:scale-95">
           <ISwap size={14} /> Transfers
+        </button>
+        <button onClick={() => setCompounding(true)} disabled={!mayCompound}
+          title={mayCompound ? "Build a compounded preparation from shelf ingredients" : "Requires pharmacist or admin"}
+          className={cx("flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-bold transition active:scale-95",
+            mayCompound ? "bg-[#8a6fae] text-paper hover:brightness-110 shadow-lift" : "bg-mist text-inksoft/50 cursor-not-allowed")}>
+          <IFlask size={14} /> Compound
         </button>
         <button onClick={exportCsv}
           className="flex items-center gap-1.5 px-3 py-2 rounded-lg border border-mist bg-card text-xs font-semibold text-ink hover:border-pine-400 hover:bg-pine-50 transition active:scale-95">

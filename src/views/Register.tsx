@@ -1,7 +1,7 @@
 import { useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { usePos, money, relTime, unitPrice, cartTotals } from "../store";
-import { CATEGORIES, TAX_RATE, daysUntil, stockOf, nearestExpiry, bulkPct, fefoBatches, findInteractions } from "../data";
+import { CATEGORIES, TAX_RATE, daysUntil, stockOf, nearestExpiry, bulkPct, fefoBatches, findInteractions, allergyConflicts } from "../data";
 import type { CategoryId, Product } from "../data";
 import { cx, Badge, Empty } from "../ui";
 import {
@@ -495,7 +495,7 @@ function QuickPicks({ items, onAdd }: { items: { p: Product; sold: number }[]; o
 
 /* Customer attach — walk-in by default, searchable book + inline quick-add */
 function CustomerAttach() {
-  const { state, dispatch } = usePos();
+  const { state, dispatch, product } = usePos();
   const [open, setOpen] = useState(false);
   const [q, setQ] = useState("");
   const [adding, setAdding] = useState(false);
@@ -540,6 +540,26 @@ function CustomerAttach() {
           <IChevD size={12} className={cx("text-inksoft transition-transform duration-200", open && "rotate-180")} />
         )}
       </button>
+
+      {customer?.allergies && customer.allergies.length > 0 && (
+        <div className="mt-2 anim-fade-up rounded-lg border border-brick-300/70 bg-brick-100/50 px-2.5 py-2">
+          <p className="text-[9px] font-bold uppercase tracking-[0.14em] text-brick-700 flex items-center gap-1">
+            <IAlert size={10} /> Allergies: {customer.allergies.join(", ")}
+          </p>
+          {(() => {
+            const hits = state.cart
+              .map((c) => ({ c, p: product(c.productId) }))
+              .flatMap(({ c, p }) => allergyConflicts(customer.allergies, p).map((x) => ({ line: p!.name, ...x })));
+            return hits.length > 0 ? (
+              <p className="mt-1 text-[10px] font-bold text-brick-700 leading-snug">
+                ⚠ Cart conflict — {hits.map((h) => `${h.line} (${h.allergen})`).join(", ")}
+              </p>
+            ) : (
+              <p className="mt-0.5 text-[9px] text-brick-700/70">No conflict with current basket.</p>
+            );
+          })()}
+        </div>
+      )}
 
       {open && !customer && (
         <div className="anim-pop absolute left-4 right-4 top-full mt-1.5 z-30 bg-card border border-mist rounded-xl shadow-pop p-2.5">

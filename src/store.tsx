@@ -67,6 +67,8 @@ type Action =
   | { type: "PA_RESUBMIT"; id: string }
   | { type: "CREATE_BACKORDER"; patient: string; phone?: string; productId: string; qty: number }
   | { type: "BACKORDER_STATUS"; id: string; to: BackOrderStatus }
+  | { type: "CUSTOMER_ALLERGIES"; id: string; allergies: string[] }
+  | { type: "COMPOUND"; name: string; ingredients: { productId: string; qty: number }[]; fee: number; price: number }
   | { type: "NEW_PRESCRIPTION"; intake: {
       patient: string; age: number; phone?: string; productId: string; qty: number;
       prescriberId: string; daysSupply?: number; refillsAuthorized?: number;
@@ -132,11 +134,11 @@ const seed = (): Pick<State, "products" | "transactions" | "prescriptions" | "pr
     rxTransfers: makeRxTransfers(now),
     staff: makeStaff(now),
     settings: makeSettings(),
-    audit: [{ id: auditSeq++, at: now - 36 * 60_000, actor: "system", kind: "system", detail: "Ledger initialized — demo dataset v8" }],
+    audit: [{ id: auditSeq++, at: now - 36 * 60_000, actor: "system", kind: "system", detail: "Ledger initialized — demo dataset v9" }],
   };
 };
 
-const LS_KEY = "counterrx:v8";
+const LS_KEY = "counterrx:v9";
 
 function load(): State {
   const base: State = {
@@ -543,6 +545,52 @@ function reducer(state: State, a: Action): State {
     case "SCAN_REMOVE": {
       const prescriptions = state.prescriptions.map((x) => (x.id === a.id ? { ...x, scan: undefined, scanAt: undefined } : x));
       return withToast({ ...state, prescriptions }, "info", "Scan removed");
+    }
+
+    case "CUSTOMER_ALLERGIES": {
+      const c = state.customers.find((x) => x.id === a.id);
+      if (!c) return state;
+      const customers = state.customers.map((x) => (x.id === a.id ? { ...x, allergies: a.allergies.length ? a.allergies : undefined } : x));
+      return withToast(
+        withAudit({ ...state, customers }, "rx", `Allergy profile updated — ${c.name}: ${a.allergies.length ? a.allergies.join(", ") : "none on file"}`),
+        "success", a.allergies.length ? `${c.name} — ${a.allergies.length} allergen${a.allergies.length === 1 ? "" : "s"} on file` : `${c.name} — allergies cleared`);
+    }
+
+    case "COMPOUND": {
+      /* validate every ingredient has stock before touching anything */
+      for (const ing of a.ingredients) {
+        const src = state.products.find((x) => x.id === ing.productId);
+        if (!src || stockOf(src) < ing.qty) {
+          return withToast(state, "error", `Not enough ${src?.name ?? "stock"} on hand to compound`);
+        }
+      }
+      let cost = 0;
+      let minExp = "9999-12-31";
+      /* pull each ingredient FEFO and capture the soonest expiry that goes into the batch */
+      const products = state.products.map((x) => {
+        const ing = a.ingredients.find((i) => i.productId === x.id);
+        if (!ing) return x;
+        cost += ing.qty * x.cost;
+        const e = nearestExpiry(x);
+        if (e && e < minExp) minExp = e;
+        return { ...x, batches: allocFEFO(x.batches, ing.qty).batches };
+      });
+      cost = round2(cost + a.fee);
+      const id = `cmp-${Date.now().toString(36)}`;
+      const compound: Product = {
+        id, sku: `CMP-${id.slice(-5).toUpperCase()}`, barcode: `892${String(Math.floor(Math.random() * 1e10)).padStart(10, "0")}`,
+        name: a.name.trim(), generic: "Compounded preparation", brand: "In-house compound",
+        category: "compound", form: `Compound · ${a.ingredients.length} ingredient${a.ingredients.length === 1 ? "" : "s"}`,
+        price: round2(a.price), cost, reorderLevel: 2, rx: true,
+        supplier: "Compounded in-house", compound: true,
+        batches: [{ batch: newBatchCode(), expiry: minExp === "9999-12-31" ? new Date(Date.now() + 90 * 86_400_000).toISOString().slice(0, 10) : minExp, qty: 1 }],
+      };
+      const ingLabel = a.ingredients.map((i) => `${i.qty}× ${state.products.find((x) => x.id === i.productId)?.name ?? i.productId}`).join(" + ");
+      return withToast(
+        withAudit(
+          { ...state, products: [compound, ...products] },
+          "stock", `Compound batch made — ${compound.name} (${ingLabel}) · cost ${money(cost)} · exp ${compound.batches[0].expiry}`),
+        "success", `${compound.name} compounded — 1 unit in stock @ ${money(compound.price)}`);
     }
 
     case "SET_QTY": {
