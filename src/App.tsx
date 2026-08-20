@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import type { ReactNode, ChangeEvent } from "react";
 import { useTranslation } from "react-i18next";
 import { PosProvider, usePos } from "./store";
+import { signInStaff } from "./lib/sync";
 import type { View } from "./store";
 import { CASHIER, daysUntil, nearestExpiry, stockOf, hashPin, ROLE_LABEL } from "./data";
 import type { Product, Transaction, Prescription, Staff } from "./data";
@@ -82,6 +83,13 @@ function LockScreen() {
     if (lockedMs > 0) { setPin(""); return; }
     const ok = hashPin(code) === selected.pinHash;
     dispatch({ type: "LOGIN", staffId: selected.id, pin: code });
+    if (ok) {
+      // Ask Supabase to back the PIN. On success BACKEND_AUTH drives RLS hydration;
+      // on failure the local fallback (already in state) stays the session.
+      void signInStaff(selected.id, code).then((backendAuthenticated) => {
+        dispatch({ type: "BACKEND_AUTH", staffId: selected.id, authenticated: backendAuthenticated });
+      });
+    }
     if (!ok) {
       setError(true); setShake(true); setPin("");
       setTimeout(() => setShake(false), 450);

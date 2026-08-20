@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useMemo, useReducer } from "react";
+import { createContext, useContext, useEffect, useMemo, useReducer, useRef } from "react";
 import type { ReactNode, Dispatch } from "react";
 import {
   makeProducts, makePrescriptions, makeTransactions, makeCustomers, makeTransfers, makePrescribers,
@@ -18,6 +18,8 @@ import type {
   Shift, XReport, ZReport, CashMovement, ShiftTransaction, TxType, TenderType,
 } from "./data";
 import { makeStaff, makeSettings, makeBackOrders, makeRxTransfers, SNAPS_KEY, hashPin, ROLE_LABEL } from "./data";
+import type { BackendData } from "./lib/sync";
+import { loadBackendData, persistBackendData, signOutStaff, subscribeToBackend } from "./lib/sync";
 
 export type View = "register" | "dashboard" | "customers" | "inventory" | "finance" | "reports" | "prescriptions" | "deliveries" | "history" | "settings";
 export type InventoryPreset = "all" | "low" | "expiring";
@@ -26,6 +28,8 @@ export interface Toast { id: number; kind: "success" | "warn" | "error" | "info"
 
 interface State {
   user: Staff | null;
+  /** True only after the current PIN was accepted by Supabase; false keeps the local fallback offline-safe. */
+  backendAuthenticated: boolean;
   staff: Staff[];
   settings: OrgSettings;
   lockouts: Record<string, { fails: number; until: number }>;
@@ -60,10 +64,12 @@ interface State {
   toasts: Toast[];
   flashId: string | null;
   flashKey: number;
+  snapshotVersion: number;
 }
 
 type Action =
   | { type: "LOGIN"; staffId: string; pin: string }
+  | { type: "BACKEND_AUTH"; staffId: string; authenticated: boolean }
   | { type: "LOGOUT"; auto?: boolean }
   | { type: "ADD_STAFF"; name: string; role: Role; pin: string }
   | { type: "UPDATE_STAFF"; id: string; patch: Partial<Pick<Staff, "name" | "role" | "active">> }
@@ -148,7 +154,8 @@ type Action =
   | { type: "VOID_TX"; txId: string; reason: string; approvedBy: string }
   | { type: "GENERATE_X_REPORT"; shiftId: string }
   | { type: "GENERATE_Z_REPORT"; shiftId: string }
-  | { type: "RESET" };
+  | { type: "RESET" }
+  | { type: "HYDRATE_BACKEND"; data: BackendData };
 
 let toastSeq = 1;
 let heldSeq = 1;
@@ -186,10 +193,10 @@ const LS_KEY = "counterrx:v10";
 
 function load(): State {
   const base: State = {
-    ...seed(), user: null, lockouts: {}, restrictedLog: [], online: typeof navigator === "undefined" ? true : navigator.onLine,
+    ...seed(), user: null, backendAuthenticated: false, lockouts: {}, restrictedLog: [], online: typeof navigator === "undefined" ? true : navigator.onLine,
     cart: [], held: [], saleCustomerId: null, redeemPoints: 0, currentShift: null,
     view: "register", invPreset: "all",
-    payOpen: false, receipt: null, toasts: [], flashId: null, flashKey: 0,
+    payOpen: false, receipt: null, toasts: [], flashId: null, flashKey: 0, snapshotVersion: 0,
   };
   try {
     const raw = localStorage.getItem(LS_KEY);
@@ -215,6 +222,7 @@ function load(): State {
           settings: { ...makeSettings(), ...(saved.settings ?? {}) },
           restrictedLog: saved.restrictedLog ?? [],
           audit: saved.audit ?? [],
+          shifts: saved.shifts ?? [],
         };
       }
     }
@@ -316,13 +324,22 @@ function reducer(state: State, a: Action): State {
       const lockouts = { ...state.lockouts };
       delete lockouts[s.id];
       return withAudit(
-        withToast({ ...state, user: s, lockouts }, "success", `Signed in — ${s.name} (${ROLE_LABEL[s.role]})`),
+        withToast({ ...state, user: s, backendAuthenticated: false, lockouts }, "success", `Signed in — ${s.name} (${ROLE_LABEL[s.role]})`),
         "system", `${s.name} signed in · role ${s.role} · ${state.settings.terminalId}`);
     }
 
+    case "BACKEND_AUTH":
+      return state.user?.id === a.staffId
+        ? { ...state, backendAuthenticated: a.authenticated }
+        : state;
+
     case "LOGOUT":
       return withAudit(
-        withToast({ ...state, user: null, payOpen: false }, "info",
+        withToast({
+          ...state, user: null, backendAuthenticated: false, payOpen: false,
+          cart: [], held: [], currentShift: null, saleCustomerId: null, redeemPoints: 0,
+          receipt: null, view: "register",
+        }, "info",
           a.auto ? "Terminal locked after inactivity" : `${state.user?.name ?? "User"} signed out — terminal locked`),
         "system", `${state.user?.name ?? "User"} ${a.auto ? "auto-locked (idle)" : "signed out"}`);
 
@@ -397,12 +414,12 @@ function reducer(state: State, a: Action): State {
         transfers: state.transfers, audit: state.audit, staff: state.staff, settings: state.settings,
       };
       writeSnapshots([{ meta, data }, ...listSnapshots()]);
-      return withToast(state, "success", `Snapshot saved — “${a.label}”`);
+      return withToast({ ...state, snapshotVersion: state.snapshotVersion + 1 }, "success", `Snapshot saved — “${a.label}”`);
     }
 
     case "SNAPSHOT_DELETE": {
       writeSnapshots(listSnapshots().filter((s) => s.meta.id !== a.id));
-      return withToast(state, "info", "Snapshot deleted");
+      return withToast({ ...state, snapshotVersion: state.snapshotVersion + 1 }, "info", "Snapshot deleted");
     }
 
     case "SNAPSHOT_RESTORE": {
@@ -1333,6 +1350,36 @@ function reducer(state: State, a: Action): State {
       };
     }
 
+    case "HYDRATE_BACKEND": {
+      const hydratedUser = state.user
+        ? a.data.staff.find((staff) => staff.id === state.user?.id && staff.active) ?? state.user
+        : null;
+      return {
+        ...state,
+        user: hydratedUser,
+        products: a.data.products,
+        transactions: a.data.transactions,
+        prescriptions: a.data.prescriptions,
+        prescribers: a.data.prescribers,
+        customers: a.data.customers,
+        transfers: a.data.transfers,
+        backorders: a.data.backorders,
+        rxTransfers: a.data.rxTransfers,
+        suppliers: a.data.suppliers,
+        purchaseOrders: a.data.purchaseOrders,
+        apInvoices: a.data.apInvoices,
+        expenses: a.data.expenses,
+        deliveries: a.data.deliveries,
+        webOrders: a.data.webOrders,
+        timeEntries: a.data.timeEntries,
+        staff: a.data.staff,
+        settings: a.data.settings,
+        restrictedLog: a.data.restrictedLog,
+        audit: a.data.audit,
+        shifts: a.data.shifts,
+      };
+    }
+
     case "SHIFT_OPEN": {
       if (!state.user) return state;
       const terminalId = a.terminalId || `T-${String(state.shifts.length + 1).padStart(2, "0")}`;
@@ -1419,8 +1466,108 @@ interface Ctx {
 
 const PosCtx = createContext<Ctx | null>(null);
 
+const backendDataFromState = (state: State): BackendData => ({
+  products: state.products,
+  transactions: state.transactions,
+  prescriptions: state.prescriptions,
+  prescribers: state.prescribers,
+  customers: state.customers,
+  transfers: state.transfers,
+  backorders: state.backorders,
+  rxTransfers: state.rxTransfers,
+  suppliers: state.suppliers,
+  purchaseOrders: state.purchaseOrders,
+  apInvoices: state.apInvoices,
+  expenses: state.expenses,
+  deliveries: state.deliveries,
+  webOrders: state.webOrders,
+  timeEntries: state.timeEntries,
+  staff: state.staff,
+  settings: state.settings,
+  restrictedLog: state.restrictedLog,
+  audit: state.audit,
+  shifts: state.shifts,
+  snapshots: listSnapshots(),
+});
+
 export function PosProvider({ children }: { children: ReactNode }) {
   const [state, dispatch] = useReducer(reducer, undefined, load);
+  const stateRef = useRef(state);
+  const hydratedRef = useRef(false);
+  const hydrationInFlightRef = useRef(false);
+  const skipPersistRef = useRef(false);
+  const realtimeReloadRef = useRef<Promise<void> | null>(null);
+  const realtimeQueuedRef = useRef(false);
+  const previousUserRef = useRef(state.user);
+  stateRef.current = state;
+
+  useEffect(() => {
+    if (previousUserRef.current && !state.user) void signOutStaff();
+    previousUserRef.current = state.user;
+  }, [state.user]);
+
+  /* Keep the seed/localStorage path immediate; RLS-backed hydration starts after Supabase auth. */
+  useEffect(() => {
+    if (!state.backendAuthenticated) {
+      hydratedRef.current = false;
+      hydrationInFlightRef.current = false;
+      skipPersistRef.current = false;
+      return;
+    }
+    let active = true;
+    hydrationInFlightRef.current = true;
+    const hydrate = async () => {
+      const data = await loadBackendData(backendDataFromState(stateRef.current));
+      if (!active) return;
+      if (data.snapshots.length > 0) writeSnapshots(data.snapshots);
+      skipPersistRef.current = true;
+      hydratedRef.current = true;
+      hydrationInFlightRef.current = false;
+      dispatch({ type: "HYDRATE_BACKEND", data });
+    };
+    void hydrate();
+    return () => { active = false; };
+  }, [state.backendAuthenticated]);
+
+  /* Subscribe only while authenticated, then reload the full snapshot on any table change. */
+  useEffect(() => {
+    if (!state.backendAuthenticated) return;
+    const reload = async () => {
+      if (realtimeReloadRef.current) {
+        realtimeQueuedRef.current = true;
+        return;
+      }
+      const run = async () => {
+        const data = await loadBackendData(backendDataFromState(stateRef.current));
+        if (data.snapshots.length > 0) writeSnapshots(data.snapshots);
+        skipPersistRef.current = true;
+        dispatch({ type: "HYDRATE_BACKEND", data });
+      };
+      const pending = run().finally(() => {
+        realtimeReloadRef.current = null;
+        if (realtimeQueuedRef.current) {
+          realtimeQueuedRef.current = false;
+          void reload();
+        }
+      });
+      realtimeReloadRef.current = pending;
+      await pending;
+    };
+    return subscribeToBackend(() => { void reload(); });
+  }, [state.backendAuthenticated]);
+
+  /* Persist only reducer-owned backend data. Session/UI fields never enter this payload. */
+  useEffect(() => {
+    if (!hydratedRef.current || hydrationInFlightRef.current || !state.backendAuthenticated) return;
+    if (skipPersistRef.current) {
+      skipPersistRef.current = false;
+      return;
+    }
+    void persistBackendData(backendDataFromState(state));
+  }, [state.backendAuthenticated, state.products, state.transactions, state.prescriptions, state.prescribers, state.customers,
+    state.transfers, state.backorders, state.rxTransfers, state.suppliers, state.purchaseOrders,
+    state.apInvoices, state.expenses, state.deliveries, state.webOrders, state.timeEntries,
+    state.staff, state.settings, state.restrictedLog, state.audit, state.shifts, state.snapshotVersion]);
 
   /* track connectivity so the UI can show offline state (6.5) */
   useEffect(() => {
@@ -1456,9 +1603,10 @@ export function PosProvider({ children }: { children: ReactNode }) {
         suppliers: state.suppliers, purchaseOrders: state.purchaseOrders,
         apInvoices: state.apInvoices, expenses: state.expenses,
         deliveries: state.deliveries, webOrders: state.webOrders, timeEntries: state.timeEntries,
+        shifts: state.shifts,
       }));
     } catch { /* storage full — ignore */ }
-  }, [state.products, state.transactions, state.prescriptions, state.prescribers, state.customers, state.transfers, state.audit, state.staff, state.settings, state.restrictedLog, state.backorders, state.rxTransfers, state.suppliers, state.purchaseOrders, state.apInvoices, state.expenses]);
+  }, [state.products, state.transactions, state.prescriptions, state.prescribers, state.customers, state.transfers, state.audit, state.staff, state.settings, state.restrictedLog, state.backorders, state.rxTransfers, state.suppliers, state.purchaseOrders, state.apInvoices, state.expenses, state.shifts]);
 
   const value = useMemo<Ctx>(() => {
     const product = (id: string) => state.products.find((p) => p.id === id);
