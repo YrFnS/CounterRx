@@ -43,8 +43,27 @@ export interface Product {
   controlled?: Schedule; // DEA schedule — ID + audit requirements at the till
   restricted?: { limitPerSale: number }; // age-gated / monitored OTC — ID capture + mandatory log (§3)
   genericOf?: string;    // if set, this SKU is the generic equivalent of the given brand SKU (§3 DAW)
+  ndc?: string;          // National Drug Code, 5-4-2 format (§3) — first-class identifier
+  gtin?: string;         // GS1 GTIN-14 for scanning (§3)
   fields?: Field[];      // user-defined attributes (6.7)
 }
+
+/* Simulated NDC directory (§3) — used for auto-fill when creating new catalog items */
+export interface NdcEntry {
+  ndc: string; name: string; generic: string; brand: string; form: string;
+  price: number; cost: number; category: CategoryId;
+}
+export const NDC_DIRECTORY: NdcEntry[] = [
+  { ndc: "50111-0362-01", name: "Levothyroxine 50mcg", generic: "Levothyroxine sodium", brand: "Synthroid", form: "Tablet · bottle of 100", price: 14.2, cost: 7.8, category: "cardio" },
+  { ndc: "00173-0682-20", name: "Fluticasone/Salmeterol 250/50", generic: "Fluticasone + salmeterol", brand: "Advair Diskus", form: "Inhalation · 28 doses", price: 62.0, cost: 41.5, category: "coldflu" },
+  { ndc: "00006-0277-31", name: "Sitagliptin 100mg", generic: "Sitagliptin phosphate", brand: "Januvia", form: "Tablet · bottle of 30", price: 38.6, cost: 26.2, category: "diabetes" },
+  { ndc: "68258-8945-01", name: "Lisinopril 10mg", generic: "Lisinopril", brand: "Generic · Accord", form: "Tablet · bottle of 90", price: 8.4, cost: 3.1, category: "cardio" },
+  { ndc: "00078-0532-19", name: "Valsartan 80mg", generic: "Valsartan", brand: "Diovan", form: "Tablet · bottle of 30", price: 21.7, cost: 12.9, category: "cardio" },
+  { ndc: "51285-0538-02", name: "Ondansetron 4mg ODT", generic: "Ondansetron HCl", brand: "Zofran ODT", form: "Oral disintegrating · 10", price: 16.9, cost: 8.6, category: "coldflu" },
+];
+const normNdc = (s: string) => s.replace(/[^0-9]/g, "");
+export const ndcLookup = (code: string): NdcEntry | null =>
+  NDC_DIRECTORY.find((e) => normNdc(e.ndc) === normNdc(code)) ?? null;
 
 /** Suggested keys when adding custom fields */
 export const FIELD_SUGGESTIONS = ["Storage", "Shelf life", "Hazard class", "Vendor code", "Min order", "Fridge zone", "Recall flag"];
@@ -93,6 +112,7 @@ export interface TxLine {
   listPrice?: number;                       // original price before override
   daw?: number;                             // Dispense-As-Written code (1 prescriber / 2 patient) (§3)
   substituted?: string;                     // brand name this generic line replaced (§3)
+  ndc?: string;                             // NDC printed on the receipt (§3)
 }
 export type PayMethod = "cash" | "card" | "insurance";
 export interface PaymentLeg { method: PayMethod; amount: number; }
@@ -133,11 +153,28 @@ export interface Prescription {
   rxExpiry?: string;          // ISO date the prescription itself expires
   phone?: string;             // patient contact for "ready for pickup" notifications
   notifiedAt?: number;        // waiting-bin pickup notification sent
+  transferredOut?: { at: number; to: string }; // fill authority moved to another pharmacy (§3)
   insurance?: { plan: string; memberId: string; status: "pending" | "verified" | "rejected" };
   pa?: {                      // prior-authorization lifecycle with the payer (§3)
     status: "pending" | "approved" | "rejected";
     requestedAt: number; decidedAt?: number; note?: string;
   };
+}
+
+/** Documented prescription transfer between pharmacies (§3) */
+export interface RxTransfer {
+  id: string; transferNo: string; direction: "in" | "out";
+  prescriptionId?: string; patient: string; drug: string; qty: number;
+  otherPharmacy: string; otherPhone: string; prescriber: string;
+  refillsRemaining: number; pharmacist: string; at: number; note?: string;
+}
+export function makeRxTransfers(now: number): RxTransfer[] {
+  const h = 3_600_000; const d = 24 * h;
+  return [
+    { id: "RT-1", transferNo: "TF-88121", direction: "out", prescriptionId: "RX-2476", patient: "Samuel Eze", drug: "Azithromycin 250mg × 1", qty: 1, otherPharmacy: "Lakeview Pharmacy", otherPhone: "(555) 441-2018", prescriber: "Dr. R. Vance", refillsRemaining: 2, pharmacist: "R. Mensah, RPh", at: now - 2 * d, note: "Patient relocated — records requested" },
+    { id: "RT-2", transferNo: "TF-88109", direction: "in", patient: "Amara Diallo", drug: "Losartan 50mg × 2", qty: 2, otherPharmacy: "Cedar Grove Rx", otherPhone: "(555) 902-3341", prescriber: "Dr. I. Bello", refillsRemaining: 3, pharmacist: "R. Mensah, RPh", at: now - 5 * d, note: "Refill history verified verbally" },
+    { id: "RT-3", transferNo: "TF-88130", direction: "out", patient: "Grace Lin", drug: "Insulin glargine × 1", qty: 1, otherPharmacy: "Harbor Point Pharmacy", otherPhone: "(555) 733-0912", prescriber: "Dr. S. Adeyemi", refillsRemaining: 1, pharmacist: "R. Mensah, RPh", at: now - 6 * h, note: "Cold-chain handoff arranged" },
+  ];
 }
 
 export interface Customer {
@@ -166,7 +203,7 @@ export const ROLE_LABEL: Record<Role, string> = {
 
 export type Perm =
   | "refund" | "approve_transfer" | "adjust_stock" | "apply_count"
-  | "edit_settings" | "manage_staff" | "restore_snapshot" | "verify_rx";
+  | "edit_settings" | "manage_staff" | "restore_snapshot" | "verify_rx" | "transfer_rx";
 
 /* Permission matrix — enforced in the UI layer now, mirrors the future RLS checks */
 export const PERMS: Record<Perm, Role[]> = {
@@ -178,6 +215,7 @@ export const PERMS: Record<Perm, Role[]> = {
   manage_staff: ["pharmacy_admin"],
   restore_snapshot: ["pharmacy_admin"],
   verify_rx: ["pharmacist", "pharmacy_admin"],
+  transfer_rx: ["pharmacist", "pharmacy_admin"],
 };
 
 export const can = (role: Role | undefined, perm: Perm): boolean =>
@@ -421,6 +459,20 @@ export function makeProducts(now: number): Product[] {
     { ...p("g-cet10", "Cetirizine 10mg", "Cetirizine HCl", "Generic · Dr. Reddy's", "coldflu", "Tablet · strip of 10", 2.2, 0.8, 220, 40, false, "GCT-26C08", 430, "Apex Distributors"), genericOf: "cet10" },
     { ...p("g-salb", "Salbutamol Inhaler", "Salbutamol 100mcg", "Generic · Cipla", "coldflu", "Inhaler · 200 doses", 9.9, 5.6, 30, 10, true, "GSL-26B02", 210, "ColdChain Direct"), genericOf: "salb" },
   ];
+
+  /* NDC / GS1 identifiers (§3) — real-format codes on Rx & scanned items */
+  const ndcs: Record<string, [string, string]> = {
+    amx500: ["00093-0058-01", "00300093005801"], met500: ["00378-0048-01", "003000378004801"],
+    atv20: ["00071-0155-23", "003000071015523"], aml5: ["59762-3719-01", "0030059762371901"],
+    insg: ["00088-2220-33", "003000088222033"], salb: ["00173-0682-20", "003000173068220"],
+    tram50: ["00093-0058-01", "003000093005801"], alpr05: ["59762-5019-01", "0030059762501901"],
+    zolp5: ["00074-4340-13", "003000074434013"], codsyr: ["12496-1205-01", "003012496120501"],
+    pcm500: ["50580-0501-01", "0030050580050101"], cet10: ["59762-1010-01", "0030059762101001"],
+  };
+  for (const x of base) {
+    const n = ndcs[x.id];
+    if (n) { x.ndc = n[0]; x.gtin = n[1]; }
+  }
 
   /* Lot-level clearance pricing (1.4): push near-expiry Paracetamol at a discount */
   const pcm = base.find((x) => x.id === "pcm500");

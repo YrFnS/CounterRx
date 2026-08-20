@@ -8,7 +8,7 @@ import { usePos, relTime } from "../store";
 import { stockOf, can, daysUntil } from "../data";
 import type { RxStatus, Prescription, BackOrderStatus } from "../data";
 import { cx, Badge, Modal } from "../ui";
-import { IRx, ICheck, IClock, IRegister, IShield, IGrab, IRefresh, ISend, IRecall, IX, IBox } from "../icons";
+import { IRx, ICheck, IClock, IRegister, IShield, IGrab, IRefresh, ISend, IRecall, IX, IBox, ISwap, IArrowIn, IArrowOut, IDownload } from "../icons";
 
 const FLOW: RxStatus[] = ["new", "verifying", "ready", "waiting", "dispensed"];
 const LABEL: Record<RxStatus, string> = {
@@ -32,6 +32,9 @@ export default function Prescriptions() {
   const { state, dispatch, product, prescriber } = usePos();
   const [activeId, setActiveId] = useState<string | null>(null);
   const [overCol, setOverCol] = useState<RxStatus | null>(null);
+  const [xferLog, setXferLog] = useState(false);
+  const [xferIn, setXferIn] = useState(false);
+  const mayTransfer = can(state.user?.role, "transfer_rx");
 
   /* Refill radar: maintenance fills whose days-supply runs out within 7 days */
   const dueRefills = useMemo(() => {
@@ -66,6 +69,16 @@ export default function Prescriptions() {
           </p>
         </div>
         <div className="flex-1" />
+        <button onClick={() => setXferLog(true)}
+          className="flex items-center gap-1.5 px-3 py-2 rounded-lg border border-mist bg-card text-xs font-bold text-ink hover:border-pine-400 hover:bg-pine-50 transition active:scale-95">
+          <ISwap size={14} /> Transfer log · {state.rxTransfers.length}
+        </button>
+        <button onClick={() => setXferIn(true)} disabled={!mayTransfer}
+          title={mayTransfer ? "Accept a prescription transferred in from another pharmacy" : "Requires pharmacist or admin"}
+          className={cx("flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-bold transition active:scale-95",
+            mayTransfer ? "bg-pine-700 text-pine-50 hover:bg-pine-600 shadow-lift" : "bg-mist text-inksoft/50 cursor-not-allowed")}>
+          <IArrowIn size={14} /> Transfer in
+        </button>
         <p className="flex items-center gap-1.5 text-xs text-inksoft">
           <IShield size={14} className="text-pine-600" /> Pharmacist on duty: <span className="font-semibold text-ink">R. Mensah, RPh</span>
         </p>
@@ -142,6 +155,9 @@ export default function Prescriptions() {
           {activeRx ? <RxCard rx={activeRx} overlay /> : null}
         </DragOverlay>
       </DndContext>
+
+      {xferLog && <XferLogModal onClose={() => setXferLog(false)} />}
+      {xferIn && <XferInModal onClose={() => setXferIn(false)} />}
     </div>
   );
 }
@@ -275,11 +291,13 @@ function RxCard({ rx, ghost, overlay }: { rx: Prescription; ghost?: boolean; ove
   const p = product(rx.productId);
   const shelf = p ? stockOf(p) : 0;
   const [showPrescriber, setShowPrescriber] = useState(false);
+  const [showXferOut, setShowXferOut] = useState(false);
   const stepIdx = FLOW.indexOf(rx.status);
   const next = NEXT[rx.status];
-  const canAttach = rx.status !== "dispensed" && p && shelf > 0;
+  const canAttach = rx.status !== "dispensed" && p && shelf > 0 && !rx.transferredOut;
   const canPa = can(state.user?.role, "verify_rx");
-  const canBackorder = rx.status !== "dispensed" && p && shelf === 0;
+  const canBackorder = rx.status !== "dispensed" && p && shelf === 0 && !rx.transferredOut;
+  const canTransferOut = rx.status !== "dispensed" && !rx.transferredOut && can(state.user?.role, "transfer_rx");
 
   return (
     <article ref={setNodeRef} {...listeners} {...attributes}
@@ -297,6 +315,15 @@ function RxCard({ rx, ghost, overlay }: { rx: Prescription; ghost?: boolean; ove
         </div>
         <IGrab size={13} className="text-inksoft/40 shrink-0 mt-0.5" />
       </div>
+
+      {rx.transferredOut && (
+        <div className="mt-2 flex items-center gap-1.5 rounded-md border border-mist bg-mist/50 px-2 py-1.5">
+          <IArrowOut size={12} className="text-inksoft shrink-0" />
+          <p className="text-[10px] font-semibold text-inksoft">
+            Transferred out to <span className="text-ink">{rx.transferredOut.to}</span> · {relTime(rx.transferredOut.at)} — fill authority released
+          </p>
+        </div>
+      )}
 
       <div className="mt-2.5 bg-paper border border-mist rounded-lg px-2.5 py-2">
         <p className="text-[13px] font-semibold text-ink flex items-center gap-1.5">
@@ -472,6 +499,13 @@ function RxCard({ rx, ghost, overlay }: { rx: Prescription; ghost?: boolean; ove
             <IBox size={11} /> Back-order · out of stock
           </button>
         )}
+        {canTransferOut && (
+          <button onClick={() => setShowXferOut(true)}
+            className="py-1.5 px-2.5 rounded-lg border border-mist bg-card text-inksoft text-[11px] font-bold hover:border-pine-400 hover:text-pine-700 transition active:scale-[0.97] flex items-center justify-center gap-1"
+            title="Transfer this prescription to another pharmacy">
+            <IArrowOut size={11} /> Transfer
+          </button>
+        )}
         {rx.status === "dispensed" && (
           <span className="flex-1 py-1.5 rounded-lg bg-pine-100 text-pine-800 text-[11px] font-bold text-center flex items-center justify-center gap-1">
             <ICheck size={11} /> Completed & logged
@@ -481,6 +515,9 @@ function RxCard({ rx, ghost, overlay }: { rx: Prescription; ghost?: boolean; ove
 
       {showPrescriber && (
         <PrescriberModal prescriberId={rx.prescriberId} onClose={() => setShowPrescriber(false)} />
+      )}
+      {showXferOut && (
+        <XferOutModal rx={rx} onClose={() => setShowXferOut(false)} />
       )}
     </article>
   );
@@ -577,3 +614,215 @@ const STATUS_TONE: Record<RxStatus, string> = {
 function StatusPill({ status }: { status: RxStatus }) {
   return <span className={cx("inline-block px-1.5 py-0.5 rounded text-[9px] font-bold uppercase tracking-wide", STATUS_TONE[status])}>{status}</span>;
 }
+
+/* Rx transfer ledger — every documented in/out transfer, exportable (§3) */
+function XferLogModal({ onClose }: { onClose: () => void }) {
+  const { state, product } = usePos();
+  const rows = [...state.rxTransfers].sort((a, b) => b.at - a.at);
+  const exportCsv = () => {
+    const head = ["transfer_no", "direction", "patient", "drug", "qty", "other_pharmacy", "prescriber", "refills", "pharmacist", "date"];
+    const body = rows.map((r) => [
+      r.transferNo, r.direction, `"${r.patient}"`, `"${r.drug}"`, r.qty,
+      `"${r.otherPharmacy}"`, `"${r.prescriber}"`, r.refillsRemaining, `"${r.pharmacist}"`,
+      new Date(r.at).toISOString().slice(0, 10),
+    ].join(","));
+    const blob = new Blob([[head.join(","), ...body].join("\n")], { type: "text/csv" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url; a.download = `rx-transfers-${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click(); URL.revokeObjectURL(url);
+  };
+  return (
+    <Modal onClose={onClose} width={680} labelledBy="xlog-title">
+      <div className="px-5 py-4 border-b border-mist flex items-start justify-between">
+        <div>
+          <h2 id="xlog-title" className="font-display font-bold text-ink flex items-center gap-2">
+            <ISwap size={17} className="text-pine-700" /> Prescription transfer log
+          </h2>
+          <p className="text-xs text-inksoft mt-0.5">Documented Rx transfers between pharmacies · {rows.length} on record</p>
+        </div>
+        <button onClick={onClose} className="p-1.5 rounded-md hover:bg-mist/60 text-inksoft" aria-label="Close"><IX size={14} /></button>
+      </div>
+      <div className="p-5">
+        <div className="max-h-[380px] overflow-auto scroll-slim rounded-lg border border-mist">
+          <table className="w-full text-xs border-collapse min-w-[600px]">
+            <thead className="sticky top-0">
+              <tr className="bg-pine-900 text-pine-100 text-left text-[9px] uppercase tracking-[0.14em]">
+                <th className="px-3 py-2 font-bold">Dir</th>
+                <th className="px-2 py-2 font-bold">Transfer #</th>
+                <th className="px-2 py-2 font-bold">Patient · drug</th>
+                <th className="px-2 py-2 font-bold">Other pharmacy</th>
+                <th className="px-2 py-2 font-bold text-center">Refills</th>
+                <th className="px-3 py-2 font-bold">Date</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((r, i) => (
+                <tr key={r.id} className={cx("border-t border-mist/70", i % 2 === 1 && "bg-paper/60")}>
+                  <td className="px-3 py-2">
+                    <span className={cx("inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-bold uppercase",
+                      r.direction === "out" ? "bg-brick-100 text-brick-700" : "bg-pine-100 text-pine-700")}>
+                      {r.direction === "out" ? <IArrowOut size={9} /> : <IArrowIn size={9} />}{r.direction}
+                    </span>
+                  </td>
+                  <td className="px-2 py-2 num font-bold text-ink">{r.transferNo}</td>
+                  <td className="px-2 py-2">
+                    <p className="font-semibold text-ink">{r.patient}</p>
+                    <p className="text-[10px] text-inksoft truncate max-w-[180px]">{r.drug}</p>
+                  </td>
+                  <td className="px-2 py-2 text-inksoft">{r.otherPharmacy}</td>
+                  <td className="px-2 py-2 text-center num font-bold text-ink">{r.refillsRemaining}</td>
+                  <td className="px-3 py-2 num text-inksoft">{new Date(r.at).toLocaleDateString("en-US", { month: "short", day: "numeric" })}</td>
+                </tr>
+              ))}
+              {rows.length === 0 && <tr><td colSpan={6} className="px-3 py-8 text-center text-inksoft">No transfers on record.</td></tr>}
+            </tbody>
+          </table>
+        </div>
+        <div className="mt-4 flex justify-end">
+          <button onClick={exportCsv}
+            className="flex items-center gap-1.5 px-4 py-2 rounded-lg bg-pine-700 text-pine-50 text-xs font-bold hover:bg-pine-600 transition active:scale-95">
+            <IDownload size={13} /> Export CSV
+          </button>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+/* Transfer a script out — releases fill authority to another pharmacy (§3) */
+function XferOutModal({ rx, onClose }: { rx: Prescription; onClose: () => void }) {
+  const { dispatch, product } = usePos();
+  const [pharmacy, setPharmacy] = useState("");
+  const [phone, setPhone] = useState("");
+  const [refills, setRefills] = useState(String(rx.refillsRemaining ?? 0));
+  const [note, setNote] = useState("");
+  const ok = pharmacy.trim().length >= 2 && phone.replace(/\D/g, "").length >= 7;
+  return (
+    <Modal onClose={onClose} width={420} labelledBy="xout-title">
+      <div className="px-5 py-4 border-b border-mist flex items-start justify-between">
+        <div>
+          <h2 id="xout-title" className="font-display font-bold text-ink flex items-center gap-2">
+            <IArrowOut size={16} className="text-brick-700" /> Transfer {rx.id} out
+          </h2>
+          <p className="text-xs text-inksoft mt-0.5">{rx.patient} · {product(rx.productId)?.name} × {rx.qty}</p>
+        </div>
+        <button onClick={onClose} className="p-1.5 rounded-md hover:bg-mist/60 text-inksoft" aria-label="Close"><IX size={14} /></button>
+      </div>
+      <div className="p-5 space-y-3">
+        <div>
+          <label className="text-[11px] font-semibold uppercase tracking-[0.14em] text-inksoft">Receiving pharmacy *</label>
+          <input autoFocus value={pharmacy} onChange={(e) => setPharmacy(e.target.value)} placeholder="e.g. Lakeview Pharmacy" className={xfIn} />
+        </div>
+        <div className="grid grid-cols-2 gap-2.5">
+          <div>
+            <label className="text-[11px] font-semibold uppercase tracking-[0.14em] text-inksoft">Their phone *</label>
+            <input value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="(555) 000-0000" className={cx(xfIn, "num")} />
+          </div>
+          <div>
+            <label className="text-[11px] font-semibold uppercase tracking-[0.14em] text-inksoft">Refills remaining</label>
+            <input value={refills} onChange={(e) => setRefills(e.target.value.replace(/\D/g, ""))} inputMode="numeric" className={cx(xfIn, "num")} />
+          </div>
+        </div>
+        <div>
+          <label className="text-[11px] font-semibold uppercase tracking-[0.14em] text-inksoft">Transfer note</label>
+          <input value={note} onChange={(e) => setNote(e.target.value)} placeholder="optional" className={xfIn} />
+        </div>
+        <p className="text-[10px] text-inksoft">Fill authority moves to the receiving pharmacy. This is recorded in the transfer log and cannot be dispensed here afterwards.</p>
+        <button disabled={!ok}
+          onClick={() => {
+            dispatch({ type: "TRANSFER_RX_OUT", prescriptionId: rx.id, otherPharmacy: pharmacy.trim(), otherPhone: phone.trim(), refillsRemaining: parseInt(refills) || 0, note });
+            onClose();
+          }}
+          className={cx("w-full py-2.5 rounded-lg font-display font-bold text-sm transition-all flex items-center justify-center gap-2",
+            ok ? "bg-brick-600 text-paper hover:bg-brick-700 active:scale-[0.98] shadow-lift" : "bg-mist text-inksoft cursor-not-allowed")}>
+          <IArrowOut size={14} /> Release transfer
+        </button>
+      </div>
+    </Modal>
+  );
+}
+
+/* Accept an incoming transfer — creates a new script queued for review (§3) */
+function XferInModal({ onClose }: { onClose: () => void }) {
+  const { state, dispatch } = usePos();
+  const [patient, setPatient] = useState("");
+  const [phone, setPhone] = useState("");
+  const [productId, setProductId] = useState(state.products.find((p) => p.rx)?.id ?? state.products[0]?.id ?? "");
+  const [qty, setQty] = useState("1");
+  const [pharmacy, setPharmacy] = useState("");
+  const [phPhone, setPhPhone] = useState("");
+  const [prescriberId, setPrescriberId] = useState(state.prescribers[0]?.id ?? "");
+  const [refills, setRefills] = useState("0");
+  const ok = patient.trim().length >= 2 && pharmacy.trim().length >= 2 && productId && prescriberId;
+  return (
+    <Modal onClose={onClose} width={480} labelledBy="xin-title">
+      <div className="px-5 py-4 border-b border-mist flex items-start justify-between">
+        <div>
+          <h2 id="xin-title" className="font-display font-bold text-ink flex items-center gap-2">
+            <IArrowIn size={16} className="text-pine-700" /> Accept a transfer in
+          </h2>
+          <p className="text-xs text-inksoft mt-0.5">Creates a new script from another pharmacy, queued for pharmacist review</p>
+        </div>
+        <button onClick={onClose} className="p-1.5 rounded-md hover:bg-mist/60 text-inksoft" aria-label="Close"><IX size={14} /></button>
+      </div>
+      <div className="p-5 space-y-3">
+        <div className="grid grid-cols-2 gap-2.5">
+          <div>
+            <label className="text-[11px] font-semibold uppercase tracking-[0.14em] text-inksoft">Patient name *</label>
+            <input autoFocus value={patient} onChange={(e) => setPatient(e.target.value)} placeholder="Full name" className={xfIn} />
+          </div>
+          <div>
+            <label className="text-[11px] font-semibold uppercase tracking-[0.14em] text-inksoft">Patient phone</label>
+            <input value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="(555) 000-0000" className={cx(xfIn, "num")} />
+          </div>
+        </div>
+        <div className="grid grid-cols-2 gap-2.5">
+          <div>
+            <label className="text-[11px] font-semibold uppercase tracking-[0.14em] text-inksoft">Drug (match to catalog) *</label>
+            <select value={productId} onChange={(e) => setProductId(e.target.value)} className={xfIn}>
+              {state.products.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className="text-[11px] font-semibold uppercase tracking-[0.14em] text-inksoft">Qty</label>
+            <input value={qty} onChange={(e) => setQty(e.target.value.replace(/\D/g, ""))} inputMode="numeric" className={cx(xfIn, "num")} />
+          </div>
+        </div>
+        <div className="grid grid-cols-2 gap-2.5">
+          <div>
+            <label className="text-[11px] font-semibold uppercase tracking-[0.14em] text-inksoft">Originating pharmacy *</label>
+            <input value={pharmacy} onChange={(e) => setPharmacy(e.target.value)} placeholder="e.g. Cedar Grove Rx" className={xfIn} />
+          </div>
+          <div>
+            <label className="text-[11px] font-semibold uppercase tracking-[0.14em] text-inksoft">Their phone</label>
+            <input value={phPhone} onChange={(e) => setPhPhone(e.target.value)} placeholder="(555) 000-0000" className={cx(xfIn, "num")} />
+          </div>
+        </div>
+        <div className="grid grid-cols-2 gap-2.5">
+          <div>
+            <label className="text-[11px] font-semibold uppercase tracking-[0.14em] text-inksoft">Prescriber *</label>
+            <select value={prescriberId} onChange={(e) => setPrescriberId(e.target.value)} className={xfIn}>
+              {state.prescribers.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className="text-[11px] font-semibold uppercase tracking-[0.14em] text-inksoft">Refills remaining</label>
+            <input value={refills} onChange={(e) => setRefills(e.target.value.replace(/\D/g, ""))} inputMode="numeric" className={cx(xfIn, "num")} />
+          </div>
+        </div>
+        <button disabled={!ok}
+          onClick={() => {
+            dispatch({ type: "TRANSFER_RX_IN", patient: patient.trim(), phone, productId, qty: parseInt(qty) || 1, otherPharmacy: pharmacy.trim(), otherPhone: phPhone.trim(), prescriberId, refillsRemaining: parseInt(refills) || 0 });
+            onClose();
+          }}
+          className={cx("w-full py-2.5 rounded-lg font-display font-bold text-sm transition-all flex items-center justify-center gap-2",
+            ok ? "bg-pine-700 text-pine-50 hover:bg-pine-600 active:scale-[0.98] shadow-lift" : "bg-mist text-inksoft cursor-not-allowed")}>
+          <IArrowIn size={14} /> Accept & queue for review
+        </button>
+      </div>
+    </Modal>
+  );
+}
+
+const xfIn = "w-full mt-1 px-2.5 py-2 rounded-lg border border-mist bg-card text-sm focus:border-pine-500 focus:outline-none transition";

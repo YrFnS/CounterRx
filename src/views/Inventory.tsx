@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { usePos, money, relTime, clockTime } from "../store";
-import { CATEGORIES, daysUntil, fefoBatches, stockOf, nearestExpiry, newBatchCode, FIELD_SUGGESTIONS, BRANCHES, can } from "../data";
+import { CATEGORIES, daysUntil, fefoBatches, stockOf, nearestExpiry, newBatchCode, FIELD_SUGGESTIONS, BRANCHES, can, ndcLookup } from "../data";
 import type { CategoryId, Product, Batch, TransferStatus, Transaction } from "../data";
 import { cx, Badge, Modal, StockBar, Empty, CustomFieldsBlock } from "../ui";
 import { ISearch, IPlus, IBox, IAlert, IDownload, IEdit, IX, ICheck, IReport, ICalendar, IClipboard, ITag, ISwap, IScan, IUsers } from "../icons";
@@ -211,6 +211,7 @@ export default function Inventory() {
                             {p.controlled && <span className="ml-1 px-1.5 py-0.5 rounded bg-ink text-paper text-[9px] font-bold tracking-wide align-middle">{p.controlled}</span>}
                           </p>
                           <p className="num text-[10px] text-inksoft">{p.sku} · {p.barcode} · {p.supplier}</p>
+                          {p.ndc && <p className="num text-[10px] text-pine-700 font-semibold">NDC {p.ndc}{p.gtin && <span className="text-inksoft font-normal"> · GTIN {p.gtin}</span>}</p>}
                           {(p.fields && p.fields.length > 0) && (
                             <div className="mt-1"><CustomFieldsBlock fields={p.fields} suggestions={FIELD_SUGGESTIONS} listId={`pf-${p.id}`}
                               onSave={(k, v) => dispatch({ type: "SET_FIELD", target: "product", id: p.id, field: { key: k, value: v } })}
@@ -1037,10 +1038,22 @@ function AddProductModal({ onClose }: { onClose: () => void }) {
   const { dispatch } = usePos();
   const [f, setF] = useState({
     name: "", generic: "", brand: "", category: "pain" as CategoryId, form: "Tablet · strip of 10",
-    price: "", cost: "", stock: "24", reorder: "10", rx: false, expDays: "365", batch: "",
+    price: "", cost: "", stock: "24", reorder: "10", rx: false, expDays: "365", batch: "", ndc: "",
   });
   const set = (k: string, v: string | boolean) => setF((s) => ({ ...s, [k]: v }));
   const valid = f.name.trim() && parseFloat(f.price) > 0;
+  const [lookupState, setLookupState] = useState<"idle" | "found" | "miss">("idle");
+
+  /* NDC directory auto-fill (§3) */
+  const runLookup = () => {
+    const hit = ndcLookup(f.ndc);
+    if (!hit) { setLookupState("miss"); return; }
+    setF((s) => ({
+      ...s, name: hit.name, generic: hit.generic, brand: hit.brand, form: hit.form,
+      category: hit.category, price: hit.price.toFixed(2), cost: hit.cost.toFixed(2), ndc: hit.ndc,
+    }));
+    setLookupState("found");
+  };
 
   const submit = () => {
     if (!valid) return;
@@ -1054,6 +1067,7 @@ function AddProductModal({ onClose }: { onClose: () => void }) {
         category: f.category, form: f.form, price: parseFloat(f.price), cost: parseFloat(f.cost) || parseFloat(f.price) * 0.55,
         reorderLevel: parseInt(f.reorder) || 10, rx: f.rx,
         supplier: "Manual entry",
+        ndc: f.ndc.trim() || undefined,
         batches: [{ batch: f.batch.trim() || `HB-${new Date().getFullYear()}A01`, expiry, qty: parseInt(f.stock) || 0 }],
       },
     });
@@ -1079,6 +1093,21 @@ function AddProductModal({ onClose }: { onClose: () => void }) {
         <button onClick={onClose} className="p-1.5 rounded-md hover:bg-mist/60 text-inksoft" aria-label="Close"><IX size={14} /></button>
       </div>
       <div className="p-5 grid grid-cols-2 gap-3.5">
+        <div className="col-span-2">
+          <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-inksoft">NDC · auto-fill from directory</span>
+          <div className="mt-1 flex gap-1.5">
+            <input value={f.ndc} onChange={(e) => { set("ndc", e.target.value); setLookupState("idle"); }}
+              onKeyDown={(e) => e.key === "Enter" && runLookup()}
+              placeholder="e.g. 50111-0362-01"
+              className="num flex-1 px-2.5 py-2 rounded-lg border border-mist bg-card text-sm focus:border-pine-500 focus:outline-none transition" />
+            <button onClick={runLookup}
+              className="px-3 py-2 rounded-lg bg-ink text-paper text-xs font-bold hover:bg-pine-900 transition active:scale-95 shrink-0">
+              Look up
+            </button>
+          </div>
+          {lookupState === "found" && <p className="mt-1 text-[11px] font-semibold text-pine-700 anim-fade-up">✓ Catalog fields pre-filled — review before saving</p>}
+          {lookupState === "miss" && <p className="mt-1 text-[11px] font-semibold text-brick-700 anim-fade-up">No directory match — enter the product manually</p>}
+        </div>
         <div className="col-span-2"><Field label="Product name" k="name" ph="e.g. Loratadine 10mg" /></div>
         <Field label="Generic / molecule" k="generic" ph="Loratadine" />
         <Field label="Brand" k="brand" ph="Claritin" />

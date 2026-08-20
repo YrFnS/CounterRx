@@ -211,6 +211,12 @@ export const IClock = (p: P) => (
 export const IMenu = (p: P) => (
   <Base {...p}><path d="M4 7h16M4 12h16M4 17h16" /></Base>
 );
+export const IArrowOut = (p: P) => (
+  <Base {...p}><path d="M7 17L17 7M9 7h8v8" /></Base>
+);
+export const IArrowIn = (p: P) => (
+  <Base {...p}><path d="M17 7L7 17M15 17H7V9" /></Base>
+);
 export const ICode = (p: P) => (
   <Base {...p}>
     <path d="m8 7-5 5 5 5M16 7l5 5-5 5" />

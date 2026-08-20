@@ -462,6 +462,7 @@ function ReceiptBody({ tx }: { tx: Transaction }) {
           {l.note && <p className="text-[10px] text-inksoft italic">↳ {l.note}</p>}
           {l.substituted && <p className="text-[10px] text-pine-700 font-semibold">↪ generic substitution for {l.substituted}</p>}
           {l.daw && <p className="text-[10px] text-inksoft">DAW-{l.daw} · dispensed as written ({l.daw === 1 ? "prescriber directed" : "patient requested"})</p>}
+          {l.ndc && <p className="text-[10px] text-inksoft num">NDC {l.ndc}</p>}
           {l.alloc && l.alloc.length > 0 && (
             <div className="text-[10px] text-inksoft num">FEFO lots: {l.alloc.map((a) => `${a.batch}×${a.qty}`).join(" · ")}</div>
           )}

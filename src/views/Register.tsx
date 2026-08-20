@@ -135,7 +135,12 @@ export default function Register() {
     if (e.key !== "Enter") return;
     const needle = q.trim();
     if (!needle) return;
-    const hit = state.products.find((p) => p.barcode === needle || p.sku.toLowerCase() === needle.toLowerCase());
+    const norm = (s: string) => s.replace(/[^0-9a-z]/gi, "");
+    const hit = state.products.find((p) =>
+      p.barcode === needle
+      || p.sku.toLowerCase() === needle.toLowerCase()
+      || (p.ndc && norm(p.ndc) === norm(needle))     /* NDC scan — dashes optional (§3) */
+      || (p.gtin && p.gtin === needle.replace(/\D/g, "")));
     if (hit) {
       tryAdd(hit);
       if (state.settings.scanBeep) playScanBeep();
