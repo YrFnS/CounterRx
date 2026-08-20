@@ -409,7 +409,7 @@ export function allergyConflicts(allergies: string[] | undefined, p: Product | u
 /*  Staff, roles & permissions (§0)                                    */
 /* ------------------------------------------------------------------ */
 
-export type Role = "pharmacy_admin" | "pharmacist" | "manager" | "cashier";
+export type Role = "pharmacy_admin" | "pharmacist" | "manager" | "cashier" | "super_admin";
 
 export interface Staff {
   id: string; name: string; role: Role;
@@ -418,7 +418,7 @@ export interface Staff {
 }
 
 export const ROLE_LABEL: Record<Role, string> = {
-  pharmacy_admin: "Admin", pharmacist: "Pharmacist", manager: "Manager", cashier: "Cashier",
+  pharmacy_admin: "Admin", pharmacist: "Pharmacist", manager: "Manager", cashier: "Cashier", super_admin: "Super Admin",
 };
 
 export type Perm =
@@ -578,7 +578,7 @@ export interface SnapshotMeta { id: string; at: number; label: string; auto: boo
 export interface Snapshot { meta: SnapshotMeta; data: Record<string, unknown>; }
 export const SNAPS_KEY = "counterrx:snapshots";
 
-export type AuditKind = "sale" | "stock" | "money" | "rx" | "system";
+export type AuditKind = "sale" | "stock" | "money" | "rx" | "system" | "shift" | "cash" | "void" | "report";
 export interface AuditEntry { id: number; at: number; actor: string; kind: AuditKind; detail: string; }
 
 /** Behind-the-counter / monitored OTC sale — ID captured, mandatory log (§3) */

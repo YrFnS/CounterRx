@@ -144,7 +144,7 @@ type Action =
   | { type: "CUSTOMER_PROFILE"; id: string; patch: Partial<Pick<Customer, "dob" | "gender" | "address" | "bloodType" | "primaryPrescriberId" | "insurancePlan" | "clinicalNotes">> }
   | { type: "SHIFT_OPEN"; terminalId: string; openingBalance: number }
   | { type: "SHIFT_CLOSE"; countedCash: number; notes?: string }
-  | { type: "SHIFT_CASH_MOVEMENT"; type: "paid_in" | "paid_out"; amount: number; reason: string; approvedBy?: string }
+  | { type: "SHIFT_CASH_MOVEMENT"; movementType: "paid_in" | "paid_out"; amount: number; reason: string; approvedBy?: string }
   | { type: "VOID_TX"; txId: string; reason: string; approvedBy: string }
   | { type: "GENERATE_X_REPORT"; shiftId: string }
   | { type: "GENERATE_Z_REPORT"; shiftId: string }
@@ -187,7 +187,7 @@ const LS_KEY = "counterrx:v10";
 function load(): State {
   const base: State = {
     ...seed(), user: null, lockouts: {}, restrictedLog: [], online: typeof navigator === "undefined" ? true : navigator.onLine,
-    cart: [], held: [], saleCustomerId: null, redeemPoints: 0,
+    cart: [], held: [], saleCustomerId: null, redeemPoints: 0, currentShift: null,
     view: "register", invPreset: "all",
     payOpen: false, receipt: null, toasts: [], flashId: null, flashKey: 0,
   };
@@ -1353,9 +1353,9 @@ function reducer(state: State, a: Action): State {
       const needsApproval = a.amount > 100 && !managerRoles.includes(state.user.role);
       if (needsApproval && !a.approvedBy) return withToast(state, "error", "Manager approval required for large amounts");
       
-      const updated = recordCashMovement(state.currentShift, a.type, a.amount, a.reason, state.user.name, a.approvedBy);
+      const updated = recordCashMovement(state.currentShift, a.movementType, a.amount, a.reason, state.user.name, a.approvedBy);
       const updatedShifts = state.shifts.map(s => s.id === updated.id ? updated : s);
-      return withToast(withAudit({ ...state, shifts: updatedShifts, currentShift: updated }, "cash", `${a.type.replace("_", " ")} $${a.toFixed(2)} — ${a.reason}`), "success", `${a.type.replace("_", " ").toUpperCase()} recorded`);
+      return withToast(withAudit({ ...state, shifts: updatedShifts, currentShift: updated }, "cash", `${a.movementType.replace("_", " ")} $${a.amount.toFixed(2)} — ${a.reason}`), "success", `${a.movementType.replace("_", " ").toUpperCase()} recorded`);
     }
 
     case "VOID_TX": {

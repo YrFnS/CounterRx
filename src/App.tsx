@@ -112,6 +112,7 @@ function LockScreen() {
     pharmacist: "bg-honey-500 text-pine-950",
     manager: "bg-brick-500 text-brick-100",
     pharmacy_admin: "bg-ink text-paper",
+    super_admin: "bg-ink text-paper",
   };
 
   /* no profile picked yet → roster chooser */
