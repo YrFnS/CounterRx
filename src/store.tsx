@@ -15,7 +15,7 @@ import type {
 } from "./data";
 import { makeStaff, makeSettings, makeBackOrders, makeRxTransfers, SNAPS_KEY, hashPin, ROLE_LABEL } from "./data";
 
-export type View = "register" | "dashboard" | "customers" | "inventory" | "finance" | "prescriptions" | "history" | "settings";
+export type View = "register" | "dashboard" | "customers" | "inventory" | "finance" | "reports" | "prescriptions" | "history" | "settings";
 export type InventoryPreset = "all" | "low" | "expiring";
 
 export interface Toast { id: number; kind: "success" | "warn" | "error" | "info"; msg: string; }
@@ -677,6 +677,11 @@ function reducer(state: State, a: Action): State {
         if (!line) return p;
         const res = allocFEFO(p.batches, line.qty);
         line.alloc = res.alloc.filter((x) => x.qty > 0);
+        /* FIFO unit cost from the allocated lots (§5/§6) — falls back to product cost */
+        const allocQty = res.alloc.reduce((s, x) => s + x.qty, 0);
+        line.cost = allocQty > 0
+          ? round2(res.alloc.reduce((s, x) => s + x.qty * (x.cost ?? p.cost), 0) / allocQty)
+          : p.cost;
         return { ...p, batches: res.batches };
       });
       const primary = a.payments[0];
@@ -1086,7 +1091,9 @@ function reducer(state: State, a: Action): State {
       const products = state.products.map((p) => {
         const r = a.receipts.find((x) => x.productId === p.id);
         if (!r || r.qty <= 0) return p;
-        return { ...p, batches: [...p.batches, { batch: newBatchCode(), expiry: r.expiry, qty: r.qty }] };
+        /* per-lot cost recorded at receive — the negotiated PO price (§5 batch costing) */
+        const poLine = po.lines.find((l) => l.productId === p.id);
+        return { ...p, batches: [...p.batches, { batch: newBatchCode(), expiry: r.expiry, qty: r.qty, cost: poLine?.unitCost ?? p.cost }] };
       });
       const lines = po.lines.map((l) => {
         const r = a.receipts.find((x) => x.productId === l.productId);

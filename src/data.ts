@@ -25,6 +25,7 @@ export const CATEGORIES: { id: CategoryId; label: string; dot: string }[] = [
 export interface Batch {
   batch: string; expiry: string; qty: number;
   price?: number;      // lot-level clearance price (1.4)
+  cost?: number;       // per-lot cost recorded at receive (§5 batch costing) — falls back to product.cost
   recalled?: boolean;  // flagged for recall — trace patients & quarantine (§3/§5)
 }
 
@@ -84,16 +85,16 @@ export const nearestExpiry = (p: Product): string | null => fefoBatches(p)[0]?.e
  */
 export function allocFEFO(batches: Batch[], need: number): {
   batches: Batch[];
-  alloc: { batch: string; qty: number }[];
+  alloc: { batch: string; qty: number; cost?: number }[];
 } {
-  const alloc: { batch: string; qty: number }[] = [];
+  const alloc: { batch: string; qty: number; cost?: number }[] = [];
   let remaining = need;
   const out: Batch[] = [];
   for (const b of fefoBatches({ batches })) {
     if (remaining <= 0) { out.push(b); continue; }
     const take = Math.min(b.qty, remaining);
     remaining -= take;
-    if (take > 0) alloc.push({ batch: b.batch, qty: take });
+    if (take > 0) alloc.push({ batch: b.batch, qty: take, cost: b.cost });
     if (b.qty - take > 0) out.push({ ...b, qty: b.qty - take });
   }
   return { batches: out, alloc };
@@ -109,6 +110,7 @@ export function newBatchCode(): string {
 export interface TxLine {
   productId: string; name: string; form: string; qty: number; price: number; rx: boolean;
   alloc?: { batch: string; qty: number }[]; // FEFO lot trail
+  cost?: number;                            // unit cost at time of sale (FIFO) — powers margin/COGS (§6)
   note?: string;                            // per-line counter note
   override?: boolean;                       // unit price was manually overridden
   listPrice?: number;                       // original price before override

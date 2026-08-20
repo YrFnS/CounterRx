@@ -13,10 +13,11 @@ import Inventory from "./views/Inventory";
 import Prescriptions from "./views/Prescriptions";
 import History from "./views/History";
 import {
-  ICross, IRegister, IDash, IBox, IRx, IHistory, IBell, IAlert, IChevD, IRecall, IScan, IDownload, IUpload, IUsers, IWifi, IWifiOff, ICode, IMenu, IX, IGear, ILedger,
+  ICross, IRegister, IDash, IBox, IRx, IHistory, IBell, IAlert, IChevD, IRecall, IScan, IDownload, IUpload, IUsers, IWifi, IWifiOff, ICode, IMenu, IX, IGear, ILedger, ITrendUp,
 } from "./icons";
 import Customers from "./views/Customers";
 import Settings from "./views/Settings";
+import Reports from "./views/Reports";
 import Finance from "./views/Finance";
 
 const TITLES: Record<View, { title: string; sub: string }> = {
@@ -25,6 +26,7 @@ const TITLES: Record<View, { title: string; sub: string }> = {
   customers: { title: "Customer book", sub: "Loyalty balances, visit history, preferences" },
   inventory: { title: "Inventory & batches", sub: "Stock on hand, expiry windows, reorder points" },
   finance: { title: "Supply-chain finance", sub: "Purchase orders, accounts payable, expenses, P&L" },
+  reports: { title: "Financial reports", sub: "Margin, FIFO valuation, P&L, custom report builder" },
   prescriptions: { title: "Prescription queue", sub: "Pharmacist workflow · drop-off to dispense" },
   history: { title: "Sales ledger", sub: "Every receipt this terminal has printed" },
   settings: { title: "Settings & staff", sub: "Organization profile, team, loyalty, backups" },
@@ -36,6 +38,7 @@ const NAV: { id: View; label: string; icon: ReactNode; key: string }[] = [
   { id: "customers", label: "Customers", icon: <IUsers size={17} />, key: "F7" },
   { id: "inventory", label: "Inventory", icon: <IBox size={17} />, key: "F4" },
   { id: "finance", label: "Finance", icon: <ILedger size={17} />, key: "F8" },
+  { id: "reports", label: "Reports", icon: <ITrendUp size={17} />, key: "F10" },
   { id: "prescriptions", label: "Prescriptions", icon: <IRx size={17} />, key: "F5" },
   { id: "history", label: "Sales ledger", icon: <IHistory size={17} />, key: "F6" },
   { id: "settings", label: "Settings", icon: <IGear size={17} />, key: "F9" },
@@ -242,7 +245,7 @@ function Shell() {
   /* global keyboard shortcuts */
   useEffect(() => {
     const h = (e: KeyboardEvent) => {
-      const map: Record<string, View> = { F1: "register", F3: "dashboard", F4: "inventory", F5: "prescriptions", F6: "history", F7: "customers", F8: "finance", F9: "settings" };
+      const map: Record<string, View> = { F1: "register", F3: "dashboard", F4: "inventory", F5: "prescriptions", F6: "history", F7: "customers", F8: "finance", F9: "settings", F10: "reports" };
       if (map[e.key]) { e.preventDefault(); dispatch({ type: "GO", view: map[e.key] }); setNavOpen(false); return; }
       if (e.key === "F2") {
         e.preventDefault();
@@ -424,6 +427,7 @@ function Shell() {
           {state.view === "customers" && <Customers />}
           {state.view === "inventory" && <Inventory />}
           {state.view === "finance" && <Finance />}
+          {state.view === "reports" && <Reports />}
           {state.view === "prescriptions" && <Prescriptions />}
           {state.view === "history" && <History />}
           {state.view === "settings" && <Settings />}
