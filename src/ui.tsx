@@ -17,7 +17,7 @@ export function Modal({ onClose, children, width = 560, labelledBy }: {
     return () => window.removeEventListener("keydown", h);
   }, [onClose]);
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
+    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4"
       role="dialog" aria-modal="true" aria-labelledby={labelledBy}>
       <button aria-label="Close" onClick={onClose}
         className="absolute inset-0 bg-pine-950/55 backdrop-blur-[2px] cursor-default" />
