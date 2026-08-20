@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
-import { usePos, money, relTime } from "../store";
+import { usePos, money, relTime, clockTime } from "../store";
 import { CATEGORIES, daysUntil, fefoBatches, stockOf, nearestExpiry, newBatchCode, FIELD_SUGGESTIONS, BRANCHES, can } from "../data";
-import type { CategoryId, Product, Batch, TransferStatus } from "../data";
+import type { CategoryId, Product, Batch, TransferStatus, Transaction } from "../data";
 import { cx, Badge, Modal, StockBar, Empty, CustomFieldsBlock } from "../ui";
-import { ISearch, IPlus, IBox, IAlert, IDownload, IEdit, IX, ICheck, IReport, ICalendar, IClipboard, ITag, ISwap } from "../icons";
+import { ISearch, IPlus, IBox, IAlert, IDownload, IEdit, IX, ICheck, IReport, ICalendar, IClipboard, ITag, ISwap, IScan, IUsers } from "../icons";
 
 type Filter = "all" | "low" | "expiring" | "rx" | "controlled";
 
@@ -406,6 +406,7 @@ function LotRow({ b, first, p }: { b: Batch; first: boolean; p: Product }) {
   const d = daysUntil(b.expiry);
   const [editing, setEditing] = useState(false);
   const [val, setVal] = useState("");
+  const [tracing, setTracing] = useState(false);
   const priced = b.price !== undefined;
 
   const save = () => {
@@ -419,6 +420,11 @@ function LotRow({ b, first, p }: { b: Batch; first: boolean; p: Product }) {
   return (
     <div className="flex items-center gap-2">
       <span className="num text-xs font-semibold text-ink w-[86px] truncate" title={b.batch}>{b.batch}</span>
+      {b.recalled && (
+        <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-brick-600 text-brick-100 anim-pulse-dot">
+          <IAlert size={10} /> RECALL
+        </span>
+      )}
       <span className={cx("inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold num",
         d < 0 ? "bg-ink text-paper" : d <= 30 ? "bg-brick-100 text-brick-700" : d <= 60 ? "bg-honey-100 text-honey-700" : "bg-pine-100 text-pine-700")}>
         {(d < 0 || d <= 60) && <IAlert size={10} />}
@@ -453,9 +459,133 @@ function LotRow({ b, first, p }: { b: Batch; first: boolean; p: Product }) {
           className="text-inksoft/50 hover:text-brick-700 transition" aria-label="Clear lot price"><IX size={9} /></button>
       )}
 
+      {/* patient–lot traceability + recall (§3) */}
+      <button onClick={() => setTracing(true)}
+        className="opacity-0 group-hover:opacity-100 flex items-center gap-1 px-1.5 py-0.5 rounded border border-dashed border-mist text-[9px] font-bold text-inksoft hover:text-pine-700 hover:border-pine-400 transition-all"
+        title="Trace which patients received this lot">
+        <IScan size={9} /> trace
+      </button>
+      <button onClick={() => dispatch({ type: "FLAG_RECALL", productId: p.id, batch: b.batch, flagged: !b.recalled })}
+        title={b.recalled ? "Clear the recall flag on this lot" : "Flag this lot for recall & quarantine"}
+        className={cx("opacity-0 group-hover:opacity-100 grid place-items-center w-5 h-5 rounded border transition-all",
+          b.recalled
+            ? "opacity-100 border-brick-500 bg-brick-100 text-brick-700"
+            : "border-mist text-inksoft hover:text-brick-700 hover:border-brick-400")}
+        aria-label="Toggle recall flag">
+        <IAlert size={10} />
+      </button>
+
       <span className="num text-xs font-bold text-ink ml-auto pr-1">×{b.qty}</span>
       {first && <Badge tone="pine">FEFO</Badge>}
+
+      {tracing && <LotTraceModal p={p} batch={b.batch} onClose={() => setTracing(false)} />}
     </div>
+  );
+}
+
+/* Patient–lot traceability — every receipt records which lots were dispensed (§3) */
+function LotTraceModal({ p, batch, onClose }: { p: Product; batch: string; onClose: () => void }) {
+  const { state } = usePos();
+  const lot = p.batches.find((b) => b.batch === batch);
+
+  /* walk every sale line's FEFO allocation trail for this lot */
+  const hits = useMemo(() => {
+    const out: { tx: Transaction; qty: number }[] = [];
+    for (const tx of state.transactions) {
+      if (tx.refundOf) continue;
+      for (const l of tx.lines) {
+        if (l.productId !== p.id || !l.alloc) continue;
+        const hit = l.alloc.find((a) => a.batch === batch);
+        if (hit) out.push({ tx, qty: hit.qty });
+      }
+    }
+    return out.sort((a, b) => b.tx.at - a.tx.at);
+  }, [state.transactions, p.id, batch]);
+
+  const totalDispensed = hits.reduce((s, h) => s + h.qty, 0);
+  const patientIds = [...new Set(hits.map((h) => h.tx.customerId).filter(Boolean))] as string[];
+  const customerName = (id?: string) => state.customers.find((c) => c.id === id)?.name;
+
+  return (
+    <Modal onClose={onClose} width={620} labelledBy="lot-title">
+      <div className="px-5 py-4 border-b border-mist flex items-start justify-between">
+        <div>
+          <h2 id="lot-title" className="font-display font-bold text-ink flex items-center gap-2">
+            <IScan size={17} className="text-pine-700" /> Lot trace · <span className="num">{batch}</span>
+          </h2>
+          <p className="text-xs text-inksoft mt-0.5">{p.name} · lot exp {lot?.expiry ?? "—"}</p>
+        </div>
+        <button onClick={onClose} className="p-1.5 rounded-md hover:bg-mist/60 text-inksoft" aria-label="Close"><IX size={14} /></button>
+      </div>
+
+      <div className="p-5 space-y-4">
+        {lot?.recalled && (
+          <div className="rounded-lg border-2 border-brick-500 bg-brick-100/60 px-3 py-2.5 flex items-center gap-2 anim-fade-up">
+            <IAlert size={15} className="text-brick-700 shrink-0" />
+            <p className="text-[11px] font-bold text-brick-800">
+              This lot is flagged for recall — {patientIds.length} patient{patientIds.length === 1 ? "" : "s"} below should be notified to return product.
+            </p>
+          </div>
+        )}
+
+        <div className="flex items-center gap-2 flex-wrap">
+          <Badge tone="pine">{totalDispensed} units dispensed</Badge>
+          <Badge tone="mist">{hits.length} sale{hits.length === 1 ? "" : "s"}</Badge>
+          <Badge tone={patientIds.length > 0 ? "honey" : "mist"}>{patientIds.length} identified patient{patientIds.length === 1 ? "" : "s"}</Badge>
+          <Badge tone="mist">{lot?.qty ?? 0} still on shelf</Badge>
+        </div>
+
+        <div>
+          <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-inksoft mb-2">Dispensed to</p>
+          <div className="max-h-60 overflow-y-auto scroll-slim rounded-lg border border-mist">
+            <table className="w-full text-xs border-collapse">
+              <thead className="sticky top-0">
+                <tr className="bg-pine-900 text-pine-100 text-left text-[9px] uppercase tracking-[0.14em]">
+                  <th className="px-3 py-2 font-bold">Receipt</th>
+                  <th className="px-2 py-2 font-bold">When</th>
+                  <th className="px-2 py-2 font-bold">Patient</th>
+                  <th className="px-3 py-2 font-bold text-right">Qty</th>
+                </tr>
+              </thead>
+              <tbody>
+                {hits.map((h, i) => (
+                  <tr key={h.tx.id} className={cx("border-t border-mist/70", i % 2 === 1 && "bg-paper/60")}>
+                    <td className="px-3 py-2 num font-bold text-ink">{h.tx.id}</td>
+                    <td className="px-2 py-2 num text-inksoft whitespace-nowrap">
+                      {new Date(h.tx.at).toLocaleDateString("en-US", { month: "short", day: "numeric" })} · {clockTime(h.tx.at)}
+                    </td>
+                    <td className="px-2 py-2">
+                      {h.tx.customerId
+                        ? <span className="font-semibold text-ink">{customerName(h.tx.customerId)}</span>
+                        : <span className="text-inksoft italic">walk-in</span>}
+                    </td>
+                    <td className="px-3 py-2 text-right num font-bold text-pine-800">×{h.qty}</td>
+                  </tr>
+                ))}
+                {hits.length === 0 && <tr><td colSpan={4} className="px-3 py-8 text-center text-inksoft">No units from this lot have been dispensed yet.</td></tr>}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        {patientIds.length > 0 && (
+          <div>
+            <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-inksoft mb-2">Patients to notify</p>
+            <div className="flex flex-wrap gap-1.5">
+              {patientIds.map((id) => {
+                const c = state.customers.find((x) => x.id === id);
+                return c ? (
+                  <span key={id} className="inline-flex items-center gap-1.5 px-2 py-1 rounded-md bg-pine-50 border border-pine-200 text-[11px] font-semibold text-pine-900">
+                    <IUsers size={11} className="text-pine-700" /> {c.name}
+                    <span className="num text-[10px] font-medium text-inksoft">{c.phone}</span>
+                  </span>
+                ) : null;
+              })}
+            </div>
+          </div>
+        )}
+      </div>
+    </Modal>
   );
 }
 

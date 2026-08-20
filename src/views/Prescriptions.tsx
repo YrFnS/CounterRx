@@ -7,8 +7,8 @@ import type { DragStartEvent, DragEndEvent, DragOverEvent } from "@dnd-kit/core"
 import { usePos, relTime } from "../store";
 import { stockOf, can, daysUntil } from "../data";
 import type { RxStatus, Prescription } from "../data";
-import { cx, Badge } from "../ui";
-import { IRx, ICheck, IClock, IRegister, IShield, IGrab, IRefresh, ISend, IRecall } from "../icons";
+import { cx, Badge, Modal } from "../ui";
+import { IRx, ICheck, IClock, IRegister, IShield, IGrab, IRefresh, ISend, IRecall, IX } from "../icons";
 
 const FLOW: RxStatus[] = ["new", "verifying", "ready", "dispensed"];
 const LABEL: Record<RxStatus, string> = {
@@ -27,7 +27,7 @@ const NEXT: Partial<Record<RxStatus, { to: RxStatus; label: string }>> = {
 };
 
 export default function Prescriptions() {
-  const { state, dispatch, product } = usePos();
+  const { state, dispatch, product, prescriber } = usePos();
   const [activeId, setActiveId] = useState<string | null>(null);
   const [overCol, setOverCol] = useState<RxStatus | null>(null);
 
@@ -94,7 +94,7 @@ export default function Prescriptions() {
                     {r.daysSupply && <span className="num"> · {r.daysSupply}-day supply</span>}
                   </p>
                   <p className="text-[10px] text-inksoft num">
-                    filled {r.dispensedAt ? relTime(r.dispensedAt) : "—"} · {r.prescriber}
+                    filled {r.dispensedAt ? relTime(r.dispensedAt) : "—"} · {prescriber(r.prescriberId)?.name ?? r.prescriberId}
                     {r.remindedAt && <span className="text-pine-700 font-bold"> · reminded {relTime(r.remindedAt)}</span>}
                   </p>
                   {r.refillsRemaining !== undefined && (
@@ -174,10 +174,11 @@ function Column({ status, items, highlight, dimmed, ghostId }: {
 }
 
 function RxCard({ rx, ghost, overlay }: { rx: Prescription; ghost?: boolean; overlay?: boolean }) {
-  const { state, dispatch, product } = usePos();
+  const { state, dispatch, product, prescriber } = usePos();
   const { attributes, listeners, setNodeRef } = useDraggable({ id: rx.id });
   const p = product(rx.productId);
   const shelf = p ? stockOf(p) : 0;
+  const [showPrescriber, setShowPrescriber] = useState(false);
   const stepIdx = FLOW.indexOf(rx.status);
   const next = NEXT[rx.status];
   const canAttach = rx.status !== "dispensed" && p && shelf > 0;
@@ -210,7 +211,12 @@ function RxCard({ rx, ghost, overlay }: { rx: Prescription; ghost?: boolean; ove
           {p ? `${p.form} · ${shelf} on shelf` : "unknown product"}
           {!canAttach && p && shelf <= 0 && " — out of stock"}
         </p>
-        <p className="text-[10px] text-inksoft">by <span className="font-semibold text-ink">{rx.prescriber}</span></p>
+        <button onClick={() => setShowPrescriber(true)}
+          className="mt-0.5 flex items-center gap-1 text-[10px] text-inksoft hover:text-pine-700 transition-colors group">
+          by <span className="font-semibold text-ink group-hover:text-pine-700 underline decoration-dotted underline-offset-2 transition-colors">
+            {prescriber(rx.prescriberId)?.name ?? rx.prescriberId}
+          </span>
+        </button>
 
         {rx.refillsRemaining !== undefined && (
           <div className="mt-1.5 flex items-center gap-1.5 flex-wrap">
@@ -296,6 +302,101 @@ function RxCard({ rx, ghost, overlay }: { rx: Prescription; ghost?: boolean; ove
           </span>
         )}
       </div>
+
+      {showPrescriber && (
+        <PrescriberModal prescriberId={rx.prescriberId} onClose={() => setShowPrescriber(false)} />
+      )}
     </article>
   );
+}
+
+/* Prescriber directory detail — NPI/DEA on file + every Rx this prescriber wrote (§3) */
+function PrescriberModal({ prescriberId, onClose }: { prescriberId: string; onClose: () => void }) {
+  const { state, prescriber } = usePos();
+  const pr = prescriber(prescriberId);
+  if (!pr) return null;
+  const theirs = state.prescriptions
+    .filter((rx) => rx.prescriberId === prescriberId)
+    .sort((a, b) => b.createdAt - a.createdAt);
+  const dispensed = theirs.filter((r) => r.status === "dispensed").length;
+
+  return (
+    <Modal onClose={onClose} width={560} labelledBy="pr-title">
+      <div className="px-5 py-4 border-b border-mist flex items-start justify-between">
+        <div>
+          <h2 id="pr-title" className="font-display font-bold text-ink flex items-center gap-2">
+            <span className="grid place-items-center w-8 h-8 rounded-lg bg-pine-800 text-pine-100 font-display font-bold text-sm shrink-0">
+              {pr.name.replace(/^Dr\.\s*/, "").split(" ").map((w) => w[0]).slice(0, 2).join("")}
+            </span>
+            <span>
+              {pr.name}, {pr.credentials}
+              <span className="block text-[11px] font-medium text-inksoft">{pr.specialty}</span>
+            </span>
+          </h2>
+        </div>
+        <button onClick={onClose} className="p-1.5 rounded-md hover:bg-mist/60 text-inksoft" aria-label="Close"><IX size={14} /></button>
+      </div>
+
+      <div className="p-5 space-y-4">
+        <div className="grid grid-cols-2 gap-3">
+          <InfoTile label="NPI" value={pr.npi} mono />
+          <InfoTile label="DEA" value={pr.dea} mono />
+          <InfoTile label="Phone" value={pr.phone} />
+          <InfoTile label="Fax" value={pr.fax} />
+        </div>
+
+        <div className="flex items-center gap-2 text-[11px]">
+          <Badge tone="pine">{theirs.length} Rx on file</Badge>
+          <Badge tone="mist">{dispensed} dispensed</Badge>
+          {!pr.active && <Badge tone="brick">Inactive</Badge>}
+        </div>
+
+        <div>
+          <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-inksoft mb-2">Prescription history</p>
+          <div className="max-h-56 overflow-y-auto scroll-slim rounded-lg border border-mist">
+            <table className="w-full text-xs border-collapse">
+              <thead className="sticky top-0">
+                <tr className="bg-pine-900 text-pine-100 text-left text-[9px] uppercase tracking-[0.14em]">
+                  <th className="px-3 py-2 font-bold">Rx</th>
+                  <th className="px-2 py-2 font-bold">Patient</th>
+                  <th className="px-2 py-2 font-bold">Product</th>
+                  <th className="px-3 py-2 font-bold text-right">Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                {theirs.map((rx, i) => (
+                  <tr key={rx.id} className={cx("border-t border-mist/70", i % 2 === 1 && "bg-paper/60")}>
+                    <td className="px-3 py-2 num font-bold text-ink">{rx.id}</td>
+                    <td className="px-2 py-2 text-ink">{rx.patient}</td>
+                    <td className="px-2 py-2 text-inksoft truncate max-w-[140px]">{rx.productId}</td>
+                    <td className="px-3 py-2 text-right"><StatusPill status={rx.status} /></td>
+                  </tr>
+                ))}
+                {theirs.length === 0 && <tr><td colSpan={4} className="px-3 py-8 text-center text-inksoft">No prescriptions on file.</td></tr>}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+function InfoTile({ label, value, mono }: { label: string; value: string; mono?: boolean }) {
+  return (
+    <div className="rounded-lg border border-mist bg-paper px-3 py-2">
+      <p className="text-[9px] font-bold uppercase tracking-[0.14em] text-inksoft">{label}</p>
+      <p className={cx("text-[13px] font-semibold text-ink mt-0.5", mono && "num tracking-wide")}>{value}</p>
+    </div>
+  );
+}
+
+const STATUS_TONE: Record<RxStatus, string> = {
+  new: "bg-mist text-ink",
+  verifying: "bg-honey-100 text-honey-700",
+  ready: "bg-pine-100 text-pine-700",
+  dispensed: "bg-pine-700 text-pine-50",
+};
+function StatusPill({ status }: { status: RxStatus }) {
+  return <span className={cx("inline-block px-1.5 py-0.5 rounded text-[9px] font-bold uppercase tracking-wide", STATUS_TONE[status])}>{status}</span>;
 }

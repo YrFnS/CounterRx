@@ -21,7 +21,11 @@ export const CATEGORIES: { id: CategoryId; label: string; dot: string }[] = [
 ];
 
 /** A single stock lot on the shelf. Sales consume lots FEFO — first expiry, first out. */
-export interface Batch { batch: string; expiry: string; qty: number; price?: number; /* lot-level clearance price (1.4) */ }
+export interface Batch {
+  batch: string; expiry: string; qty: number;
+  price?: number;      // lot-level clearance price (1.4)
+  recalled?: boolean;  // flagged for recall — trace patients & quarantine (§3/§5)
+}
 
 export type Schedule = "C-II" | "C-III" | "C-IV" | "C-V";
 
@@ -106,9 +110,17 @@ export interface Transaction {
 }
 
 export type RxStatus = "new" | "verifying" | "ready" | "dispensed";
+
+/** Prescriber directory entry (§3) — NPI/DEA on file, linked to every Rx */
+export interface Prescriber {
+  id: string; name: string; credentials: string; specialty: string;
+  npi: string; dea: string; phone: string; fax: string;
+  active: boolean;
+}
+
 export interface Prescription {
   id: string; patient: string; age: number; productId: string; qty: number;
-  prescriber: string; status: RxStatus; createdAt: number; note?: string;
+  prescriberId: string; status: RxStatus; createdAt: number; note?: string;
   daysSupply?: number;        // days of therapy in this fill — drives refill radar
   dispensedAt?: number;       // set when moved to dispensed
   remindedAt?: number;        // last refill reminder sent
@@ -409,20 +421,30 @@ export function makeProducts(now: number): Product[] {
   return base.map((x) => (withFields[x.id] ? { ...x, fields: withFields[x.id] } : x));
 }
 
+export function makePrescribers(): Prescriber[] {
+  return [
+    { id: "DR-01", name: "Dr. I. Bello", credentials: "MD", specialty: "Family medicine", npi: "1093847562", dea: "FB4482913", phone: "(555) 210-8830", fax: "(555) 210-8831", active: true },
+    { id: "DR-02", name: "Dr. R. Vance", credentials: "MD, FACC", specialty: "Cardiology", npi: "1472639058", dea: "RV2214470", phone: "(555) 318-4410", fax: "(555) 318-4411", active: true },
+    { id: "DR-03", name: "Dr. S. Adeyemi", credentials: "MD", specialty: "Endocrinology", npi: "1659308127", dea: "SA7730051", phone: "(555) 402-1190", fax: "(555) 402-1191", active: true },
+    { id: "DR-04", name: "Dr. L. Tran", credentials: "DO", specialty: "Pediatrics", npi: "1831294670", dea: "LT5569934", phone: "(555) 909-2245", fax: "(555) 909-2246", active: true },
+    { id: "DR-05", name: "Dr. H. Osei", credentials: "MD", specialty: "Psychiatry", npi: "1285764013", dea: "HO9917285", phone: "(555) 655-3370", fax: "(555) 655-3371", active: true },
+  ];
+}
+
 export function makePrescriptions(now: number): Prescription[] {
   const m = 60_000;
   const h = 60 * m;
   const d = 24 * h;
   return [
-    { id: "RX-2481", patient: "Marta Kessler", age: 34, productId: "amx500", qty: 2, prescriber: "Dr. I. Bello", status: "new", createdAt: now - 14 * m, note: "Take 1 capsule every 8h after food" },
-    { id: "RX-2480", patient: "Daniel Osei", age: 61, productId: "atv20", qty: 2, prescriber: "Dr. R. Vance", status: "verifying", createdAt: now - 52 * m, note: "Refill — check interaction with amlodipine", daysSupply: 30, refillsAuthorized: 5, refillsRemaining: 2, rxExpiry: iso(now + 180 * d), insurance: { plan: "BlueCross PBM", memberId: "XCB-9917-31", status: "pending" } },
-    { id: "RX-2479", patient: "Priya Nair", age: 45, productId: "met500", qty: 4, prescriber: "Dr. S. Adeyemi", status: "ready", createdAt: now - 2.1 * h, daysSupply: 90, refillsAuthorized: 3, refillsRemaining: 3, rxExpiry: iso(now + 320 * d) },
-    { id: "RX-2478", patient: "Tom Alvarez", age: 8, productId: "salb", qty: 1, prescriber: "Dr. I. Bello", status: "ready", createdAt: now - 3.4 * h, note: "Guardian pickup — mother" },
-    { id: "RX-2477", patient: "Grace Lin", age: 52, productId: "insg", qty: 2, prescriber: "Dr. S. Adeyemi", status: "verifying", createdAt: now - 5.2 * h, note: "Cold-chain — keep refrigerated", daysSupply: 28, insurance: { plan: "Aetna Rx", memberId: "AET-8830-19", status: "pending" } },
-    { id: "RX-2476", patient: "Samuel Eze", age: 29, productId: "azi250", qty: 1, prescriber: "Dr. R. Vance", status: "dispensed", createdAt: now - 8.6 * h, dispensedAt: now - 8.6 * h, daysSupply: 6 },
+    { id: "RX-2481", patient: "Marta Kessler", age: 34, productId: "amx500", qty: 2, prescriberId: "DR-01", status: "new", createdAt: now - 14 * m, note: "Take 1 capsule every 8h after food" },
+    { id: "RX-2480", patient: "Daniel Osei", age: 61, productId: "atv20", qty: 2, prescriberId: "DR-02", status: "verifying", createdAt: now - 52 * m, note: "Refill — check interaction with amlodipine", daysSupply: 30, refillsAuthorized: 5, refillsRemaining: 2, rxExpiry: iso(now + 180 * d), insurance: { plan: "BlueCross PBM", memberId: "XCB-9917-31", status: "pending" } },
+    { id: "RX-2479", patient: "Priya Nair", age: 45, productId: "met500", qty: 4, prescriberId: "DR-03", status: "ready", createdAt: now - 2.1 * h, daysSupply: 90, refillsAuthorized: 3, refillsRemaining: 3, rxExpiry: iso(now + 320 * d) },
+    { id: "RX-2478", patient: "Tom Alvarez", age: 8, productId: "salb", qty: 1, prescriberId: "DR-01", status: "ready", createdAt: now - 3.4 * h, note: "Guardian pickup — mother" },
+    { id: "RX-2477", patient: "Grace Lin", age: 52, productId: "insg", qty: 2, prescriberId: "DR-03", status: "verifying", createdAt: now - 5.2 * h, note: "Cold-chain — keep refrigerated", daysSupply: 28, insurance: { plan: "Aetna Rx", memberId: "AET-8830-19", status: "pending" } },
+    { id: "RX-2476", patient: "Samuel Eze", age: 29, productId: "azi250", qty: 1, prescriberId: "DR-02", status: "dispensed", createdAt: now - 8.6 * h, dispensedAt: now - 8.6 * h, daysSupply: 6 },
     /* maintenance fills from earlier this month — feed the refill radar */
-    { id: "RX-2441", patient: "Helen Okafor", age: 67, productId: "atv20", qty: 2, prescriber: "Dr. R. Vance", status: "dispensed", createdAt: now - 29 * d, dispensedAt: now - 29 * d, daysSupply: 30, refillsAuthorized: 5, refillsRemaining: 1, rxExpiry: iso(now + 150 * d), note: "Monthly maintenance — auto-refill allowed", insurance: { plan: "BlueCross PBM", memberId: "XCB-4471-02", status: "verified" } },
-    { id: "RX-2436", patient: "Victor Adeyemi", age: 58, productId: "met500", qty: 4, prescriber: "Dr. S. Adeyemi", status: "dispensed", createdAt: now - 33 * d, dispensedAt: now - 33 * d, daysSupply: 30, refillsAuthorized: 3, refillsRemaining: 0, rxExpiry: iso(now + 60 * d), insurance: { plan: "MediPlan Rx", memberId: "MPX-2210-44", status: "verified" } },
+    { id: "RX-2441", patient: "Helen Okafor", age: 67, productId: "atv20", qty: 2, prescriberId: "DR-02", status: "dispensed", createdAt: now - 29 * d, dispensedAt: now - 29 * d, daysSupply: 30, refillsAuthorized: 5, refillsRemaining: 1, rxExpiry: iso(now + 150 * d), note: "Monthly maintenance — auto-refill allowed", insurance: { plan: "BlueCross PBM", memberId: "XCB-4471-02", status: "verified" } },
+    { id: "RX-2436", patient: "Victor Adeyemi", age: 58, productId: "met500", qty: 4, prescriberId: "DR-03", status: "dispensed", createdAt: now - 33 * d, dispensedAt: now - 33 * d, daysSupply: 30, refillsAuthorized: 3, refillsRemaining: 0, rxExpiry: iso(now + 60 * d), insurance: { plan: "MediPlan Rx", memberId: "MPX-2210-44", status: "verified" } },
   ];
 }
 
@@ -487,7 +509,16 @@ export function makeTransactions(products: Product[], now: number): Transaction[
         if (chosen.has(prod.id)) continue;
         chosen.add(prod.id);
         const qty = prod.category === "devices" ? 1 : 1 + Math.floor(rnd() * 2);
-        lines.push({ productId: prod.id, name: prod.name, form: prod.form, qty, price: prod.price, rx: prod.rx });
+        /* record the FEFO lot trail so patient–lot recall tracing works on seeded history */
+        const alloc: { batch: string; qty: number }[] = [];
+        let remaining = qty;
+        for (const b of fefoBatches(prod)) {
+          if (remaining <= 0) break;
+          const take = Math.min(b.qty, remaining);
+          remaining -= take;
+          if (take > 0) alloc.push({ batch: b.batch, qty: take });
+        }
+        lines.push({ productId: prod.id, name: prod.name, form: prod.form, qty, price: prod.price, rx: prod.rx, alloc: alloc.length ? alloc : undefined });
       }
       const subtotal = lines.reduce((s, l) => s + l.price * l.qty, 0);
       const discount = rnd() < 0.15 ? Math.round(subtotal * 0.05 * 100) / 100 : 0;

@@ -1,14 +1,15 @@
 import { createContext, useContext, useEffect, useMemo, useReducer } from "react";
 import type { ReactNode, Dispatch } from "react";
 import {
-  makeProducts, makePrescriptions, makeTransactions, makeCustomers, makeTransfers, TAX_RATE, CASHIER,
+  makeProducts, makePrescriptions, makeTransactions, makeCustomers, makeTransfers, makePrescribers,
+  TAX_RATE, CASHIER,
   stockOf, nearestExpiry, allocFEFO, fefoBatches, newBatchCode, daysUntil,
   bulkPct, REDEEM_CHUNK_PTS, REDEEM_CHUNK_VALUE,
 } from "./data";
 import type {
   Product, Transaction, Prescription, Customer, AuditEntry, AuditKind, Staff, Role, OrgSettings,
   HeldSale, TxLine, PayMethod, PaymentLeg, RxStatus, Batch, Transfer, TransferStatus, Field,
-  Snapshot, SnapshotMeta, RestrictedLogEntry,
+  Snapshot, SnapshotMeta, RestrictedLogEntry, Prescriber,
 } from "./data";
 import { makeStaff, makeSettings, SNAPS_KEY, hashPin, ROLE_LABEL } from "./data";
 
@@ -27,6 +28,7 @@ interface State {
   products: Product[];
   transactions: Transaction[];
   prescriptions: Prescription[];
+  prescribers: Prescriber[];
   transfers: Transfer[];
   cart: { productId: string; qty: number; note?: string; priceOverride?: number }[];
   held: HeldSale[];
@@ -49,6 +51,8 @@ type Action =
   | { type: "ADD_STAFF"; name: string; role: Role; pin: string }
   | { type: "UPDATE_STAFF"; id: string; patch: Partial<Pick<Staff, "name" | "role" | "active">> }
   | { type: "SET_STAFF_PIN"; id: string; pin: string }
+  | { type: "ADD_PRESCRIBER"; prescriber: Omit<Prescriber, "id"> }
+  | { type: "FLAG_RECALL"; productId: string; batch: string; flagged: boolean }
   | { type: "UPDATE_SETTINGS"; patch: Partial<Omit<OrgSettings, "loyalty">> & { loyalty?: Partial<OrgSettings["loyalty"]> } }
   | { type: "SNAPSHOT_SAVE"; label: string; auto: boolean }
   | { type: "SNAPSHOT_DELETE"; id: string }
@@ -95,7 +99,7 @@ let toastSeq = 1;
 let heldSeq = 1;
 let auditSeq = 100;
 
-const seed = (): Pick<State, "products" | "transactions" | "prescriptions" | "customers" | "audit" | "transfers" | "staff" | "settings"> => {
+const seed = (): Pick<State, "products" | "transactions" | "prescriptions" | "prescribers" | "customers" | "audit" | "transfers" | "staff" | "settings"> => {
   const now = Date.now();
   const products = makeProducts(now);
   const customers = makeCustomers(now);
@@ -105,6 +109,7 @@ const seed = (): Pick<State, "products" | "transactions" | "prescriptions" | "cu
   return {
     products, transactions, customers,
     prescriptions: makePrescriptions(now),
+    prescribers: makePrescribers(),
     transfers: makeTransfers(now),
     staff: makeStaff(now),
     settings: makeSettings(),
@@ -130,6 +135,7 @@ function load(): State {
           ...base,
           products: saved.products, transactions: saved.transactions,
           prescriptions: saved.prescriptions, customers: saved.customers,
+          prescribers: saved.prescribers ?? makePrescribers(),
           transfers: saved.transfers ?? makeTransfers(Date.now()),
           staff: saved.staff ?? makeStaff(Date.now()),
           settings: { ...makeSettings(), ...(saved.settings ?? {}) },
@@ -255,6 +261,31 @@ function reducer(state: State, a: Action): State {
       return withAudit(
         withToast({ ...state, staff, lockouts }, "success", "PIN reset — share it securely, it won't be shown again"),
         "system", `PIN reset for ${state.staff.find((x) => x.id === a.id)?.name ?? a.id}`);
+    }
+
+    case "ADD_PRESCRIBER": {
+      const id = `DR-${String(state.prescribers.length + 1).padStart(2, "0")}`;
+      const pr: Prescriber = { ...a.prescriber, id };
+      return withAudit(
+        withToast({ ...state, prescribers: [...state.prescribers, pr] }, "success", `${pr.name} added to prescriber directory`),
+        "rx", `Prescriber added — ${pr.name} · NPI ${pr.npi}`);
+    }
+
+    case "FLAG_RECALL": {
+      const p = state.products.find((x) => x.id === a.productId);
+      if (!p) return state;
+      const lot = p.batches.find((b) => b.batch === a.batch);
+      if (!lot) return state;
+      const products = state.products.map((x) => x.id === p.id
+        ? { ...x, batches: x.batches.map((b) => (b.batch === a.batch ? { ...b, recalled: a.flagged || undefined } : b)) }
+        : x);
+      const next = withAudit(
+        { ...state, products }, "rx",
+        a.flagged
+          ? `⚠ RECALL — lot ${a.batch} of ${p.name} flagged · quarantine & trace patients`
+          : `Recall flag cleared on lot ${a.batch} of ${p.name}`);
+      return withToast(next, a.flagged ? "warn" : "success",
+        a.flagged ? `Lot ${a.batch} flagged for recall — trace affected patients` : `Recall flag cleared on ${a.batch}`);
     }
 
     case "UPDATE_SETTINGS": {
@@ -642,7 +673,8 @@ function reducer(state: State, a: Action): State {
       const nextNum = 2482 + state.prescriptions.filter((x) => x.id.startsWith("RX-")).length;
       const copy: Prescription = {
         id: `RX-${nextNum}`, patient: rx.patient, age: rx.age, productId: rx.productId, qty: rx.qty,
-        prescriber: rx.prescriber, status: "new", createdAt: Date.now(),
+        prescriberId: rx.prescriberId, status: "new", createdAt: Date.now(),
+        refillsAuthorized: rx.refillsAuthorized, refillsRemaining: rx.refillsAuthorized, rxExpiry: rx.rxExpiry,
         daysSupply: rx.daysSupply, note: `Refill of ${rx.id} · ${rx.patient}`,
       };
       return withToast(
@@ -775,6 +807,7 @@ interface Ctx {
   state: State;
   dispatch: Dispatch<Action>;
   product: (id: string) => Product | undefined;
+  prescriber: (id: string) => Prescriber | undefined;
   lowStock: Product[];
   expiring: Product[];
   newRx: number;
@@ -812,15 +845,17 @@ export function PosProvider({ children }: { children: ReactNode }) {
     try {
       localStorage.setItem(LS_KEY, JSON.stringify({
         products: state.products, transactions: state.transactions.slice(0, 400),
-        prescriptions: state.prescriptions, customers: state.customers,
+        prescriptions: state.prescriptions, prescribers: state.prescribers,
+        customers: state.customers,
         transfers: state.transfers, audit: state.audit,
         staff: state.staff, settings: state.settings, restrictedLog: state.restrictedLog,
       }));
     } catch { /* storage full — ignore */ }
-  }, [state.products, state.transactions, state.prescriptions, state.customers, state.transfers, state.audit, state.staff, state.settings, state.restrictedLog]);
+  }, [state.products, state.transactions, state.prescriptions, state.prescribers, state.customers, state.transfers, state.audit, state.staff, state.settings, state.restrictedLog]);
 
   const value = useMemo<Ctx>(() => {
     const product = (id: string) => state.products.find((p) => p.id === id);
+    const prescriber = (id: string) => state.prescribers.find((p) => p.id === id);
     const lowStock = state.products.filter((p) => stockOf(p) <= p.reorderLevel);
     const expiring = state.products
       .filter((p) => { const e = nearestExpiry(p); return e !== null && daysUntil(e) <= 60; })
@@ -835,7 +870,7 @@ export function PosProvider({ children }: { children: ReactNode }) {
     const items = sales.reduce((s, t) => s + t.lines.reduce((x, l) => x + l.qty, 0), 0);
 
     return {
-      state, dispatch, product, lowStock, expiring, newRx,
+      state, dispatch, product, prescriber, lowStock, expiring, newRx,
       todayStats: { revenue, count: sales.length, avg: sales.length ? round2(revenue / sales.length) : 0, items },
     };
   }, [state]);
