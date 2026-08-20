@@ -181,6 +181,141 @@ export function makeRxTransfers(now: number): RxTransfer[] {
   ];
 }
 
+/* ------------------------------------------------------------------ */
+/*  Supply-chain finance (§5) — suppliers, POs, accounts payable,      */
+/*  expenses, and the inputs for a real P&L                            */
+/* ------------------------------------------------------------------ */
+
+export interface Supplier {
+  id: string; name: string; contact: string; phone: string; email?: string;
+  terms: number;        // payment terms in days (net-N) — invoice due date = invoice date + terms
+  leadDays: number;     // typical delivery lead time
+  minOrder: number;     // minimum order quantity per line
+}
+
+export interface PoLine { productId: string; qty: number; unitCost: number; received: number; }
+export type PoStatus = "ordered" | "partial" | "received" | "cancelled";
+export interface PurchaseOrder {
+  id: string; supplierId: string; lines: PoLine[];
+  status: PoStatus; createdAt: number; expectedAt: number; receivedAt?: number;
+  invoiceId?: string; note?: string;
+}
+
+export type ApPayMethod = "cash" | "bank" | "card";
+export interface ApPayment { at: number; amount: number; method: ApPayMethod; ref?: string; }
+export interface ApCredit { at: number; amount: number; note: string; }
+export interface ApInvoice {
+  id: string; number: string; supplierId: string; poId?: string;
+  date: number; dueDays: number; total: number;
+  payments: ApPayment[]; credits: ApCredit[];
+}
+export const invoicePaid = (inv: ApInvoice) =>
+  inv.payments.reduce((s, p) => s + p.amount, 0) - inv.credits.reduce((s, c) => s + c.amount, 0);
+export const invoiceBalance = (inv: ApInvoice) => Math.max(0, inv.total - invoicePaid(inv));
+
+export interface Expense {
+  id: string; category: string; amount: number; date: number; payee: string; note?: string;
+  recurring?: boolean;
+}
+export const EXPENSE_CATEGORIES = ["Rent", "Salaries", "Utilities", "Marketing", "Transport", "Repairs", "Misc"];
+
+export function makeSuppliers(): Supplier[] {
+  return [
+    { id: "SUP-01", name: "MediSource Ltd", contact: "K. Adjei", phone: "(555) 210-4471", email: "orders@medisource.co", terms: 30, leadDays: 5, minOrder: 50 },
+    { id: "SUP-02", name: "PharmaLine Co", contact: "S. Whitmore", phone: "(555) 318-9902", email: "sales@pharmaline.co", terms: 30, leadDays: 4, minOrder: 40 },
+    { id: "SUP-03", name: "Apex Distributors", contact: "J. Mensah", phone: "(555) 402-1187", email: "apex@apexdist.co", terms: 7, leadDays: 2, minOrder: 25 },
+    { id: "SUP-04", name: "Vital Trade", contact: "R. Okonkwo", phone: "(555) 509-3348", email: "trade@vitaltrade.co", terms: 30, leadDays: 6, minOrder: 30 },
+    { id: "SUP-05", name: "DevicePoint", contact: "L. Ferreira", phone: "(555) 617-8830", email: "b2b@devicepoint.co", terms: 45, leadDays: 10, minOrder: 5 },
+    { id: "SUP-06", name: "ColdChain Direct", contact: "M. Haugen", phone: "(555) 733-2015", email: "orders@coldchain.co", terms: 30, leadDays: 3, minOrder: 10 },
+  ];
+}
+
+export function makePurchaseOrders(now: number): PurchaseOrder[] {
+  const d = 86_400_000;
+  return [
+    {
+      id: "PO-2203", supplierId: "SUP-01", status: "ordered",
+      createdAt: now - 2 * d, expectedAt: now + 3 * d,
+      lines: [
+        { productId: "met500", qty: 120, unitCost: 2.2, received: 0 },
+        { productId: "atv20", qty: 80, unitCost: 5.6, received: 0 },
+      ],
+      note: "Replenishment from reorder report",
+    },
+    {
+      id: "PO-2202", supplierId: "SUP-06", status: "ordered",
+      createdAt: now - 1 * d, expectedAt: now + 2 * d,
+      lines: [{ productId: "insg", qty: 12, unitCost: 33.0, received: 0 }],
+      note: "Cold-chain — confirm 2–8 °C on arrival",
+    },
+    {
+      id: "PO-2201", supplierId: "SUP-02", status: "partial",
+      createdAt: now - 9 * d, expectedAt: now - 4 * d,
+      lines: [
+        { productId: "ibu400", qty: 200, unitCost: 1.4, received: 120 },
+        { productId: "diclo50", qty: 60, unitCost: 2.3, received: 0 },
+      ],
+      note: "Short-shipped diclofenac — balance due",
+    },
+    {
+      id: "PO-2200", supplierId: "SUP-03", status: "received",
+      createdAt: now - 16 * d, expectedAt: now - 12 * d, receivedAt: now - 12 * d,
+      invoiceId: "INV-8801",
+      lines: [
+        { productId: "cet10", qty: 120, unitCost: 1.9, received: 120 },
+        { productId: "ors5", qty: 80, unitCost: 1.8, received: 80 },
+      ],
+    },
+    {
+      id: "PO-2199", supplierId: "SUP-04", status: "received",
+      createdAt: now - 45 * d, expectedAt: now - 40 * d, receivedAt: now - 40 * d,
+      invoiceId: "INV-8802",
+      lines: [{ productId: "vd3", qty: 40, unitCost: 6.8, received: 40 }],
+    },
+  ];
+}
+
+export function makeApInvoices(now: number): ApInvoice[] {
+  const d = 86_400_000;
+  return [
+    {
+      id: "INV-8801", number: "INV-8801", supplierId: "SUP-03", poId: "PO-2200",
+      date: now - 12 * d, dueDays: 7, total: 372,
+      payments: [{ at: now - 6 * d, amount: 150, method: "bank", ref: "TRF-55213" }],
+      credits: [],
+    },
+    {
+      id: "INV-8802", number: "INV-8802", supplierId: "SUP-04", poId: "PO-2199",
+      date: now - 40 * d, dueDays: 30, total: 272,
+      payments: [], credits: [],
+    },
+    {
+      id: "INV-8803", number: "INV-8803", supplierId: "SUP-01",
+      date: now - 20 * d, dueDays: 30, total: 500,
+      payments: [{ at: now - 10 * d, amount: 500, method: "bank", ref: "TRF-55180" }],
+      credits: [],
+    },
+    {
+      id: "INV-8804", number: "INV-8804", supplierId: "SUP-05",
+      date: now - 8 * d, dueDays: 45, total: 260,
+      payments: [{ at: now - 2 * d, amount: 100, method: "card", ref: "CARD-0931" }],
+      credits: [{ at: now - 3 * d, amount: 12, note: "Damaged oximeter sensor" }],
+    },
+  ];
+}
+
+export function makeExpenses(now: number): Expense[] {
+  const d = 86_400_000;
+  return [
+    { id: "EXP-901", category: "Rent", amount: 1800, date: now - 15 * d, payee: "Maple Property Group", recurring: true, note: "Monthly — unit 4" },
+    { id: "EXP-902", category: "Salaries", amount: 4200, date: now - 10 * d, payee: "Staff payroll", recurring: true },
+    { id: "EXP-903", category: "Utilities", amount: 240, date: now - 9 * d, payee: "City Power & Water", recurring: true },
+    { id: "EXP-904", category: "Marketing", amount: 150, date: now - 20 * d, payee: "Springfield Local Ads" },
+    { id: "EXP-905", category: "Transport", amount: 95, date: now - 5 * d, payee: "Swift Courier", note: "Cold-chain pickup" },
+    { id: "EXP-906", category: "Repairs", amount: 180, date: now - 3 * d, payee: "FixIt Services", note: "Receipt printer head" },
+  ];
+}
+
 export interface Customer {
   id: string; name: string; phone: string; email?: string;
   createdAt: number; notes?: string;
@@ -232,7 +367,8 @@ export const ROLE_LABEL: Record<Role, string> = {
 
 export type Perm =
   | "refund" | "approve_transfer" | "adjust_stock" | "apply_count"
-  | "edit_settings" | "manage_staff" | "restore_snapshot" | "verify_rx" | "transfer_rx";
+  | "edit_settings" | "manage_staff" | "restore_snapshot" | "verify_rx" | "transfer_rx"
+  | "create_po" | "receive_po" | "pay_invoice" | "add_expense";
 
 /* Permission matrix — enforced in the UI layer now, mirrors the future RLS checks */
 export const PERMS: Record<Perm, Role[]> = {
@@ -245,6 +381,10 @@ export const PERMS: Record<Perm, Role[]> = {
   restore_snapshot: ["pharmacy_admin"],
   verify_rx: ["pharmacist", "pharmacy_admin"],
   transfer_rx: ["pharmacist", "pharmacy_admin"],
+  create_po: ["manager", "pharmacy_admin"],
+  receive_po: ["pharmacist", "manager", "pharmacy_admin"],
+  pay_invoice: ["manager", "pharmacy_admin"],
+  add_expense: ["manager", "pharmacy_admin"],
 };
 
 export const can = (role: Role | undefined, perm: Perm): boolean =>

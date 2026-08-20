@@ -2,6 +2,7 @@ import { createContext, useContext, useEffect, useMemo, useReducer } from "react
 import type { ReactNode, Dispatch } from "react";
 import {
   makeProducts, makePrescriptions, makeTransactions, makeCustomers, makeTransfers, makePrescribers,
+  makeSuppliers, makePurchaseOrders, makeApInvoices, makeExpenses, invoiceBalance,
   TAX_RATE, CASHIER,
   stockOf, nearestExpiry, allocFEFO, fefoBatches, newBatchCode, daysUntil,
   bulkPct, REDEEM_CHUNK_PTS, REDEEM_CHUNK_VALUE,
@@ -10,10 +11,11 @@ import type {
   Product, Transaction, Prescription, Customer, AuditEntry, AuditKind, Staff, Role, OrgSettings,
   HeldSale, TxLine, PayMethod, PaymentLeg, RxStatus, Batch, Transfer, TransferStatus, Field,
   Snapshot, SnapshotMeta, RestrictedLogEntry, Prescriber, BackOrder, BackOrderStatus, RxTransfer,
+  Supplier, PurchaseOrder, ApInvoice, ApPayMethod, Expense,
 } from "./data";
 import { makeStaff, makeSettings, makeBackOrders, makeRxTransfers, SNAPS_KEY, hashPin, ROLE_LABEL } from "./data";
 
-export type View = "register" | "dashboard" | "customers" | "inventory" | "prescriptions" | "history" | "settings";
+export type View = "register" | "dashboard" | "customers" | "inventory" | "finance" | "prescriptions" | "history" | "settings";
 export type InventoryPreset = "all" | "low" | "expiring";
 
 export interface Toast { id: number; kind: "success" | "warn" | "error" | "info"; msg: string; }
@@ -32,6 +34,10 @@ interface State {
   transfers: Transfer[];
   backorders: BackOrder[];
   rxTransfers: RxTransfer[];
+  suppliers: Supplier[];
+  purchaseOrders: PurchaseOrder[];
+  apInvoices: ApInvoice[];
+  expenses: Expense[];
   cart: { productId: string; qty: number; note?: string; priceOverride?: number; daw?: number; substitutedFrom?: string }[];
   held: HeldSale[];
   customers: Customer[];
@@ -112,13 +118,20 @@ type Action =
   | { type: "TOAST"; kind: Toast["kind"]; msg: string }
   | { type: "AUDIT_LOG"; kind: AuditKind; detail: string }
   | { type: "DISMISS_TOAST"; id: number }
+  | { type: "PO_CREATE"; supplierId: string; lines: { productId: string; qty: number; unitCost: number }[]; note?: string }
+  | { type: "PO_RECEIVE"; poId: string; receipts: { productId: string; qty: number; expiry: string }[] }
+  | { type: "PO_CANCEL"; poId: string }
+  | { type: "AP_PAY"; invoiceId: string; amount: number; method: ApPayMethod; ref?: string }
+  | { type: "AP_CREDIT"; invoiceId: string; amount: number; note: string }
+  | { type: "EXPENSE_ADD"; category: string; amount: number; date: number; payee: string; note?: string; recurring?: boolean }
+  | { type: "EXPENSE_DELETE"; id: string }
   | { type: "RESET" };
 
 let toastSeq = 1;
 let heldSeq = 1;
 let auditSeq = 100;
 
-const seed = (): Pick<State, "products" | "transactions" | "prescriptions" | "prescribers" | "customers" | "audit" | "transfers" | "backorders" | "rxTransfers" | "staff" | "settings"> => {
+const seed = (): Pick<State, "products" | "transactions" | "prescriptions" | "prescribers" | "customers" | "audit" | "transfers" | "backorders" | "rxTransfers" | "suppliers" | "purchaseOrders" | "apInvoices" | "expenses" | "staff" | "settings"> => {
   const now = Date.now();
   const products = makeProducts(now);
   const customers = makeCustomers(now);
@@ -132,6 +145,10 @@ const seed = (): Pick<State, "products" | "transactions" | "prescriptions" | "pr
     transfers: makeTransfers(now),
     backorders: makeBackOrders(now),
     rxTransfers: makeRxTransfers(now),
+    suppliers: makeSuppliers(),
+    purchaseOrders: makePurchaseOrders(now),
+    apInvoices: makeApInvoices(now),
+    expenses: makeExpenses(now),
     staff: makeStaff(now),
     settings: makeSettings(),
     audit: [{ id: auditSeq++, at: now - 36 * 60_000, actor: "system", kind: "system", detail: "Ledger initialized — demo dataset v9" }],
@@ -160,6 +177,10 @@ function load(): State {
           transfers: saved.transfers ?? makeTransfers(Date.now()),
           backorders: saved.backorders ?? makeBackOrders(Date.now()),
           rxTransfers: saved.rxTransfers ?? makeRxTransfers(Date.now()),
+          suppliers: saved.suppliers ?? makeSuppliers(),
+          purchaseOrders: saved.purchaseOrders ?? makePurchaseOrders(Date.now()),
+          apInvoices: saved.apInvoices ?? makeApInvoices(Date.now()),
+          expenses: saved.expenses ?? makeExpenses(Date.now()),
           staff: saved.staff ?? makeStaff(Date.now()),
           settings: { ...makeSettings(), ...(saved.settings ?? {}) },
           restrictedLog: saved.restrictedLog ?? [],
@@ -1040,6 +1061,111 @@ function reducer(state: State, a: Action): State {
     case "DISMISS_TOAST":
       return { ...state, toasts: state.toasts.filter((t) => t.id !== a.id) };
 
+    case "PO_CREATE": {
+      const sup = state.suppliers.find((s) => s.id === a.supplierId);
+      if (!sup || a.lines.length === 0) return state;
+      const id = `PO-${2204 + state.purchaseOrders.length}`;
+      const po: PurchaseOrder = {
+        id, supplierId: a.supplierId, status: "ordered",
+        createdAt: Date.now(), expectedAt: Date.now() + sup.leadDays * 86_400_000,
+        lines: a.lines.map((l) => ({ ...l, received: 0 })),
+        note: a.note?.trim() || undefined,
+      };
+      const total = round2(a.lines.reduce((s, l) => s + l.qty * l.unitCost, 0));
+      return withToast(
+        withAudit({ ...state, purchaseOrders: [po, ...state.purchaseOrders] }, "stock",
+          `PO ${id} placed with ${sup.name} — ${a.lines.length} line(s), ${money(total)}, ETA ${sup.leadDays}d`),
+        "success", `${id} sent to ${sup.name} · ${money(total)}`);
+    }
+
+    case "PO_RECEIVE": {
+      const po = state.purchaseOrders.find((x) => x.id === a.poId);
+      const sup = po ? state.suppliers.find((s) => s.id === po.supplierId) : undefined;
+      if (!po || !sup || po.status === "received" || po.status === "cancelled") return state;
+      /* add received lots (FEFO-friendly: each receipt is its own lot with its own expiry) */
+      const products = state.products.map((p) => {
+        const r = a.receipts.find((x) => x.productId === p.id);
+        if (!r || r.qty <= 0) return p;
+        return { ...p, batches: [...p.batches, { batch: newBatchCode(), expiry: r.expiry, qty: r.qty }] };
+      });
+      const lines = po.lines.map((l) => {
+        const r = a.receipts.find((x) => x.productId === l.productId);
+        return r ? { ...l, received: Math.min(l.qty, l.received + r.qty) } : l;
+      });
+      const allIn = lines.every((l) => l.received >= l.qty);
+      const status: PurchaseOrder["status"] = allIn ? "received" : "partial";
+      /* one invoice per receive event, due per supplier terms */
+      const receivedValue = round2(lines.reduce((s, l) => s + l.received * l.unitCost, 0)
+        - po.lines.reduce((s, l) => s + l.received * l.unitCost, 0));
+      const invNumber = `INV-${8805 + state.apInvoices.length}`;
+      const invoice: ApInvoice = {
+        id: invNumber, number: invNumber, supplierId: sup.id, poId: po.id,
+        date: Date.now(), dueDays: sup.terms, total: Math.max(0, receivedValue),
+        payments: [], credits: [],
+      };
+      const updated: PurchaseOrder = { ...po, lines, status, receivedAt: allIn ? Date.now() : po.receivedAt, invoiceId: invoice.total > 0 ? invNumber : po.invoiceId };
+      let next: State = {
+        ...state, products,
+        purchaseOrders: state.purchaseOrders.map((x) => (x.id === po.id ? updated : x)),
+        apInvoices: invoice.total > 0 ? [invoice, ...state.apInvoices] : state.apInvoices,
+      };
+      next = withAudit(next, "stock", `Received against ${po.id} (${sup.name}) — ${a.receipts.filter((r) => r.qty > 0).length} lot(s)${invoice.total > 0 ? ` · ${invNumber} ${money(invoice.total)} due net-${sup.terms}` : ""}`);
+      return withToast(next, "success", `${po.id} received — stock added${invoice.total > 0 ? `, ${invNumber} booked ${money(invoice.total)}` : ""}`);
+    }
+
+    case "PO_CANCEL": {
+      const po = state.purchaseOrders.find((x) => x.id === a.poId);
+      if (!po || po.status === "received") return state;
+      return withToast(
+        withAudit({ ...state, purchaseOrders: state.purchaseOrders.map((x) => (x.id === a.poId ? { ...x, status: "cancelled" } : x)) },
+          "stock", `PO ${a.poId} cancelled`),
+        "info", `${a.poId} cancelled`);
+    }
+
+    case "AP_PAY": {
+      const inv = state.apInvoices.find((x) => x.id === a.invoiceId);
+      if (!inv) return state;
+      const bal = invoiceBalance(inv);
+      const amount = round2(Math.min(Math.max(0, a.amount), bal));
+      if (amount <= 0) return state;
+      const apInvoices = state.apInvoices.map((x) => (x.id === a.invoiceId
+        ? { ...x, payments: [...x.payments, { at: Date.now(), amount, method: a.method, ref: a.ref?.trim() || undefined }] }
+        : x));
+      const nowPaid = invoiceBalance(inv) - amount <= 0.005;
+      const sup = state.suppliers.find((s) => s.id === inv.supplierId);
+      return withToast(
+        withAudit({ ...state, apInvoices }, "money",
+          `AP payment ${money(amount)} (${a.method}) on ${inv.number} · ${sup?.name ?? ""}${nowPaid ? " — settled in full" : ""}`),
+        "success", nowPaid ? `${inv.number} settled in full` : `Paid ${money(amount)} on ${inv.number} · ${money(invoiceBalance(inv) - amount)} remaining`);
+    }
+
+    case "AP_CREDIT": {
+      const inv = state.apInvoices.find((x) => x.id === a.invoiceId);
+      if (!inv || a.amount <= 0) return state;
+      const apInvoices = state.apInvoices.map((x) => (x.id === a.invoiceId
+        ? { ...x, credits: [...x.credits, { at: Date.now(), amount: round2(a.amount), note: a.note?.trim() || "Credit note" }] }
+        : x));
+      return withToast(
+        withAudit({ ...state, apInvoices }, "money", `Credit note ${money(a.amount)} on ${inv.number} — ${a.note}`),
+        "success", `Credit of ${money(a.amount)} applied to ${inv.number}`);
+    }
+
+    case "EXPENSE_ADD": {
+      if (a.amount <= 0) return state;
+      const exp: Expense = {
+        id: `EXP-${907 + state.expenses.length}`,
+        category: a.category, amount: round2(a.amount), date: a.date,
+        payee: a.payee.trim() || "—", note: a.note?.trim() || undefined, recurring: a.recurring || undefined,
+      };
+      return withToast(
+        withAudit({ ...state, expenses: [exp, ...state.expenses] }, "money",
+          `Expense ${money(exp.amount)} — ${exp.category} · ${exp.payee}${exp.recurring ? " (recurring)" : ""}`),
+        "success", `${exp.category} expense recorded · ${money(exp.amount)}`);
+    }
+
+    case "EXPENSE_DELETE":
+      return { ...state, expenses: state.expenses.filter((x) => x.id !== a.id) };
+
     case "RESET": {
       localStorage.removeItem(LS_KEY);
       return {
@@ -1058,6 +1184,7 @@ interface Ctx {
   dispatch: Dispatch<Action>;
   product: (id: string) => Product | undefined;
   prescriber: (id: string) => Prescriber | undefined;
+  supplier: (id: string) => Supplier | undefined;
   lowStock: Product[];
   expiring: Product[];
   newRx: number;
@@ -1100,13 +1227,16 @@ export function PosProvider({ children }: { children: ReactNode }) {
         transfers: state.transfers, audit: state.audit,
         staff: state.staff, settings: state.settings, restrictedLog: state.restrictedLog,
         backorders: state.backorders, rxTransfers: state.rxTransfers,
+        suppliers: state.suppliers, purchaseOrders: state.purchaseOrders,
+        apInvoices: state.apInvoices, expenses: state.expenses,
       }));
     } catch { /* storage full — ignore */ }
-  }, [state.products, state.transactions, state.prescriptions, state.prescribers, state.customers, state.transfers, state.audit, state.staff, state.settings, state.restrictedLog, state.backorders, state.rxTransfers]);
+  }, [state.products, state.transactions, state.prescriptions, state.prescribers, state.customers, state.transfers, state.audit, state.staff, state.settings, state.restrictedLog, state.backorders, state.rxTransfers, state.suppliers, state.purchaseOrders, state.apInvoices, state.expenses]);
 
   const value = useMemo<Ctx>(() => {
     const product = (id: string) => state.products.find((p) => p.id === id);
     const prescriber = (id: string) => state.prescribers.find((p) => p.id === id);
+    const supplier = (id: string) => state.suppliers.find((s) => s.id === id);
     const lowStock = state.products.filter((p) => stockOf(p) <= p.reorderLevel);
     const expiring = state.products
       .filter((p) => { const e = nearestExpiry(p); return e !== null && daysUntil(e) <= 60; })
@@ -1121,7 +1251,7 @@ export function PosProvider({ children }: { children: ReactNode }) {
     const items = sales.reduce((s, t) => s + t.lines.reduce((x, l) => x + l.qty, 0), 0);
 
     return {
-      state, dispatch, product, prescriber, lowStock, expiring, newRx,
+      state, dispatch, product, prescriber, supplier, lowStock, expiring, newRx,
       todayStats: { revenue, count: sales.length, avg: sales.length ? round2(revenue / sales.length) : 0, items },
     };
   }, [state]);
