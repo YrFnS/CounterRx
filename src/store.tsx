@@ -43,7 +43,7 @@ interface State {
   deliveries: Delivery[];
   webOrders: WebOrder[];
   timeEntries: TimeEntry[];
-  cart: { productId: string; qty: number; note?: string; priceOverride?: number; daw?: number; substitutedFrom?: string }[];
+  cart: { productId: string; qty: number; note?: string; priceOverride?: number; daw?: number; substitutedFrom?: string; uom?: string }[];
   held: HeldSale[];
   customers: Customer[];
   audit: AuditEntry[];
@@ -71,8 +71,11 @@ type Action =
   | { type: "SNAPSHOT_DELETE"; id: string }
   | { type: "SNAPSHOT_RESTORE"; id: string }
   | { type: "GO"; view: View; invPreset?: InventoryPreset }
-  | { type: "ADD_CART"; productId: string; daw?: number; substitutedFrom?: string }
+  | { type: "ADD_CART"; productId: string; daw?: number; substitutedFrom?: string; uom?: string }
   | { type: "NOTIFY_RX"; id: string }
+  | { type: "SAVE_UOMS"; productId: string; uoms: import("./data").Uom[] }
+  | { type: "ADD_VARIANT"; parentId: string; name: string; price: number; cost: number; stock: number }
+  | { type: "SAVE_KIT"; productId: string; name: string; price: number; components: { productId: string; qty: number }[] }
   | { type: "PA_SUBMIT"; id: string }
   | { type: "PA_CHECK"; id: string }
   | { type: "PA_RESUBMIT"; id: string }
@@ -89,8 +92,8 @@ type Action =
   | { type: "SCAN_REMOVE"; id: string }
   | { type: "TRANSFER_RX_OUT"; prescriptionId: string; otherPharmacy: string; otherPhone: string; refillsRemaining: number; note?: string }
   | { type: "TRANSFER_RX_IN"; patient: string; phone?: string; productId: string; qty: number; otherPharmacy: string; otherPhone: string; prescriberId: string; refillsRemaining: number }
-  | { type: "SET_QTY"; productId: string; qty: number }
-  | { type: "REMOVE_LINE"; productId: string }
+  | { type: "SET_QTY"; productId: string; qty: number; uom?: string }
+  | { type: "REMOVE_LINE"; productId: string; uom?: string }
   | { type: "CLEAR_CART" }
   | { type: "HOLD_SALE"; label: string }
   | { type: "RECALL_HELD"; id: string }
@@ -210,19 +213,35 @@ function load(): State {
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
 
-/* Effective unit price: manual override > FEFO lot price > list price (1.4 lot pricing) */
-export function unitPrice(state: State, productId: string): number {
+/* Effective unit price: manual override > UOM price > FEFO lot price > list price (§5 + 1.4) */
+export function unitPrice(state: State, productId: string, uomCode?: string): number {
   const p = state.products.find((x) => x.id === productId);
   if (!p) return 0;
+  if (uomCode) {
+    const uom = p.uoms?.find((u) => u.code === uomCode);
+    if (uom) return uom.price;                 // UOM's own price wins
+    return p.price;                            // unknown code — fall back to base
+  }
   const lotPrice = fefoBatches(p)[0]?.price;
   return lotPrice !== undefined ? lotPrice : p.price;
+}
+
+/* Base-unit multiplier for a cart line (UOM factor, else 1) (§5) */
+export function uomFactor(state: State, productId: string, uomCode?: string): number {
+  const p = state.products.find((x) => x.id === productId);
+  return p?.uoms?.find((u) => u.code === uomCode)?.factor ?? 1;
 }
 
 export function cartTotals(state: State, discountPct: number, taxExempt = false) {
   const lines: TxLine[] = state.cart.map((c) => {
     const p = state.products.find((x) => x.id === c.productId)!;
-    const base = unitPrice(state, p.id);
+    const base = unitPrice(state, p.id, c.uom);           // UOM-aware effective price (§5)
+    const factor = uomFactor(state, p.id, c.uom);
+    const uomLabel = p.uoms?.find((u) => u.code === c.uom)?.label;
     const overridden = c.priceOverride !== undefined && c.priceOverride > 0 && c.priceOverride !== base;
+    const kitSummary = p.kit && p.kit.length > 0
+      ? p.kit.map((k) => `${k.qty}× ${state.products.find((x) => x.id === k.productId)?.name ?? k.productId}`).join(" + ")
+      : undefined;
     return {
       productId: p.id, name: p.name, form: p.form, qty: c.qty,
       price: overridden ? c.priceOverride! : base,
@@ -232,6 +251,7 @@ export function cartTotals(state: State, discountPct: number, taxExempt = false)
       daw: c.daw,
       substituted: c.substitutedFrom ? state.products.find((x) => x.id === c.substitutedFrom)?.name : undefined,
       ndc: p.ndc,
+      uom: uomLabel, uomFactor: factor > 1 ? factor : undefined, kitComponents: kitSummary,
     };
   });
   const subtotal = round2(lines.reduce((s, l) => s + l.price * l.qty, 0));
@@ -396,20 +416,24 @@ function reducer(state: State, a: Action): State {
     case "ADD_CART": {
       const p = state.products.find((x) => x.id === a.productId);
       if (!p) return state;
-      const avail = stockOf(p);
+      const avail = stockOf(p, state.products);              // kit-aware on-hand (§5)
       if (avail <= 0) return withToast(state, "error", `${p.name} is out of stock`);
-      const line = state.cart.find((c) => c.productId === p.id);
+      const factor = uomFactor(state, p.id, a.uom);
+      const maxUom = Math.max(1, Math.floor(avail / factor));  // sellable count in this UOM
+      const uomLabel = p.uoms?.find((u) => u.code === a.uom)?.label;
+      const same = (c: { productId: string; uom?: string }) => c.productId === p.id && (c.uom ?? "") === (a.uom ?? "");
+      const line = state.cart.find(same);
       if (line) {
-        if (line.qty >= avail) return withToast(state, "warn", `Only ${avail} × ${p.name} on the shelf`);
+        if (line.qty >= maxUom) return withToast(state, "warn", `Only ${avail} base units of ${p.name} on the shelf`);
         return {
           ...state, flashId: p.id, flashKey: state.flashKey + 1,
-          cart: state.cart.map((c) => (c.productId === p.id ? { ...c, qty: c.qty + 1 } : c)),
+          cart: state.cart.map((c) => (same(c) ? { ...c, qty: c.qty + 1 } : c)),
         };
       }
       return {
         ...state, flashId: p.id, flashKey: state.flashKey + 1,
         cart: [...state.cart, {
-          productId: p.id, qty: 1,
+          productId: p.id, qty: 1, uom: a.uom,
           daw: a.daw, substitutedFrom: a.substitutedFrom,
         }],
       };
@@ -633,15 +657,18 @@ function reducer(state: State, a: Action): State {
     case "SET_QTY": {
       const p = state.products.find((x) => x.id === a.productId);
       if (!p) return state;
-      const avail = stockOf(p);
-      const qty = Math.min(Math.max(0, a.qty), avail);
-      if (a.qty > avail) return withToast(state, "warn", `Only ${avail} in stock`);
-      if (qty === 0) return { ...state, cart: state.cart.filter((c) => c.productId !== a.productId) };
-      return { ...state, cart: state.cart.map((c) => (c.productId === a.productId ? { ...c, qty } : c)) };
+      const avail = stockOf(p, state.products);
+      const factor = uomFactor(state, p.id, a.uom);
+      const maxUom = Math.max(1, Math.floor(avail / factor));
+      const same = (c: { productId: string; uom?: string }) => c.productId === a.productId && (c.uom ?? "") === (a.uom ?? "");
+      const qty = Math.min(Math.max(0, a.qty), maxUom);
+      if (a.qty > maxUom) return withToast(state, "warn", `Only ${avail} base units in stock`);
+      if (qty === 0) return { ...state, cart: state.cart.filter((c) => !same(c)) };
+      return { ...state, cart: state.cart.map((c) => (same(c) ? { ...c, qty } : c)) };
     }
 
     case "REMOVE_LINE":
-      return { ...state, cart: state.cart.filter((c) => c.productId !== a.productId) };
+      return { ...state, cart: state.cart.filter((c) => !(c.productId === a.productId && (c.uom ?? "") === (a.uom ?? ""))) };
 
     case "CLEAR_CART":
       return { ...state, cart: [], payOpen: false, redeemPoints: 0 };
@@ -682,24 +709,53 @@ function reducer(state: State, a: Action): State {
         if (!customer) return withToast(state, "error", "Controlled substance in cart — attach a customer (photo ID required)");
         if (!a.idChecked) return withToast(state, "error", "Confirm the ID check before completing a controlled sale");
       }
-      /* guard: every cart line must be coverable by on-hand lots */
+      /* aggregate base-unit demand per product across UOM lines + kit components (§5) */
+      const demand = new Map<string, number>();
       for (const l of t.lines) {
         const p = state.products.find((x) => x.id === l.productId)!;
-        if (stockOf(p) < l.qty) return withToast(state, "error", `${p.name} short on stock — only ${stockOf(p)} left`);
+        if (p.kit && p.kit.length > 0) {
+          for (const comp of p.kit) demand.set(comp.productId, (demand.get(comp.productId) ?? 0) + l.qty * comp.qty);
+        } else {
+          demand.set(p.id, (demand.get(p.id) ?? 0) + l.qty * (l.uomFactor ?? 1));
+        }
+      }
+      /* guard: every demanded product must be coverable by on-hand base units */
+      for (const [pid, need] of demand) {
+        const p = state.products.find((x) => x.id === pid)!;
+        const onHand = stockOf(p, state.products);
+        if (onHand < need) return withToast(state, "error", `${p.name} short on stock — only ${onHand} base units left`);
       }
       /* consume lots FEFO — earliest expiry leaves the shelf first */
       const products = state.products.map((p) => {
-        const line = t.lines.find((l) => l.productId === p.id);
-        if (!line) return p;
-        const res = allocFEFO(p.batches, line.qty);
-        line.alloc = res.alloc.filter((x) => x.qty > 0);
+        const need = demand.get(p.id);
+        if (!need) return p;
+        const res = allocFEFO(p.batches, need);
         /* FIFO unit cost from the allocated lots (§5/§6) — falls back to product cost */
         const allocQty = res.alloc.reduce((s, x) => s + x.qty, 0);
-        line.cost = allocQty > 0
+        const fifoCost = allocQty > 0
           ? round2(res.alloc.reduce((s, x) => s + x.qty * (x.cost ?? p.cost), 0) / allocQty)
           : p.cost;
+        /* attach the lot trail + cost to this product's non-kit lines */
+        for (const l of t.lines) {
+          const lp = state.products.find((x) => x.id === l.productId)!;
+          const isKit = !!(lp.kit && lp.kit.length > 0);
+          if (!isKit && l.productId === p.id) {
+            if (!l.alloc) l.alloc = res.alloc.filter((x) => x.qty > 0);
+            l.cost = fifoCost;
+          }
+        }
         return { ...p, batches: res.batches };
       });
+      /* kit lines: cost rolls up from component costs (§5) */
+      for (const l of t.lines) {
+        const lp = state.products.find((x) => x.id === l.productId)!;
+        if (lp.kit && lp.kit.length > 0) {
+          l.cost = round2(lp.kit.reduce((s, comp) => {
+            const cp = state.products.find((x) => x.id === comp.productId);
+            return s + (cp?.cost ?? 0) * comp.qty;
+          }, 0));
+        }
+      }
       const primary = a.payments[0];
       const singleCash = a.payments.length === 1 && primary.method === "cash";
       /* loyalty: earn at the org-configured rate, spend redeemed points */

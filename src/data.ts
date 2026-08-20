@@ -21,6 +21,17 @@ export const CATEGORIES: { id: CategoryId; label: string; dot: string }[] = [
   { id: "compound", label: "Compounds", dot: "#8a6fae" },
 ];
 
+/** Category tree (§5) — parent groups over the leaf categories, drives roll-up filtering */
+export const CATEGORY_GROUPS: { id: string; label: string; leaves: CategoryId[] }[] = [
+  { id: "acute", label: "Acute & infection", leaves: ["antibiotics", "coldflu", "pain", "firstaid"] },
+  { id: "chronic", label: "Chronic care", leaves: ["cardio", "diabetes", "cns"] },
+  { id: "selfcare", label: "Self-care & family", leaves: ["vitamins", "derma", "baby"] },
+  { id: "technical", label: "Devices & compounds", leaves: ["devices", "compound"] },
+];
+export const groupOf = (cat: CategoryId) => CATEGORY_GROUPS.find((g) => g.leaves.includes(cat))?.id ?? "technical";
+export const groupLabel = (gid: string) => CATEGORY_GROUPS.find((g) => g.id === gid)?.label ?? gid;
+export const catLabel = (cat: CategoryId) => CATEGORIES.find((c) => c.id === cat)?.label ?? cat;
+
 /** A single stock lot on the shelf. Sales consume lots FEFO — first expiry, first out. */
 export interface Batch {
   batch: string; expiry: string; qty: number;
@@ -32,6 +43,16 @@ export interface Batch {
 export type Schedule = "C-II" | "C-III" | "C-IV" | "C-V";
 
 export interface Field { key: string; value: string; }
+
+/** Units of measure (§5) — multi-pack pricing. Stock is tracked in the base unit; factor converts. */
+export interface Uom {
+  code: string;            // "box", "case"…
+  label: string;           // "Box of 10 strips"
+  factor: number;          // base units per UOM (integer ≥ 1)
+  price: number;           // UOM's own sale price — wins over factor × base
+  cost: number;
+  barcode?: string;        // per-UOM barcode for scanner-driven selection
+}
 
 export interface Product {
   id: string; sku: string; barcode: string;
@@ -49,6 +70,9 @@ export interface Product {
   gtin?: string;         // GS1 GTIN-14 for scanning (§3)
   compound?: boolean;    // in-house compounded preparation (§3 compounding)
   fields?: Field[];      // user-defined attributes (6.7)
+  uoms?: Uom[];          // multi-UOM pricing (§5) — sell in packs, stock converts to base
+  variantOf?: string;    // strength/pack-size variant of a parent SKU (§5), shares supplier
+  kit?: { productId: string; qty: number }[]; // bundle components deducted on sale (§5)
 }
 
 /* Simulated NDC directory (§3) — used for auto-fill when creating new catalog items */
@@ -71,7 +95,19 @@ export const ndcLookup = (code: string): NdcEntry | null =>
 /** Suggested keys when adding custom fields */
 export const FIELD_SUGGESTIONS = ["Storage", "Shelf life", "Hazard class", "Vendor code", "Min order", "Fridge zone", "Recall flag"];
 
-export const stockOf = (p: Product): number => p.batches.reduce((s, b) => s + b.qty, 0);
+export const stockOf = (p: Product, catalog?: Product[]): number => {
+  /* kit (§5): sellable count is limited by the scarcest component */
+  if (p.kit && p.kit.length > 0 && catalog) {
+    let min = Infinity;
+    for (const c of p.kit) {
+      const comp = catalog.find((x) => x.id === c.productId);
+      if (!comp) return 0;
+      min = Math.min(min, Math.floor(stockOf(comp, catalog) / Math.max(1, c.qty)));
+    }
+    return Number.isFinite(min) ? min : 0;
+  }
+  return p.batches.reduce((s, b) => s + b.qty, 0);
+};
 
 /** Lots sorted first-expiry-first-out (earliest expiry sells first). */
 export const fefoBatches = (p: { batches: Batch[] }): Batch[] =>
@@ -117,6 +153,9 @@ export interface TxLine {
   daw?: number;                             // Dispense-As-Written code (1 prescriber / 2 patient) (§3)
   substituted?: string;                     // brand name this generic line replaced (§3)
   ndc?: string;                             // NDC printed on the receipt (§3)
+  uom?: string;                             // UOM label, e.g. "Box of 10 strips" (§5)
+  uomFactor?: number;                       // base units per UOM, for stock deduction (§5)
+  kitComponents?: string;                   // kit contents summary (§5)
 }
 export type PayMethod = "cash" | "card" | "insurance";
 export interface PaymentLeg { method: PayMethod; amount: number; }
@@ -193,6 +232,7 @@ export interface Supplier {
   terms: number;        // payment terms in days (net-N) — invoice due date = invoice date + terms
   leadDays: number;     // typical delivery lead time
   minOrder: number;     // minimum order quantity per line
+  priceBook?: { productId: string; unitCost: number }[]; // vendor price book (§5) — compare when ordering
 }
 
 export interface PoLine { productId: string; qty: number; unitCost: number; received: number; }
@@ -223,12 +263,18 @@ export const EXPENSE_CATEGORIES = ["Rent", "Salaries", "Utilities", "Marketing",
 
 export function makeSuppliers(): Supplier[] {
   return [
-    { id: "SUP-01", name: "MediSource Ltd", contact: "K. Adjei", phone: "(555) 210-4471", email: "orders@medisource.co", terms: 30, leadDays: 5, minOrder: 50 },
-    { id: "SUP-02", name: "PharmaLine Co", contact: "S. Whitmore", phone: "(555) 318-9902", email: "sales@pharmaline.co", terms: 30, leadDays: 4, minOrder: 40 },
-    { id: "SUP-03", name: "Apex Distributors", contact: "J. Mensah", phone: "(555) 402-1187", email: "apex@apexdist.co", terms: 7, leadDays: 2, minOrder: 25 },
-    { id: "SUP-04", name: "Vital Trade", contact: "R. Okonkwo", phone: "(555) 509-3348", email: "trade@vitaltrade.co", terms: 30, leadDays: 6, minOrder: 30 },
-    { id: "SUP-05", name: "DevicePoint", contact: "L. Ferreira", phone: "(555) 617-8830", email: "b2b@devicepoint.co", terms: 45, leadDays: 10, minOrder: 5 },
-    { id: "SUP-06", name: "ColdChain Direct", contact: "M. Haugen", phone: "(555) 733-2015", email: "orders@coldchain.co", terms: 30, leadDays: 3, minOrder: 10 },
+    { id: "SUP-01", name: "MediSource Ltd", contact: "K. Adjei", phone: "(555) 210-4471", email: "orders@medisource.co", terms: 30, leadDays: 5, minOrder: 50,
+      priceBook: [{ productId: "amx500", unitCost: 4.6 }, { productId: "met500", unitCost: 2.1 }, { productId: "atv20", unitCost: 5.3 }, { productId: "amx250", unitCost: 3.2 }] },
+    { id: "SUP-02", name: "PharmaLine Co", contact: "S. Whitmore", phone: "(555) 318-9902", email: "sales@pharmaline.co", terms: 30, leadDays: 4, minOrder: 40,
+      priceBook: [{ productId: "ibu400", unitCost: 1.3 }, { productId: "ibu200", unitCost: 0.9 }, { productId: "diclo50", unitCost: 2.2 }, { productId: "asa75", unitCost: 1.0 }] },
+    { id: "SUP-03", name: "Apex Distributors", contact: "J. Mensah", phone: "(555) 402-1187", email: "apex@apexdist.co", terms: 7, leadDays: 2, minOrder: 25,
+      priceBook: [{ productId: "cet10", unitCost: 1.8 }, { productId: "cet5", unitCost: 2.0 }, { productId: "ors5", unitCost: 1.7 }] },
+    { id: "SUP-04", name: "Vital Trade", contact: "R. Okonkwo", phone: "(555) 509-3348", email: "trade@vitaltrade.co", terms: 30, leadDays: 6, minOrder: 30,
+      priceBook: [{ productId: "vd3", unitCost: 6.5 }, { productId: "vitc", unitCost: 3.9 }] },
+    { id: "SUP-05", name: "DevicePoint", contact: "L. Ferreira", phone: "(555) 617-8830", email: "b2b@devicepoint.co", terms: 45, leadDays: 10, minOrder: 5,
+      priceBook: [{ productId: "oxim", unitCost: 10.9 }, { productId: "thermo", unitCost: 5.1 }] },
+    { id: "SUP-06", name: "ColdChain Direct", contact: "M. Haugen", phone: "(555) 733-2015", email: "orders@coldchain.co", terms: 30, leadDays: 3, minOrder: 10,
+      priceBook: [{ productId: "insg", unitCost: 31.5 }, { productId: "salb", unitCost: 8.9 }] },
   ];
 }
 
@@ -554,7 +600,7 @@ export const bulkPct = (qty: number) => BULK_TIERS.find((t) => qty >= t.min)?.pc
 export const REDEEM_CHUNK_PTS = 100;
 export const REDEEM_CHUNK_VALUE = 5;
 
-export interface HeldSale { id: string; label: string; at: number; items: { productId: string; qty: number; note?: string }[]; }
+export interface HeldSale { id: string; label: string; at: number; items: { productId: string; qty: number; note?: string; priceOverride?: number; daw?: number; substitutedFrom?: string; uom?: string }[]; }
 
 /* Inter-branch stock transfers (2.6) */
 export type TransferStatus = "requested" | "approved" | "shipped" | "received" | "rejected";
@@ -639,6 +685,13 @@ export function makeProducts(now: number): Product[] {
     { ...p("g-salb", "Salbutamol Inhaler", "Salbutamol 100mcg", "Generic · Cipla", "coldflu", "Inhaler · 200 doses", 9.9, 5.6, 30, 10, true, "GSL-26B02", 210, "ColdChain Direct"), genericOf: "salb" },
     /* in-house compounded preparation (§3) — built from shelf ingredients */
     { ...p("mmwash", "Magic Mouthwash 240ml", "Diphenhydramine / viscous lidocaine / antacid", "In-house compound", "compound", "Suspension · 240ml bottle", 18.5, 7.4, 6, 2, true, "MMW-26A03", 45, "Compounded in-house"), compound: true },
+    /* strength variants (§5) — share supplier & molecule with the parent SKU */
+    { ...p("amx250", "Amoxicillin 250mg", "Amoxicillin trihydrate", "Novex Pharma", "antibiotics", "Capsule · strip of 10", 6.2, 3.4, 90, 30, true, "AMX25-26A01", 300, "MediSource Ltd"), variantOf: "amx500" },
+    { ...p("ibu200", "Ibuprofen 200mg", "Ibuprofen", "Brufen", "pain", "Tablet · strip of 20", 2.4, 1.0, 200, 50, false, "IBU2-26B03", 400, "PharmaLine Co"), variantOf: "ibu400" },
+    { ...p("cet5", "Cetirizine 5mg chewable", "Cetirizine HCl (pediatric)", "Zyrtec Kids", "coldflu", "Chewable · strip of 10", 4.6, 2.1, 60, 20, false, "CET5-26C02", 350, "Apex Distributors"), variantOf: "cet10" },
+    /* kit / bundle products (§5) — components deducted on sale */
+    { ...p("kit-flu", "Flu Relief Kit", "Cetirizine + cough syrup + ORS", "CounterRx bundle", "coldflu", "Bundle · 3 products", 13.9, 0, 0, 5, false, "KIT-26A01", 365, "Assembled in-store"), kit: [{ productId: "cet10", qty: 1 }, { productId: "cfsyrup", qty: 1 }, { productId: "ors5", qty: 2 }], batches: [] },
+    { ...p("kit-fa", "Travel First-Aid Kit", "Bandages + antiseptic", "CounterRx bundle", "firstaid", "Bundle · 2 products", 8.5, 0, 0, 5, false, "KIT-26A02", 365, "Assembled in-store"), kit: [{ productId: "band", qty: 1 }, { productId: "detl", qty: 1 }], batches: [] },
   ];
 
   /* NDC / GS1 identifiers (§3) — real-format codes on Rx & scanned items */
@@ -659,6 +712,19 @@ export function makeProducts(now: number): Product[] {
   const pcm = base.find((x) => x.id === "pcm500");
   if (pcm) {
     pcm.batches = pcm.batches.map((b) => (b.batch === "PCM-24E14" ? { ...b, price: 1.2 } : b));
+  }
+  /* Multi-UOM pricing (§5) — multi-packs with their own price & barcode */
+  const uomSeed: Record<string, Uom[]> = {
+    pcm500: [{ code: "box", label: "Box of 10 strips", factor: 10, price: 16.2, cost: 6.3, barcode: "891pcm500box10" }],
+    met500: [{ code: "box", label: "Box of 10 strips", factor: 10, price: 44.1, cost: 19.8, barcode: "891met500box10" }],
+    cet10: [{ code: "box", label: "Box of 12 strips", factor: 12, price: 44.3, cost: 20.5, barcode: "891cet10box12" }],
+    vd3: [{ code: "case", label: "Case of 6 bottles", factor: 6, price: 71.4, cost: 38.8, barcode: "891vd3case6" }],
+    ors5: [{ code: "case", label: "Case of 20 packs", factor: 20, price: 70.2, cost: 32.4, barcode: "891ors5case20" }],
+    band: [{ code: "case", label: "Case of 12 boxes", factor: 12, price: 45.4, cost: 21.6, barcode: "891bandcase12" }],
+  };
+  for (const [id, uoms] of Object.entries(uomSeed)) {
+    const prod = base.find((x) => x.id === id);
+    if (prod) prod.uoms = uoms;
   }
   /* Custom fields seeded on a handful of SKUs (6.7) */
   const withFields: Record<string, Field[]> = {
