@@ -10,20 +10,22 @@ import type { RxStatus, Prescription } from "../data";
 import { cx, Badge, Modal } from "../ui";
 import { IRx, ICheck, IClock, IRegister, IShield, IGrab, IRefresh, ISend, IRecall, IX } from "../icons";
 
-const FLOW: RxStatus[] = ["new", "verifying", "ready", "dispensed"];
+const FLOW: RxStatus[] = ["new", "verifying", "ready", "waiting", "dispensed"];
 const LABEL: Record<RxStatus, string> = {
-  new: "Dropped off", verifying: "Pharmacist review", ready: "Ready for pickup", dispensed: "Dispensed",
+  new: "Dropped off", verifying: "Pharmacist review", ready: "Filled", waiting: "Waiting bin", dispensed: "Dispensed",
 };
 const ACCENT: Record<RxStatus, { bar: string; chip: string }> = {
   new: { bar: "#5c6b66", chip: "bg-mist/70 text-ink" },
   verifying: { bar: "#e0a63c", chip: "bg-honey-100 text-honey-700" },
   ready: { bar: "#3b8668", chip: "bg-pine-100 text-pine-700" },
+  waiting: { bar: "#c98d5f", chip: "bg-honey-100 text-honey-800" },
   dispensed: { bar: "#0f4437", chip: "bg-ink text-paper" },
 };
 const NEXT: Partial<Record<RxStatus, { to: RxStatus; label: string }>> = {
   new: { to: "verifying", label: "Start review" },
-  verifying: { to: "ready", label: "Mark ready" },
-  ready: { to: "dispensed", label: "Dispense" },
+  verifying: { to: "ready", label: "Mark filled" },
+  ready: { to: "waiting", label: "To waiting bin" },
+  waiting: { to: "dispensed", label: "Hand over" },
 };
 
 export default function Prescriptions() {
@@ -124,12 +126,14 @@ export default function Prescriptions() {
 
       <DndContext sensors={sensors} collisionDetection={closestCorners}
         onDragStart={onDragStart} onDragOver={onDragOver} onDragEnd={onDragEnd} onDragCancel={() => { setActiveId(null); setOverCol(null); }}>
-        <div className="mt-4 flex-1 min-h-0 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-3.5 pb-4">
+        <div className="mt-4 flex-1 min-h-0 flex gap-3.5 overflow-x-auto scroll-slim pb-4">
           {FLOW.map((status) => (
-            <Column key={status} status={status} ghostId={activeId}
-              items={state.prescriptions.filter((r) => r.status === status).sort((a, b) => a.createdAt - b.createdAt)}
-              highlight={overCol === status && activeId !== null}
-              dimmed={activeId !== null && overCol !== status} />
+            <div key={status} className="min-w-[232px] flex-1 min-h-0">
+              <Column status={status} ghostId={activeId}
+                items={state.prescriptions.filter((r) => r.status === status).sort((a, b) => a.createdAt - b.createdAt)}
+                highlight={overCol === status && activeId !== null}
+                dimmed={activeId !== null && overCol !== status} />
+            </div>
           ))}
         </div>
         <DragOverlay dropAnimation={{ duration: 220, easing: "cubic-bezier(0.22,1,0.36,1)" }}>
@@ -238,6 +242,27 @@ function RxCard({ rx, ghost, overlay }: { rx: Prescription; ghost?: boolean; ove
             ⚑ {rx.note}
           </p>
         )}
+
+        {rx.status === "waiting" && (
+          <div className="mt-1.5 rounded-md border border-honey-300/60 bg-honey-100/50 px-2 py-1.5 anim-fade-up" onPointerDown={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between gap-2">
+              <p className="text-[9px] font-bold uppercase tracking-[0.12em] text-honey-800 flex items-center gap-1">
+                <IClock size={10} /> Will-call bin
+              </p>
+              {rx.phone && <p className="num text-[9px] text-honey-700">{rx.phone}</p>}
+            </div>
+            {rx.notifiedAt ? (
+              <p className="text-[9px] font-semibold text-pine-700 mt-1 flex items-center gap-1">
+                <ICheck size={9} /> Patient notified {relTime(rx.notifiedAt)}
+              </p>
+            ) : (
+              <button onClick={() => dispatch({ type: "NOTIFY_RX", id: rx.id })}
+                className="mt-1 w-full py-1 rounded bg-honey-500 text-pine-950 text-[9px] font-bold hover:bg-honey-400 transition active:scale-95 flex items-center justify-center gap-1">
+                <ISend size={9} /> Send "ready for pickup"
+              </button>
+            )}
+          </div>
+        )}
         {rx.insurance && (
           <div className={cx("mt-1.5 rounded-md border px-2 py-1.5",
             rx.insurance.status === "verified" ? "bg-pine-100/70 border-pine-300/60" :
@@ -293,7 +318,7 @@ function RxCard({ rx, ghost, overlay }: { rx: Prescription; ghost?: boolean; ove
         {canAttach && (
           <button onClick={() => dispatch({ type: "RX_TO_CART", id: rx.id })}
             className="flex-1 py-1.5 rounded-lg border border-pine-200 bg-pine-50 text-pine-800 text-[11px] font-bold hover:bg-pine-100 transition active:scale-[0.97] flex items-center justify-center gap-1">
-            <IRegister size={11} /> Attach to sale
+            <IRegister size={11} /> {rx.status === "waiting" ? "Charge at pickup" : "Attach to sale"}
           </button>
         )}
         {rx.status === "dispensed" && (
@@ -395,6 +420,7 @@ const STATUS_TONE: Record<RxStatus, string> = {
   new: "bg-mist text-ink",
   verifying: "bg-honey-100 text-honey-700",
   ready: "bg-pine-100 text-pine-700",
+  waiting: "bg-honey-100 text-honey-800",
   dispensed: "bg-pine-700 text-pine-50",
 };
 function StatusPill({ status }: { status: RxStatus }) {

@@ -42,6 +42,7 @@ export interface Product {
   batches: Batch[];
   controlled?: Schedule; // DEA schedule — ID + audit requirements at the till
   restricted?: { limitPerSale: number }; // age-gated / monitored OTC — ID capture + mandatory log (§3)
+  genericOf?: string;    // if set, this SKU is the generic equivalent of the given brand SKU (§3 DAW)
   fields?: Field[];      // user-defined attributes (6.7)
 }
 
@@ -90,6 +91,8 @@ export interface TxLine {
   note?: string;                            // per-line counter note
   override?: boolean;                       // unit price was manually overridden
   listPrice?: number;                       // original price before override
+  daw?: number;                             // Dispense-As-Written code (1 prescriber / 2 patient) (§3)
+  substituted?: string;                     // brand name this generic line replaced (§3)
 }
 export type PayMethod = "cash" | "card" | "insurance";
 export interface PaymentLeg { method: PayMethod; amount: number; }
@@ -109,7 +112,8 @@ export interface Transaction {
   pointsRedeemed?: number;
 }
 
-export type RxStatus = "new" | "verifying" | "ready" | "dispensed";
+/** new → verifying → ready (filled) → waiting (will-call bin) → dispensed (paid & handed over) */
+export type RxStatus = "new" | "verifying" | "ready" | "waiting" | "dispensed";
 
 /** Prescriber directory entry (§3) — NPI/DEA on file, linked to every Rx */
 export interface Prescriber {
@@ -127,6 +131,8 @@ export interface Prescription {
   refillsAuthorized?: number; // total refills the prescriber allowed
   refillsRemaining?: number;  // decremented on each dispense (§3 refill tracking)
   rxExpiry?: string;          // ISO date the prescription itself expires
+  phone?: string;             // patient contact for "ready for pickup" notifications
+  notifiedAt?: number;        // waiting-bin pickup notification sent
   insurance?: { plan: string; memberId: string; status: "pending" | "verified" | "rejected" };
 }
 
@@ -404,6 +410,12 @@ export function makeProducts(now: number): Product[] {
     { ...p("zolp5", "Zolpidem 5mg", "Zolpidem tartrate", "Ambien", "cns", "Tablet · strip of 10", 11.6, 5.9, 18, 8, true, "ZOL-25A11", 240, "PharmaLine Co"), controlled: "C-IV" as Schedule },
     /* restricted OTC — behind-the-counter, ID + log required, quantity-limited (§3) */
     { ...p("sud30", "Pseudoephedrine 30mg", "Pseudoephedrine HCl", "Sudafed", "coldflu", "Tablet · strip of 12", 6.8, 3.1, 40, 12, false, "SUD-25B14", 320, "Apex Distributors"), restricted: { limitPerSale: 2 } },
+    /* generic equivalents (§3 DAW substitution) — linked to their brand SKU */
+    { ...p("g-atv20", "Atorvastatin 20mg", "Atorvastatin calcium", "Generic · Teva", "cardio", "Tablet · strip of 15", 6.1, 2.9, 180, 40, true, "GAT-26A04", 420, "MediSource Ltd"), genericOf: "atv20" },
+    { ...p("g-aml5", "Amlodipine 5mg", "Amlodipine besylate", "Generic · Lupin", "cardio", "Tablet · strip of 15", 3.4, 1.5, 160, 30, true, "GAM-26B12", 400, "MediSource Ltd"), genericOf: "aml5" },
+    { ...p("g-met500", "Metformin 500mg", "Metformin HCl", "Generic · Glenmark", "diabetes", "Tablet · strip of 15", 2.9, 1.1, 300, 60, true, "GMT-26A20", 450, "MediSource Ltd"), genericOf: "met500" },
+    { ...p("g-cet10", "Cetirizine 10mg", "Cetirizine HCl", "Generic · Dr. Reddy's", "coldflu", "Tablet · strip of 10", 2.2, 0.8, 220, 40, false, "GCT-26C08", 430, "Apex Distributors"), genericOf: "cet10" },
+    { ...p("g-salb", "Salbutamol Inhaler", "Salbutamol 100mcg", "Generic · Cipla", "coldflu", "Inhaler · 200 doses", 9.9, 5.6, 30, 10, true, "GSL-26B02", 210, "ColdChain Direct"), genericOf: "salb" },
   ];
 
   /* Lot-level clearance pricing (1.4): push near-expiry Paracetamol at a discount */
@@ -438,9 +450,9 @@ export function makePrescriptions(now: number): Prescription[] {
   return [
     { id: "RX-2481", patient: "Marta Kessler", age: 34, productId: "amx500", qty: 2, prescriberId: "DR-01", status: "new", createdAt: now - 14 * m, note: "Take 1 capsule every 8h after food" },
     { id: "RX-2480", patient: "Daniel Osei", age: 61, productId: "atv20", qty: 2, prescriberId: "DR-02", status: "verifying", createdAt: now - 52 * m, note: "Refill — check interaction with amlodipine", daysSupply: 30, refillsAuthorized: 5, refillsRemaining: 2, rxExpiry: iso(now + 180 * d), insurance: { plan: "BlueCross PBM", memberId: "XCB-9917-31", status: "pending" } },
-    { id: "RX-2479", patient: "Priya Nair", age: 45, productId: "met500", qty: 4, prescriberId: "DR-03", status: "ready", createdAt: now - 2.1 * h, daysSupply: 90, refillsAuthorized: 3, refillsRemaining: 3, rxExpiry: iso(now + 320 * d) },
-    { id: "RX-2478", patient: "Tom Alvarez", age: 8, productId: "salb", qty: 1, prescriberId: "DR-01", status: "ready", createdAt: now - 3.4 * h, note: "Guardian pickup — mother" },
-    { id: "RX-2477", patient: "Grace Lin", age: 52, productId: "insg", qty: 2, prescriberId: "DR-03", status: "verifying", createdAt: now - 5.2 * h, note: "Cold-chain — keep refrigerated", daysSupply: 28, insurance: { plan: "Aetna Rx", memberId: "AET-8830-19", status: "pending" } },
+    { id: "RX-2479", patient: "Priya Nair", age: 45, productId: "met500", qty: 4, prescriberId: "DR-03", status: "ready", createdAt: now - 2.1 * h, daysSupply: 90, refillsAuthorized: 3, refillsRemaining: 3, rxExpiry: iso(now + 320 * d), phone: "(555) 909-1147" },
+    { id: "RX-2478", patient: "Tom Alvarez", age: 8, productId: "salb", qty: 1, prescriberId: "DR-01", status: "waiting", createdAt: now - 3.4 * h, notifiedAt: now - 1.1 * h, note: "Guardian pickup — mother", phone: "(555) 130-4486" },
+    { id: "RX-2477", patient: "Grace Lin", age: 52, productId: "insg", qty: 2, prescriberId: "DR-03", status: "verifying", createdAt: now - 5.2 * h, note: "Cold-chain — keep refrigerated", daysSupply: 28, phone: "(555) 655-7702", insurance: { plan: "Aetna Rx", memberId: "AET-8830-19", status: "pending" } },
     { id: "RX-2476", patient: "Samuel Eze", age: 29, productId: "azi250", qty: 1, prescriberId: "DR-02", status: "dispensed", createdAt: now - 8.6 * h, dispensedAt: now - 8.6 * h, daysSupply: 6 },
     /* maintenance fills from earlier this month — feed the refill radar */
     { id: "RX-2441", patient: "Helen Okafor", age: 67, productId: "atv20", qty: 2, prescriberId: "DR-02", status: "dispensed", createdAt: now - 29 * d, dispensedAt: now - 29 * d, daysSupply: 30, refillsAuthorized: 5, refillsRemaining: 1, rxExpiry: iso(now + 150 * d), note: "Monthly maintenance — auto-refill allowed", insurance: { plan: "BlueCross PBM", memberId: "XCB-4471-02", status: "verified" } },

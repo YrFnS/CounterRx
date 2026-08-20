@@ -30,7 +30,7 @@ interface State {
   prescriptions: Prescription[];
   prescribers: Prescriber[];
   transfers: Transfer[];
-  cart: { productId: string; qty: number; note?: string; priceOverride?: number }[];
+  cart: { productId: string; qty: number; note?: string; priceOverride?: number; daw?: number; substitutedFrom?: string }[];
   held: HeldSale[];
   customers: Customer[];
   audit: AuditEntry[];
@@ -58,7 +58,8 @@ type Action =
   | { type: "SNAPSHOT_DELETE"; id: string }
   | { type: "SNAPSHOT_RESTORE"; id: string }
   | { type: "GO"; view: View; invPreset?: InventoryPreset }
-  | { type: "ADD_CART"; productId: string }
+  | { type: "ADD_CART"; productId: string; daw?: number; substitutedFrom?: string }
+  | { type: "NOTIFY_RX"; id: string }
   | { type: "SET_QTY"; productId: string; qty: number }
   | { type: "REMOVE_LINE"; productId: string }
   | { type: "CLEAR_CART" }
@@ -169,6 +170,8 @@ export function cartTotals(state: State, discountPct: number, taxExempt = false)
       rx: p.rx, note: c.note,
       override: overridden || undefined,
       listPrice: overridden ? p.price : base !== p.price ? p.price : undefined,
+      daw: c.daw,
+      substituted: c.substitutedFrom ? state.products.find((x) => x.id === c.substitutedFrom)?.name : undefined,
     };
   });
   const subtotal = round2(lines.reduce((s, l) => s + l.price * l.qty, 0));
@@ -345,8 +348,20 @@ function reducer(state: State, a: Action): State {
       }
       return {
         ...state, flashId: p.id, flashKey: state.flashKey + 1,
-        cart: [...state.cart, { productId: p.id, qty: 1 }],
+        cart: [...state.cart, {
+          productId: p.id, qty: 1,
+          daw: a.daw, substitutedFrom: a.substitutedFrom,
+        }],
       };
+    }
+
+    case "NOTIFY_RX": {
+      const rx = state.prescriptions.find((x) => x.id === a.id);
+      if (!rx) return state;
+      const prescriptions = state.prescriptions.map((x) => (x.id === a.id ? { ...x, notifiedAt: Date.now() } : x));
+      return withToast(
+        withAudit({ ...state, prescriptions }, "rx", `Pickup notification sent — ${rx.id} · ${rx.patient}${rx.phone ? ` · ${rx.phone}` : ""}`),
+        "success", `"Ready for pickup" sent to ${rx.patient}${rx.phone ? ` · ${rx.phone}` : ""}`);
     }
 
     case "SET_QTY": {
