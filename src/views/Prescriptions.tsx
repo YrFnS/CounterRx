@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import type { ChangeEvent } from "react";
 import {
   DndContext, DragOverlay, PointerSensor, useSensor, useSensors, closestCorners,
   useDraggable, useDroppable,
@@ -8,7 +9,30 @@ import { usePos, relTime } from "../store";
 import { stockOf, can, daysUntil } from "../data";
 import type { RxStatus, Prescription, BackOrderStatus } from "../data";
 import { cx, Badge, Modal } from "../ui";
-import { IRx, ICheck, IClock, IRegister, IShield, IGrab, IRefresh, ISend, IRecall, IX, IBox, ISwap, IArrowIn, IArrowOut, IDownload } from "../icons";
+
+/* Client-side image resize → JPEG data-URL so hard-copy scans stay small enough for local storage.
+   (Superseded by Supabase Storage once the backend is connected — §3.) */
+function resizeToDataUrl(file: File, maxDim: number): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    const url = URL.createObjectURL(file);
+    img.onload = () => {
+      try {
+        const scale = Math.min(1, maxDim / Math.max(img.width, img.height));
+        const canvas = document.createElement("canvas");
+        canvas.width = Math.max(1, Math.round(img.width * scale));
+        canvas.height = Math.max(1, Math.round(img.height * scale));
+        const ctx = canvas.getContext("2d");
+        if (!ctx) throw new Error("no canvas");
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+        resolve(canvas.toDataURL("image/jpeg", 0.72));
+      } catch (e) { reject(e); } finally { URL.revokeObjectURL(url); }
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error("bad image")); };
+    img.src = url;
+  });
+}
+import { IRx, ICheck, IClock, IRegister, IShield, IGrab, IRefresh, ISend, IRecall, IX, IBox, ISwap, IArrowIn, IArrowOut, IDownload, IPlus, IScan } from "../icons";
 
 const FLOW: RxStatus[] = ["new", "verifying", "ready", "waiting", "dispensed"];
 const LABEL: Record<RxStatus, string> = {
@@ -34,6 +58,7 @@ export default function Prescriptions() {
   const [overCol, setOverCol] = useState<RxStatus | null>(null);
   const [xferLog, setXferLog] = useState(false);
   const [xferIn, setXferIn] = useState(false);
+  const [intake, setIntake] = useState(false);
   const mayTransfer = can(state.user?.role, "transfer_rx");
 
   /* Refill radar: maintenance fills whose days-supply runs out within 7 days */
@@ -69,6 +94,10 @@ export default function Prescriptions() {
           </p>
         </div>
         <div className="flex-1" />
+        <button onClick={() => setIntake(true)}
+          className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-pine-700 text-pine-50 text-xs font-bold hover:bg-pine-600 transition active:scale-95 shadow-lift">
+          <IPlus size={14} /> New prescription
+        </button>
         <button onClick={() => setXferLog(true)}
           className="flex items-center gap-1.5 px-3 py-2 rounded-lg border border-mist bg-card text-xs font-bold text-ink hover:border-pine-400 hover:bg-pine-50 transition active:scale-95">
           <ISwap size={14} /> Transfer log · {state.rxTransfers.length}
@@ -158,6 +187,7 @@ export default function Prescriptions() {
 
       {xferLog && <XferLogModal onClose={() => setXferLog(false)} />}
       {xferIn && <XferInModal onClose={() => setXferIn(false)} />}
+      {intake && <IntakeModal onClose={() => setIntake(false)} />}
     </div>
   );
 }
@@ -292,12 +322,22 @@ function RxCard({ rx, ghost, overlay }: { rx: Prescription; ghost?: boolean; ove
   const shelf = p ? stockOf(p) : 0;
   const [showPrescriber, setShowPrescriber] = useState(false);
   const [showXferOut, setShowXferOut] = useState(false);
+  const [viewScan, setViewScan] = useState(false);
   const stepIdx = FLOW.indexOf(rx.status);
   const next = NEXT[rx.status];
   const canAttach = rx.status !== "dispensed" && p && shelf > 0 && !rx.transferredOut;
   const canPa = can(state.user?.role, "verify_rx");
   const canBackorder = rx.status !== "dispensed" && p && shelf === 0 && !rx.transferredOut;
   const canTransferOut = rx.status !== "dispensed" && !rx.transferredOut && can(state.user?.role, "transfer_rx");
+
+  /* hard-copy scan: pick a photo of the paper Rx, resize client-side, attach (§3) */
+  const onScanFile = (e: ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    resizeToDataUrl(file, 480).then((url) => dispatch({ type: "SCAN_ATTACH", id: rx.id, dataUrl: url }))
+      .catch(() => dispatch({ type: "TOAST", kind: "error", msg: "Couldn't read that image — try a JPG or PNG" }));
+  };
 
   return (
     <article ref={setNodeRef} {...listeners} {...attributes}
@@ -315,6 +355,21 @@ function RxCard({ rx, ghost, overlay }: { rx: Prescription; ghost?: boolean; ove
         </div>
         <IGrab size={13} className="text-inksoft/40 shrink-0 mt-0.5" />
       </div>
+
+      {/* hidden picker for hard-copy scan */}
+      <input type="file" accept="image/*" className="hidden" id={`scan-${rx.id}`} onChange={onScanFile}
+        onClick={(e) => e.stopPropagation()} />
+
+      {rx.scan && (
+        <button onClick={() => setViewScan(true)}
+          className="mt-2 group/scan relative w-full h-16 rounded-lg overflow-hidden border border-mist focus:outline-none focus:ring-2 focus:ring-pine-300"
+          title="View attached hard-copy scan">
+          <img src={rx.scan} alt="Hard-copy prescription scan" className="w-full h-full object-cover transition-transform duration-200 group-hover/scan:scale-105" />
+          <span className="absolute inset-x-0 bottom-0 bg-pine-950/70 text-pine-100 text-[9px] font-bold uppercase tracking-wide px-2 py-0.5 text-left">
+            📄 Hard-copy on file · {relTime(rx.scanAt ?? rx.createdAt)}
+          </span>
+        </button>
+      )}
 
       {rx.transferredOut && (
         <div className="mt-2 flex items-center gap-1.5 rounded-md border border-mist bg-mist/50 px-2 py-1.5">
@@ -506,6 +561,12 @@ function RxCard({ rx, ghost, overlay }: { rx: Prescription; ghost?: boolean; ove
             <IArrowOut size={11} /> Transfer
           </button>
         )}
+        {/* attach / re-attach a photo of the paper Rx */}
+        <label htmlFor={`scan-${rx.id}`}
+          className="py-1.5 px-2.5 rounded-lg border border-mist bg-card text-inksoft text-[11px] font-bold hover:border-pine-400 hover:text-pine-700 transition active:scale-[0.97] flex items-center justify-center gap-1 cursor-pointer"
+          title={rx.scan ? "Replace the attached scan" : "Attach a photo of the paper prescription"}>
+          <IScan size={11} /> {rx.scan ? "Re-scan" : "Scan Rx"}
+        </label>
         {rx.status === "dispensed" && (
           <span className="flex-1 py-1.5 rounded-lg bg-pine-100 text-pine-800 text-[11px] font-bold text-center flex items-center justify-center gap-1">
             <ICheck size={11} /> Completed & logged
@@ -518,6 +579,9 @@ function RxCard({ rx, ghost, overlay }: { rx: Prescription; ghost?: boolean; ove
       )}
       {showXferOut && (
         <XferOutModal rx={rx} onClose={() => setShowXferOut(false)} />
+      )}
+      {viewScan && rx.scan && (
+        <ScanViewer rx={rx} onClose={() => setViewScan(false)} />
       )}
     </article>
   );
@@ -826,3 +890,142 @@ function XferInModal({ onClose }: { onClose: () => void }) {
 }
 
 const xfIn = "w-full mt-1 px-2.5 py-2 rounded-lg border border-mist bg-card text-sm focus:border-pine-500 focus:outline-none transition";
+
+/* View an attached hard-copy scan, with re-scan and remove (§3) */
+function ScanViewer({ rx, onClose }: { rx: Prescription; onClose: () => void }) {
+  const { dispatch } = usePos();
+  return (
+    <Modal onClose={onClose} width={520} labelledBy="scan-title">
+      <div className="px-5 py-4 border-b border-mist flex items-start justify-between">
+        <div>
+          <h2 id="scan-title" className="font-display font-bold text-ink flex items-center gap-2">
+            <IScan size={17} className="text-pine-700" /> Hard-copy scan · {rx.id}
+          </h2>
+          <p className="text-xs text-inksoft mt-0.5">{rx.patient} · attached {relTime(rx.scanAt ?? rx.createdAt)}</p>
+        </div>
+        <button onClick={onClose} className="p-1.5 rounded-md hover:bg-mist/60 text-inksoft" aria-label="Close"><IX size={14} /></button>
+      </div>
+      <div className="p-5">
+        <div className="rounded-xl border border-mist overflow-hidden bg-paper">
+          <img src={rx.scan} alt={`Scanned prescription for ${rx.patient}`} className="w-full h-auto max-h-[420px] object-contain" />
+        </div>
+        <div className="mt-4 flex justify-between gap-2">
+          <label htmlFor={`scan-${rx.id}`}
+            className="px-4 py-2 rounded-lg border border-pine-300 bg-pine-50 text-pine-800 text-xs font-bold hover:bg-pine-100 transition active:scale-95 cursor-pointer flex items-center gap-1.5"
+            onClick={onClose}>
+            <IScan size={13} /> Replace scan
+          </label>
+          <button onClick={() => { dispatch({ type: "SCAN_REMOVE", id: rx.id }); onClose(); }}
+            className="px-4 py-2 rounded-lg border border-brick-300 bg-brick-100/50 text-brick-700 text-xs font-bold hover:bg-brick-100 transition active:scale-95 flex items-center gap-1.5">
+            <IX size={13} /> Remove
+          </button>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+/* New-prescription intake — the manual entry path before e-prescribing lands (§3) */
+function IntakeModal({ onClose }: { onClose: () => void }) {
+  const { state, dispatch } = usePos();
+  const [patient, setPatient] = useState("");
+  const [age, setAge] = useState("");
+  const [phone, setPhone] = useState("");
+  const [productId, setProductId] = useState(state.products.find((p) => p.rx)?.id ?? state.products[0]?.id ?? "");
+  const [qty, setQty] = useState("1");
+  const [prescriberId, setPrescriberId] = useState(state.prescribers[0]?.id ?? "");
+  const [daysSupply, setDaysSupply] = useState("30");
+  const [refills, setRefills] = useState("0");
+  const [note, setNote] = useState("");
+  const [plan, setPlan] = useState("");
+  const [memberId, setMemberId] = useState("");
+  const ok = patient.trim().length >= 2 && parseInt(age) > 0 && productId && prescriberId && parseInt(qty) > 0;
+  const expiryIso = new Date(Date.now() + 365 * 86_400_000).toISOString().slice(0, 10);
+  return (
+    <Modal onClose={onClose} width={520} labelledBy="intake-title">
+      <div className="px-5 py-4 border-b border-mist flex items-start justify-between">
+        <div>
+          <h2 id="intake-title" className="font-display font-bold text-ink flex items-center gap-2">
+            <IRx size={17} className="text-brick-700" /> New prescription intake
+          </h2>
+          <p className="text-xs text-inksoft mt-0.5">Drops a script into the queue for pharmacist review</p>
+        </div>
+        <button onClick={onClose} className="p-1.5 rounded-md hover:bg-mist/60 text-inksoft" aria-label="Close"><IX size={14} /></button>
+      </div>
+      <div className="p-5 space-y-3 max-h-[62vh] overflow-y-auto scroll-slim">
+        <div className="grid grid-cols-3 gap-2.5">
+          <div className="col-span-2">
+            <label className="text-[11px] font-semibold uppercase tracking-[0.14em] text-inksoft">Patient name *</label>
+            <input autoFocus value={patient} onChange={(e) => setPatient(e.target.value)} placeholder="Full name" className={xfIn} />
+          </div>
+          <div>
+            <label className="text-[11px] font-semibold uppercase tracking-[0.14em] text-inksoft">Age *</label>
+            <input value={age} onChange={(e) => setAge(e.target.value.replace(/\D/g, ""))} inputMode="numeric" placeholder="45" className={cx(xfIn, "num")} />
+          </div>
+        </div>
+        <div className="grid grid-cols-2 gap-2.5">
+          <div>
+            <label className="text-[11px] font-semibold uppercase tracking-[0.14em] text-inksoft">Patient phone</label>
+            <input value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="(555) 000-0000" className={cx(xfIn, "num")} />
+          </div>
+          <div>
+            <label className="text-[11px] font-semibold uppercase tracking-[0.14em] text-inksoft">Prescriber *</label>
+            <select value={prescriberId} onChange={(e) => setPrescriberId(e.target.value)} className={xfIn}>
+              {state.prescribers.filter((p) => p.active).map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+            </select>
+          </div>
+        </div>
+        <div className="grid grid-cols-3 gap-2.5">
+          <div className="col-span-2">
+            <label className="text-[11px] font-semibold uppercase tracking-[0.14em] text-inksoft">Drug (catalog) *</label>
+            <select value={productId} onChange={(e) => setProductId(e.target.value)} className={xfIn}>
+              {state.products.map((p) => <option key={p.id} value={p.id}>{p.name}{p.rx ? " ℞" : ""}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className="text-[11px] font-semibold uppercase tracking-[0.14em] text-inksoft">Qty *</label>
+            <input value={qty} onChange={(e) => setQty(e.target.value.replace(/\D/g, ""))} inputMode="numeric" className={cx(xfIn, "num")} />
+          </div>
+        </div>
+        <div className="grid grid-cols-3 gap-2.5">
+          <div>
+            <label className="text-[11px] font-semibold uppercase tracking-[0.14em] text-inksoft">Days supply</label>
+            <input value={daysSupply} onChange={(e) => setDaysSupply(e.target.value.replace(/\D/g, ""))} inputMode="numeric" className={cx(xfIn, "num")} />
+          </div>
+          <div>
+            <label className="text-[11px] font-semibold uppercase tracking-[0.14em] text-inksoft">Refills auth.</label>
+            <input value={refills} onChange={(e) => setRefills(e.target.value.replace(/\D/g, ""))} inputMode="numeric" className={cx(xfIn, "num")} />
+          </div>
+          <div>
+            <label className="text-[11px] font-semibold uppercase tracking-[0.14em] text-inksoft">Sig / note</label>
+            <input value={note} onChange={(e) => setNote(e.target.value)} placeholder="1 tab daily" className={xfIn} />
+          </div>
+        </div>
+        <div className="rounded-lg border border-mist bg-paper/60 p-3">
+          <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-inksoft mb-2">Insurance (optional)</p>
+          <div className="grid grid-cols-2 gap-2.5">
+            <input value={plan} onChange={(e) => setPlan(e.target.value)} placeholder="Plan · e.g. BlueCross PBM" className={xfIn} />
+            <input value={memberId} onChange={(e) => setMemberId(e.target.value)} placeholder="Member ID" className={cx(xfIn, "num")} />
+          </div>
+        </div>
+        <button disabled={!ok}
+          onClick={() => {
+            dispatch({
+              type: "NEW_PRESCRIPTION",
+              intake: {
+                patient, age: parseInt(age), phone, productId, qty: parseInt(qty),
+                prescriberId, daysSupply: parseInt(daysSupply) || undefined,
+                refillsAuthorized: parseInt(refills) || undefined, rxExpiry: expiryIso,
+                note, insurancePlan: plan, memberId,
+              },
+            });
+            onClose();
+          }}
+          className={cx("w-full py-2.5 rounded-lg font-display font-bold text-sm transition-all flex items-center justify-center gap-2",
+            ok ? "bg-pine-700 text-pine-50 hover:bg-pine-600 active:scale-[0.98] shadow-lift" : "bg-mist text-inksoft cursor-not-allowed")}>
+          <IPlus size={15} /> Drop off for review
+        </button>
+      </div>
+    </Modal>
+  );
+}

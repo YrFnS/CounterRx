@@ -67,6 +67,13 @@ type Action =
   | { type: "PA_RESUBMIT"; id: string }
   | { type: "CREATE_BACKORDER"; patient: string; phone?: string; productId: string; qty: number }
   | { type: "BACKORDER_STATUS"; id: string; to: BackOrderStatus }
+  | { type: "NEW_PRESCRIPTION"; intake: {
+      patient: string; age: number; phone?: string; productId: string; qty: number;
+      prescriberId: string; daysSupply?: number; refillsAuthorized?: number;
+      rxExpiry?: string; note?: string; insurancePlan?: string; memberId?: string;
+    } }
+  | { type: "SCAN_ATTACH"; id: string; dataUrl: string }
+  | { type: "SCAN_REMOVE"; id: string }
   | { type: "TRANSFER_RX_OUT"; prescriptionId: string; otherPharmacy: string; otherPhone: string; refillsRemaining: number; note?: string }
   | { type: "TRANSFER_RX_IN"; patient: string; phone?: string; productId: string; qty: number; otherPharmacy: string; otherPhone: string; prescriberId: string; refillsRemaining: number }
   | { type: "SET_QTY"; productId: string; qty: number }
@@ -497,6 +504,45 @@ function reducer(state: State, a: Action): State {
           { ...state, prescriptions: [rx, ...state.prescriptions], rxTransfers: [rec, ...state.rxTransfers] },
           "rx", `Rx transfer IN ${transferNo} — ${a.patient} · ${p.name} from ${a.otherPharmacy} → ${rxId}`),
         "success", `${rxId} created from ${a.otherPharmacy}'s transfer — queued for review`);
+    }
+
+    case "NEW_PRESCRIPTION": {
+      const { intake } = a;
+      const p = state.products.find((x) => x.id === intake.productId);
+      const prescriber = state.prescribers.find((x) => x.id === intake.prescriberId);
+      if (!p || !prescriber) return state;
+      const rxId = `RX-${2490 + state.prescriptions.length}`;
+      const rx: Prescription = {
+        id: rxId, patient: intake.patient.trim(), age: intake.age,
+        phone: intake.phone?.trim() || undefined,
+        productId: p.id, qty: intake.qty,
+        prescriberId: prescriber.id, status: "new", createdAt: Date.now(),
+        daysSupply: intake.daysSupply, refillsAuthorized: intake.refillsAuthorized,
+        refillsRemaining: intake.refillsAuthorized, rxExpiry: intake.rxExpiry,
+        note: intake.note?.trim() || undefined,
+        insurance: intake.insurancePlan?.trim()
+          ? { plan: intake.insurancePlan.trim(), memberId: intake.memberId?.trim() || "—", status: "pending" }
+          : undefined,
+      };
+      return withToast(
+        withAudit(
+          { ...state, prescriptions: [rx, ...state.prescriptions] },
+          "rx", `New Rx intake ${rxId} — ${rx.patient} · ${p.name} × ${rx.qty} · ${prescriber.name}${rx.insurance ? ` · ${rx.insurance.plan}` : ""}`),
+        "success", `${rxId} dropped off — queued for pharmacist review`);
+    }
+
+    case "SCAN_ATTACH": {
+      const rx = state.prescriptions.find((x) => x.id === a.id);
+      if (!rx) return state;
+      const prescriptions = state.prescriptions.map((x) => (x.id === a.id ? { ...x, scan: a.dataUrl, scanAt: Date.now() } : x));
+      return withToast(
+        withAudit({ ...state, prescriptions }, "rx", `Hard-copy scan attached to ${rx.id} — ${rx.patient}`),
+        "success", `Scan attached to ${rx.id} — stored with the prescription`);
+    }
+
+    case "SCAN_REMOVE": {
+      const prescriptions = state.prescriptions.map((x) => (x.id === a.id ? { ...x, scan: undefined, scanAt: undefined } : x));
+      return withToast({ ...state, prescriptions }, "info", "Scan removed");
     }
 
     case "SET_QTY": {

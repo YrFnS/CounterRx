@@ -153,6 +153,8 @@ export interface Prescription {
   rxExpiry?: string;          // ISO date the prescription itself expires
   phone?: string;             // patient contact for "ready for pickup" notifications
   notifiedAt?: number;        // waiting-bin pickup notification sent
+  scan?: string;              // hard-copy Rx scan — resized JPEG data-URL (§3; cloud storage once backend lands)
+  scanAt?: number;
   transferredOut?: { at: number; to: string }; // fill authority moved to another pharmacy (§3)
   insurance?: { plan: string; memberId: string; status: "pending" | "verified" | "rejected" };
   pa?: {                      // prior-authorization lifecycle with the payer (§3)
