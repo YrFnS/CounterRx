@@ -3,7 +3,7 @@ import { usePos, money, relTime, clockTime } from "../store";
 import { CATEGORIES, daysUntil, fefoBatches, stockOf, nearestExpiry, newBatchCode, FIELD_SUGGESTIONS, BRANCHES, can, ndcLookup } from "../data";
 import type { CategoryId, Product, Batch, TransferStatus, Transaction } from "../data";
 import { cx, Badge, Modal, StockBar, Empty, CustomFieldsBlock } from "../ui";
-import { ISearch, IPlus, IBox, IAlert, IDownload, IEdit, IX, ICheck, IReport, ICalendar, IClipboard, ITag, ISwap, IScan, IUsers } from "../icons";
+import { ISearch, IPlus, IBox, IAlert, IDownload, IEdit, IX, ICheck, IReport, ICalendar, IClipboard, ITag, ISwap, IScan, IUsers, IFlask } from "../icons";
 
 type Filter = "all" | "low" | "expiring" | "rx" | "controlled";
 
@@ -270,6 +270,7 @@ export default function Inventory() {
 
       {adjusting && <AdjustModal p={adjusting} onClose={() => setAdjusting(null)} />}
       {receiving && <ReceiveModal p={receiving} onClose={() => setReceiving(null)} />}
+      {compounding && <CompoundModal onClose={() => setCompounding(false)} />}
       {adding && <AddProductModal onClose={() => setAdding(false)} />}
       {report && <ReportModal mode={report} onClose={() => setReport(null)} />}
       {counting && <CountModal onClose={() => setCounting(false)} />}
@@ -597,6 +598,154 @@ function LotTraceModal({ p, batch, onClose }: { p: Product; batch: string; onClo
     </Modal>
   );
 }
+
+/* Compounding (§3) — build a preparation from on-hand ingredients, true cost + FEFO expiry */
+function CompoundModal({ onClose }: { onClose: () => void }) {
+  const { state, dispatch } = usePos();
+  const [name, setName] = useState("");
+  const [price, setPrice] = useState("");
+  const [fee, setFee] = useState("12");
+  const [ings, setIngs] = useState<{ productId: string; qty: number }[]>([]);
+  const [pick, setPick] = useState("");
+
+  const sources = state.products.filter((p) => !p.compound && stockOf(p) > 0);
+  const addIng = () => {
+    if (!pick || ings.some((i) => i.productId === pick)) return;
+    setIngs([...ings, { productId: pick, qty: 1 }]);
+    setPick("");
+  };
+
+  const rows = ings.map((i) => {
+    const p = state.products.find((x) => x.id === i.productId)!;
+    return { ...i, p, onHand: stockOf(p), exp: nearestExpiry(p), over: i.qty > stockOf(p) };
+  });
+  const ingCost = rows.reduce((s, r) => s + r.qty * r.p.cost, 0);
+  const feeNum = parseFloat(fee) || 0;
+  const totalCost = round2Local(ingCost + feeNum);
+  const priceNum = parseFloat(price) || 0;
+  const margin = round2Local(priceNum - totalCost);
+  const minExp = rows.reduce<string | null>((acc, r) => (r.exp && (!acc || r.exp < acc) ? r.exp : acc), null);
+  const valid = name.trim().length >= 3 && priceNum > 0 && rows.length > 0 && rows.every((r) => r.qty >= 1 && !r.over);
+
+  return (
+    <Modal onClose={onClose} width={620} labelledBy="cmp-title">
+      <div className="px-5 py-4 border-b border-mist flex items-start justify-between">
+        <div>
+          <h2 id="cmp-title" className="font-display font-bold text-ink flex items-center gap-2">
+            <IFlask size={17} className="text-pine-700" /> Compound a preparation
+          </h2>
+          <p className="text-xs text-inksoft mt-0.5">Pulls ingredients FEFO · lot expires with the soonest ingredient · pharmacist only</p>
+        </div>
+        <button onClick={onClose} className="p-1.5 rounded-md hover:bg-mist/60 text-inksoft" aria-label="Close"><IX size={14} /></button>
+      </div>
+
+      <div className="p-5 grid md:grid-cols-[1fr_220px] gap-5">
+        <div>
+          <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-inksoft mb-1.5">Ingredients</p>
+          <div className="space-y-1.5">
+            {rows.map((r) => (
+              <div key={r.productId} className={cx("flex items-center gap-2 rounded-lg border px-2.5 py-2 transition-colors",
+                r.over ? "border-brick-400 bg-brick-100/40" : "border-mist bg-card")}>
+                <div className="flex-1 min-w-0">
+                  <p className="text-xs font-semibold text-ink truncate">{r.p.name}</p>
+                  <p className="num text-[10px] text-inksoft">
+                    {r.onHand} on hand · cost {money(r.p.cost)}/unit{r.exp && <> · exp {r.exp}</>}
+                  </p>
+                </div>
+                <input value={r.qty}
+                  onChange={(e) => setIngs(ings.map((i) => i.productId === r.productId ? { ...i, qty: Math.max(1, parseInt(e.target.value.replace(/\D/g, "")) || 1) } : i))}
+                  inputMode="numeric" aria-label={`Quantity of ${r.p.name}`}
+                  className={cx("num w-14 px-1.5 py-1 rounded-md border text-center text-xs font-bold focus:outline-none transition",
+                    r.over ? "border-brick-500 bg-brick-100 text-brick-700" : "border-mist focus:border-pine-500")} />
+                <span className="num text-[11px] font-bold text-ink w-14 text-right">{money(r.qty * r.p.cost)}</span>
+                <button onClick={() => setIngs(ings.filter((i) => i.productId !== r.productId))}
+                  className="p-1 rounded text-inksoft hover:text-brick-700 hover:bg-brick-100 transition" aria-label={`Remove ${r.p.name}`}>
+                  <IX size={11} />
+                </button>
+              </div>
+            ))}
+            {rows.length === 0 && (
+              <p className="text-xs text-inksoft border border-dashed border-mist rounded-lg px-3 py-4 text-center">
+                No ingredients yet — add at least one below.
+              </p>
+            )}
+          </div>
+          <div className="mt-2 flex gap-1.5">
+            <select value={pick} onChange={(e) => setPick(e.target.value)}
+              className="flex-1 px-2.5 py-2 rounded-lg border border-mist bg-card text-xs focus:border-pine-500 focus:outline-none transition">
+              <option value="">Choose an ingredient…</option>
+              {sources.filter((s) => !ings.some((i) => i.productId === s.id)).map((s) => (
+                <option key={s.id} value={s.id}>{s.name} · {stockOf(s)} on hand</option>
+              ))}
+            </select>
+            <button onClick={addIng} disabled={!pick}
+              className={cx("px-3 py-2 rounded-lg text-xs font-bold transition active:scale-95",
+                pick ? "bg-pine-700 text-pine-50 hover:bg-pine-600" : "bg-mist text-inksoft/50 cursor-not-allowed")}>
+              <IPlus size={12} className="inline -mt-px" /> Add
+            </button>
+          </div>
+
+          <div className="mt-4 grid grid-cols-3 gap-2.5">
+            <div className="col-span-3">
+              <label className="text-[10px] font-bold uppercase tracking-[0.14em] text-inksoft">Preparation name *</label>
+              <input value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Magic Mouthwash 240ml"
+                className="w-full mt-1 px-2.5 py-2 rounded-lg border border-mist bg-card text-sm focus:border-pine-500 focus:outline-none transition" />
+            </div>
+            <div>
+              <label className="text-[10px] font-bold uppercase tracking-[0.14em] text-inksoft">Sale price *</label>
+              <input value={price} onChange={(e) => setPrice(e.target.value.replace(/[^\d.]/g, ""))} inputMode="decimal" placeholder="48.00"
+                className="num w-full mt-1 px-2.5 py-2 rounded-lg border border-mist bg-card text-sm focus:border-pine-500 focus:outline-none transition" />
+            </div>
+            <div>
+              <label className="text-[10px] font-bold uppercase tracking-[0.14em] text-inksoft">Compound fee</label>
+              <input value={fee} onChange={(e) => setFee(e.target.value.replace(/[^\d.]/g, ""))} inputMode="decimal"
+                className="num w-full mt-1 px-2.5 py-2 rounded-lg border border-mist bg-card text-sm focus:border-pine-500 focus:outline-none transition" />
+            </div>
+            <div>
+              <label className="text-[10px] font-bold uppercase tracking-[0.14em] text-inksoft">Batch expiry</label>
+              <div className="num mt-1 px-2.5 py-2 rounded-lg border border-mist bg-paper text-sm text-inksoft">
+                {minExp ?? "—"}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* live costing rail */}
+        <div className="rounded-xl border border-mist bg-paper p-4 h-fit">
+          <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-inksoft">Batch costing</p>
+          <div className="mt-2.5 space-y-1.5 text-xs">
+            <div className="flex justify-between text-inksoft"><span>Ingredients</span><span className="num font-semibold text-ink">{money(round2Local(ingCost))}</span></div>
+            <div className="flex justify-between text-inksoft"><span>Compound fee</span><span className="num font-semibold text-ink">{money(feeNum)}</span></div>
+            <div className="flex justify-between border-t border-mist pt-1.5"><span className="font-bold text-ink">Cost / unit</span><span className="num font-bold text-ink">{money(totalCost)}</span></div>
+            <div className="flex justify-between"><span className="font-bold text-ink">Sale price</span><span className="num font-bold text-ink">{money(priceNum)}</span></div>
+            <div className={cx("flex justify-between rounded-md px-2 py-1.5",
+              margin >= 0 ? "bg-pine-100 text-pine-800" : "bg-brick-100 text-brick-700")}>
+              <span className="font-bold">Margin</span>
+              <span className="num font-bold">{money(margin)}{priceNum > 0 && totalCost > 0 && ` · ${Math.round((margin / priceNum) * 100)}%`}</span>
+            </div>
+          </div>
+          <p className="text-[9px] text-inksoft mt-2.5 leading-snug">
+            1 unit enters stock under <span className="font-bold">Compounds</span> as an ℞ SKU. FEFO lots are pulled now; the batch expires with the soonest ingredient.
+          </p>
+          <button disabled={!valid}
+            onClick={() => {
+              dispatch({ type: "COMPOUND", name, ingredients: ings, fee: feeNum, price: priceNum });
+              onClose();
+            }}
+            className={cx("mt-3 w-full py-2.5 rounded-lg font-display font-bold text-sm transition-all flex items-center justify-center gap-2",
+              valid ? "bg-pine-700 text-pine-50 hover:bg-pine-600 active:scale-[0.98] shadow-lift" : "bg-mist text-inksoft/50 cursor-not-allowed")}>
+            <IFlask size={14} /> Compound 1 unit
+          </button>
+          {!valid && rows.some((r) => r.over) && (
+            <p className="text-[10px] font-bold text-brick-700 mt-2 text-center">An ingredient exceeds on-hand stock</p>
+          )}
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+const round2Local = (n: number) => Math.round(n * 100) / 100;
 
 function ReceiveModal({ p, onClose }: { p: Product; onClose: () => void }) {
   const { dispatch } = usePos();
