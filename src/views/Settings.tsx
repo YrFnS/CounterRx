@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { useTranslation } from "react-i18next";
 import type { ReactNode } from "react";
 import { usePos, listSnapshots, money } from "../store";
 import i18n from "../i18n";
@@ -11,21 +12,22 @@ import {
 
 type Tab = "profile" | "receipt" | "loyalty" | "team" | "clock" | "data" | "language";
 
-const TABS: { id: Tab; label: string; icon: ReactNode }[] = [
-  { id: "profile", label: "Store profile", icon: <IGear size={14} /> },
-  { id: "receipt", label: "Receipt", icon: <IPrint size={14} /> },
-  { id: "loyalty", label: "Loyalty", icon: <IStar size={14} /> },
-  { id: "team", label: "Team", icon: <IUsers size={14} /> },
-  { id: "clock", label: "Time clock", icon: <IClockIn size={14} /> },
-  { id: "data", label: "Data & backups", icon: <IDownload size={14} /> },
-  { id: "language", label: "Language", icon: <IX size={14} /> },
-];
-
 export default function Settings() {
+  const { t } = useTranslation();
   const { state } = usePos();
   const [tab, setTab] = useState<Tab>("profile");
   const admin = can(state.user?.role, "edit_settings");
   const teamAdmin = can(state.user?.role, "manage_staff");
+
+  const TABS: { id: Tab; label: string; icon: ReactNode }[] = [
+    { id: "profile", label: t("settings.storeProfile"), icon: <IGear size={14} /> },
+    { id: "receipt", label: t("settings.receipt"), icon: <IPrint size={14} /> },
+    { id: "loyalty", label: t("settings.loyalty"), icon: <IStar size={14} /> },
+    { id: "team", label: t("settings.team"), icon: <IUsers size={14} /> },
+    { id: "clock", label: t("settings.timeClock"), icon: <IClockIn size={14} /> },
+    { id: "data", label: t("settings.dataBackups"), icon: <IDownload size={14} /> },
+    { id: "language", label: t("settings.language"), icon: <IX size={14} /> },
+  ];
 
   return (
     <div className="h-full overflow-y-auto scroll-slim px-3 sm:px-6 py-4 sm:py-5">
@@ -65,10 +67,11 @@ export default function Settings() {
 
 /* language picker (F4): switches i18n locale; the detector caches to localStorage */
 function LanguageTab() {
+  const { t } = useTranslation();
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between gap-3 rounded-lg border border-mist bg-card px-3 py-2.5">
-        <span className="text-xs font-bold text-ink">Interface language</span>
+        <span className="text-xs font-bold text-ink">{t("common.interfaceLanguage")}</span>
         <div className="flex gap-1.5">
           {(["en", "ar"] as const).map((lng) => (
             <button key={lng} onClick={() => void i18n.changeLanguage(lng)}
@@ -82,7 +85,7 @@ function LanguageTab() {
         </div>
       </div>
       <p className="text-[10px] text-inksoft px-1">
-        Arabic flips the layout to right-to-left automatically.
+        {t("common.rtlNote")}
       </p>
     </div>
   );

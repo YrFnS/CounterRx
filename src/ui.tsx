@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 import type { ReactNode } from "react";
 import { usePos } from "./store";
 import type { Toast } from "./store";
@@ -53,36 +54,37 @@ export function StockBar({ stock, reorder }: { stock: number; reorder: number })
         <div className="h-full rounded-full transition-all duration-500"
           style={{ width: `${Math.max(4, pct)}%`, background: tone }} />
       </div>
-      <span className="num text-xs text-inksoft w-8 text-right">{stock}</span>
+      <span className="num text-xs text-inksoft w-8 text-end">{stock}</span>
     </div>
   );
 }
 
-function ToastItem({ t }: { t: Toast }) {
+function ToastItem({ t: toast }: { t: Toast }) {
+  const { t } = useTranslation();
   const { dispatch } = usePos();
   useEffect(() => {
-    const id = setTimeout(() => dispatch({ type: "DISMISS_TOAST", id: t.id }), 3400);
+    const id = setTimeout(() => dispatch({ type: "DISMISS_TOAST", id: toast.id }), 3400);
     return () => clearTimeout(id);
-  }, [t.id, dispatch]);
+  }, [toast.id, dispatch]);
   const icon =
-    t.kind === "success" ? <ICheck size={14} /> :
-    t.kind === "info" ? <IInfo size={14} /> :
-    t.kind === "warn" ? <IAlert size={14} /> : <IAlert size={14} />;
+    toast.kind === "success" ? <ICheck size={14} /> :
+    toast.kind === "info" ? <IInfo size={14} /> :
+    toast.kind === "warn" ? <IAlert size={14} /> : <IAlert size={14} />;
   const tone =
-    t.kind === "success" ? "bg-pine-800 text-pine-50 border-pine-600" :
-    t.kind === "info" ? "bg-ink text-paper border-ink" :
-    t.kind === "warn" ? "bg-honey-500 text-pine-950 border-honey-700/40" :
+    toast.kind === "success" ? "bg-pine-800 text-pine-50 border-pine-600" :
+    toast.kind === "info" ? "bg-ink text-paper border-ink" :
+    toast.kind === "warn" ? "bg-honey-500 text-pine-950 border-honey-700/40" :
     "bg-brick-500 text-brick-100 border-brick-700/40";
   const iconTone =
-    t.kind === "success" ? "bg-pine-600 text-pine-50" :
-    t.kind === "info" ? "bg-inksoft text-paper" :
-    t.kind === "warn" ? "bg-pine-950/15 text-pine-950" : "bg-brick-100/20 text-brick-100";
+    toast.kind === "success" ? "bg-pine-600 text-pine-50" :
+    toast.kind === "info" ? "bg-inksoft text-paper" :
+    toast.kind === "warn" ? "bg-pine-950/15 text-pine-950" : "bg-brick-100/20 text-brick-100";
   return (
-    <div className={cx("anim-toast pointer-events-auto flex items-center gap-2.5 pl-2.5 pr-1.5 py-2 rounded-lg border shadow-lift text-[13px] font-medium max-w-[340px]", tone)}>
+    <div className={cx("anim-toast pointer-events-auto flex items-center gap-2.5 ps-2.5 pe-1.5 py-2 rounded-lg border shadow-lift text-[13px] font-medium max-w-[340px]", tone)}>
       <span className={cx("shrink-0 grid place-items-center w-5 h-5 rounded-full", iconTone)}>{icon}</span>
-      <span className="flex-1 leading-snug">{t.msg}</span>
-      <button onClick={() => dispatch({ type: "DISMISS_TOAST", id: t.id })}
-        className="shrink-0 p-1 rounded-md opacity-60 hover:opacity-100 hover:bg-white/10 transition" aria-label="Dismiss">
+      <span className="flex-1 leading-snug">{toast.msg}</span>
+      <button onClick={() => dispatch({ type: "DISMISS_TOAST", id: toast.id })}
+        className="shrink-0 p-1 rounded-md opacity-60 hover:opacity-100 hover:bg-white/10 transition" aria-label={t("common.dismiss")}>
         <IX size={13} />
       </button>
     </div>
@@ -146,7 +148,7 @@ export function CustomFieldsBlock({ fields, suggestions, onSave, onRemove, listI
   return (
     <div className="flex flex-wrap items-center gap-1">
       {fields.map((f) => (
-        <span key={f.key} className="inline-flex items-center gap-1 pl-1.5 pr-1 py-0.5 rounded bg-mist/50 border border-mist text-[10px] text-ink">
+        <span key={f.key} className="inline-flex items-center gap-1 ps-1.5 pe-1 py-0.5 rounded bg-mist/50 border border-mist text-[10px] text-ink">
           <span className="font-bold text-inksoft">{f.key}</span>
           <span className="font-semibold">{f.value}</span>
           <button onClick={() => onRemove(f.key)} className="p-0.5 rounded text-inksoft/60 hover:text-brick-700 hover:bg-brick-100 transition" aria-label={`Remove ${f.key}`}>

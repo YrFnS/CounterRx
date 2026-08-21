@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { useTranslation } from "react-i18next";
 import type { ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { usePos, money, cartTotals } from "./store";
@@ -10,6 +11,7 @@ import { ICash, ICard, IShield, IX, IPrint, ICheck, ISplit, IUsers, IStar, IAler
 const round2 = (n: number) => Math.round(n * 100) / 100;
 
 export function PaymentModal() {
+  const { t: tr } = useTranslation();
   const { state, dispatch, product } = usePos();
   const [leg1, setLeg1] = useState<PayMethod>("cash");
   const [leg2, setLeg2] = useState<PayMethod>("card");
@@ -22,7 +24,7 @@ export function PaymentModal() {
   const [overrideAck, setOverrideAck] = useState(false);
   const [overrideReason, setOverrideReason] = useState("");
   const [rPurchaser, setRPurchaser] = useState("");
-  const [rIdType, setRIdType] = useState("Driver license");
+  const [rIdType, setRIdType] = useState(tr("modal.driverLicense"));
   const [rIdLast4, setRIdLast4] = useState("");
 
   const customer = state.customers.find((c) => c.id === state.saleCustomerId) ?? null;
@@ -64,9 +66,9 @@ export function PaymentModal() {
   const hasRx = state.cart.some((c) => product(c.productId)?.rx);
 
   const methods: { id: PayMethod; label: string; icon: ReactNode; hint: string }[] = [
-    { id: "cash", label: "Cash", icon: <ICash size={17} />, hint: "Drawer opens" },
-    { id: "card", label: "Card", icon: <ICard size={17} />, hint: "Terminal #2" },
-    { id: "insurance", label: "Insurance", icon: <IShield size={17} />, hint: "Claim auto-filed" },
+    { id: "cash", label: "Cash", icon: <ICash size={17} />, hint: tr("modal.drawerOpens") },
+    { id: "card", label: "Card", icon: <ICard size={17} />, hint: tr("modal.terminal2") },
+    { id: "insurance", label: "Insurance", icon: <IShield size={17} />, hint: tr("modal.claimAutoFiled") },
   ];
   const labelOf = (m: PayMethod) => methods.find((x) => x.id === m)?.label ?? m;
 
@@ -113,7 +115,7 @@ export function PaymentModal() {
           <p className={cx("flex items-center gap-1.5 text-[12px] font-bold",
             overrideAck ? "text-pine-800" : "text-brick-700")}>
             <IAlert size={14} />
-            {overrideAck ? "Interaction override documented" : `${major.length} major interaction${major.length === 1 ? "" : "s"} — checkout blocked`}
+            {overrideAck ? tr("modal.interactionOverride") : `${major.length} major interaction${major.length === 1 ? "" : "s"} — checkout blocked`}
           </p>
           <ul className="mt-1.5 space-y-1">
             {major.map((i) => (
@@ -126,7 +128,7 @@ export function PaymentModal() {
           {!overrideAck && (isPharmacist ? (
             <div className="mt-2.5 flex gap-2 items-stretch">
               <input value={overrideReason} onChange={(e) => setOverrideReason(e.target.value)}
-                placeholder="Clinical reason for dispensing anyway (required for audit)…"
+                placeholder={tr("modal.clinicalReason")}
                 className="flex-1 px-3 py-1.5 rounded-md border border-brick-300 bg-card text-xs focus:border-brick-500 focus:outline-none" />
               <button onClick={() => setOverrideAck(true)}
                 className="px-3.5 py-1.5 rounded-md bg-brick-700 text-brick-100 text-xs font-bold hover:bg-brick-500 transition active:scale-95 whitespace-nowrap">
@@ -161,7 +163,7 @@ export function PaymentModal() {
           <p className="num text-[40px] font-semibold text-ink leading-tight">{money(t.total)}</p>
 
           <div className="mt-4 space-y-1.5 text-sm">
-            <Row k="Subtotal" v={money(t.subtotal)} />
+            <Row k={tr("modal.subtotal")} v={money(t.subtotal)} />
             {t.bulkSavings > 0 && <Row k={<span className="text-honey-700 font-semibold">Bulk-tier savings</span>} v={<span className="text-honey-700">−{money(t.bulkSavings)}</span>} />}
             <div className="flex items-center justify-between py-0.5">
               <span className="text-inksoft">Discount</span>
@@ -173,7 +175,7 @@ export function PaymentModal() {
                     {d}%
                   </button>
                 ))}
-                <span className="num text-brick-700 font-semibold ml-1">−{money(t.discount)}</span>
+                <span className="num text-brick-700 font-semibold ms-1">−{money(t.discount)}</span>
               </span>
             </div>
             {t.loyaltyDeduct > 0 && <Row k={<span className="text-pine-700 font-semibold">Points redeemed · {state.redeemPoints} pts</span>} v={<span className="text-pine-700">−{money(t.loyaltyDeduct)}</span>} />}
@@ -255,24 +257,24 @@ export function PaymentModal() {
                 {restrictedLines.map((r) => `${r.qty}× ${r.p.name}`).join(" · ")} — limit {restrictedLines[0].p.restricted?.limitPerSale}/sale
               </p>
               <div className="mt-2 grid grid-cols-2 gap-2">
-                <input value={rPurchaser} onChange={(e) => setRPurchaser(e.target.value)} placeholder="Purchaser full name *"
+                <input value={rPurchaser} onChange={(e) => setRPurchaser(e.target.value)} placeholder={tr("modal.purchaserName")}
                   className="col-span-2 px-2.5 py-1.5 rounded-md border border-honey-300 bg-card text-xs focus:border-honey-500 focus:outline-none transition" />
                 <select value={rIdType} onChange={(e) => setRIdType(e.target.value)}
                   className="px-2 py-1.5 rounded-md border border-honey-300 bg-card text-xs focus:border-honey-500 focus:outline-none transition">
-                  {["Driver license", "State ID", "Passport"].map((o) => <option key={o}>{o}</option>)}
+                  {[tr("modal.driverLicense"), tr("modal.stateId"), "Passport"].map((o) => <option key={o}>{o}</option>)}
                 </select>
                 <input value={rIdLast4} onChange={(e) => setRIdLast4(e.target.value.replace(/\D/g, "").slice(0, 4))}
-                  placeholder="ID last 4 *" inputMode="numeric"
+                  placeholder={tr("modal.idLast4")} inputMode="numeric"
                   className="num px-2.5 py-1.5 rounded-md border border-honey-300 bg-card text-xs tracking-[0.2em] focus:border-honey-500 focus:outline-none transition" />
               </div>
             </div>
           )}
 
           {t.lines.length > 0 && (
-            <div className="mt-4 max-h-28 overflow-y-auto scroll-slim text-xs space-y-1 pr-1">
+            <div className="mt-4 max-h-28 overflow-y-auto scroll-slim text-xs space-y-1 pe-1">
               {t.lines.map((l) => (
                 <div key={l.name} className="flex justify-between text-inksoft">
-                  <span className="truncate pr-2">{l.qty} × {l.name}</span>
+                  <span className="truncate pe-2">{l.qty} × {l.name}</span>
                   <span className="num shrink-0">{money(l.price * l.qty)}</span>
                 </div>
               ))}
@@ -284,14 +286,14 @@ export function PaymentModal() {
         <div className="p-5 bg-pine-50/50">
           <div className="flex items-center justify-between mb-2">
             <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-inksoft">
-              {split ? "Payment 1 of 2" : "Payment method"}
+              {split ? tr("modal.payment1of2") : tr("modal.paymentMethod")}
             </p>
             <button onClick={() => setSplit(!split)}
               className={cx("flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-[11px] font-bold transition-all duration-200",
                 split
                   ? "bg-honey-500 border-honey-500 text-pine-950 shadow-lift"
                   : "bg-card border-mist text-inksoft hover:border-honey-500 hover:text-honey-700")}>
-              <ISplit size={12} /> {split ? "Split on" : "Split tender"}
+              <ISplit size={12} /> {split ? tr("modal.splitOn") : tr("modal.splitTender")}
             </button>
           </div>
           <div className="grid grid-cols-3 gap-2">
@@ -328,7 +330,7 @@ export function PaymentModal() {
                 </div>
               </div>
               <div>
-                <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-inksoft mb-1.5">Payment 2 · remainder</p>
+                <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-inksoft mb-1.5">{tr("modal.payment2Remainder")}</p>
                 <div className="grid grid-cols-3 gap-2">
                   {methods.map((m) => (
                     <button key={m.id} onClick={() => setLeg2(m.id)}
@@ -349,7 +351,7 @@ export function PaymentModal() {
                     <span className="num">= {money(t.total)}</span>
                   </>
                 ) : (
-                  <span>{l1 <= 0 ? "Enter the first payment amount" : "Adjust — legs must cover the total exactly"}</span>
+                  <span>{l1 <= 0 ? tr("modal.enterFirstAmount") : tr("modal.adjustLegs")}</span>
                 )}
               </div>
             </div>
@@ -357,13 +359,13 @@ export function PaymentModal() {
 
           {!split && leg1 === "cash" && (
             <div className="mt-4">
-              <label className="text-[11px] font-semibold uppercase tracking-[0.14em] text-inksoft">Cash tendered</label>
+              <label className="text-[11px] font-semibold uppercase tracking-[0.14em] text-inksoft">{tr("modal.cashTendered")}</label>
               <input autoFocus value={tendered} onChange={(e) => setTendered(e.target.value.replace(/[^\d.]/g, ""))}
                 onKeyDown={(e) => e.key === "Enter" && confirm()}
                 inputMode="decimal" placeholder="0.00"
                 className="num w-full mt-1.5 px-3 py-2.5 rounded-lg border-2 border-mist bg-card text-lg font-semibold text-ink focus:border-pine-500 focus:outline-none transition" />
               <div className="flex gap-1.5 mt-2">
-                <Quick label="Exact" onClick={() => setTendered(t.total.toFixed(2))} />
+                <Quick label={tr("modal.exact")} onClick={() => setTendered(t.total.toFixed(2))} />
                 {[20, 50, 100].map((v) => (
                   <Quick key={v} label={`$${v}`} onClick={() => setTendered(String(v))} />
                 ))}
@@ -456,7 +458,7 @@ function ReceiptBody({ tx }: { tx: Transaction }) {
             <span className="truncate">{l.form}{l.override && <span className="text-pine-700 font-bold"> · price override</span>}</span>
             <span>
               {l.qty} × {money(l.price)}
-              {l.override && l.listPrice !== undefined && <span className="line-through opacity-60 ml-1">{money(l.listPrice)}</span>}
+              {l.override && l.listPrice !== undefined && <span className="line-through opacity-60 ms-1">{money(l.listPrice)}</span>}
             </span>
           </div>
           {l.note && <p className="text-[10px] text-inksoft italic">↳ {l.note}</p>}
@@ -474,7 +476,7 @@ function ReceiptBody({ tx }: { tx: Transaction }) {
       {tx.discount > 0 && <div className="flex justify-between"><span>Discount</span><span>−{money(tx.discount)}</span></div>}
       {tx.loyaltyDeduct && tx.loyaltyDeduct > 0 && <div className="flex justify-between"><span>Points · {tx.pointsRedeemed} pts</span><span>−{money(tx.loyaltyDeduct)}</span></div>}
       <div className="flex justify-between">
-        <span>Tax 8%{tx.taxExempt && <span className="ml-1 px-1 py-px bg-ink text-paper text-[8px] font-bold tracking-widest">EXEMPT</span>}</span>
+        <span>Tax 8%{tx.taxExempt && <span className="ms-1 px-1 py-px bg-ink text-paper text-[8px] font-bold tracking-widest">EXEMPT</span>}</span>
         <span className={tx.taxExempt ? "text-inksoft" : ""}>{money(tx.tax)}</span>
       </div>
       <div className="flex justify-between font-bold text-[14px] mt-1"><span>TOTAL</span><span>{money(tx.total)}</span></div>
@@ -605,7 +607,7 @@ export function DataExchangeModal({ onClose }: { onClose: () => void }) {
             <div key={c.name} className="flex items-center gap-3 rounded-lg border border-mist bg-card px-3.5 py-2.5">
               <div className="min-w-0 flex-1">
                 <p className="text-xs font-bold text-ink num">/{c.name}
-                  <span className="ml-2 px-1.5 py-0.5 rounded bg-mist/60 text-[10px] font-bold text-inksoft">{c.count} records</span>
+                  <span className="ms-2 px-1.5 py-0.5 rounded bg-mist/60 text-[10px] font-bold text-inksoft">{c.count} records</span>
                 </p>
                 <p className="text-[10px] text-inksoft truncate">{c.desc}</p>
               </div>

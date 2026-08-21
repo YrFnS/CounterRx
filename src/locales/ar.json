@@ -281,7 +281,7 @@
     "organization": "المنظمة",
     "branch": "الفرع",
     "currency": "العملة",
-    "language": "اللغة",
+    "language": "Language",
     "timezone": "المنطقة الزمنية",
     "taxRate": "معدل الضريبة",
     "receiptTemplate": "قالب الإيصال",
@@ -315,7 +315,13 @@
     "integrations": "التكاملات",
     "hipaaCompliance": "امتثال HIPAA",
     "deaNumbers": "أرقام DEA",
-    "npiNumbers": "أرقام NPI"
+    "npiNumbers": "أرقام NPI",
+    "storeProfile": "Store profile",
+    "receipt": "Receipt",
+    "loyalty": "Loyalty",
+    "team": "Team",
+    "timeClock": "Time clock",
+    "dataBackups": "Data & backups"
   },
   "shift": {
     "title": "إدارة الورديات",
@@ -444,7 +450,8 @@
     "accessDenied": "Access denied",
     "noPermission": "Your role does not have permission to view this section.",
     "interfaceLanguage": "Interface language",
-    "rtlNote": "Arabic flips the layout to right-to-left automatically."
+    "rtlNote": "Arabic flips the layout to right-to-left automatically.",
+    "dismiss": "Dismiss"
   },
   "notifications": {
     "title": "الإشعارات",
@@ -484,6 +491,25 @@
     "confirmDelete": "هل أنت متأكد أنك تريد حذف هذا العنصر؟",
     "unsavedChanges": "لديك تغييرات غير محفوظة. هل تريد تجاهلها؟",
     "sessionExpired": "انتهت جلستك. يرجى تسجيل الدخول مرة أخرى.",
-    "networkOffline": "أنت غير متصل. سيتم مزامنة التغييرات عند استعادة الاتصال."
+    "networkOffline": "أنت غير متصل. سيتم مزامنة التغييرات عند استعادة الاتصال.",
+    "driverLicense": "Driver license",
+    "drawerOpens": "Drawer opens",
+    "terminal2": "Terminal #2",
+    "claimAutoFiled": "Claim auto-filed",
+    "interactionOverride": "Interaction override documented",
+    "clinicalReason": "Clinical reason for dispensing anyway (required for audit)…",
+    "purchaserName": "Purchaser full name *",
+    "stateId": "State ID",
+    "idLast4": "ID last 4 *",
+    "payment1of2": "Payment 1 of 2",
+    "paymentMethod": "Payment method",
+    "splitOn": "Split on",
+    "splitTender": "Split tender",
+    "enterFirstAmount": "Enter the first payment amount",
+    "adjustLegs": "Adjust — legs must cover the total exactly",
+    "cashTendered": "Cash tendered",
+    "payment2Remainder": "Payment 2 · remainder",
+    "subtotal": "Subtotal",
+    "exact": "Exact"
   }
 }

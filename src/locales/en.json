@@ -315,7 +315,13 @@
     "integrations": "Integrations",
     "hipaaCompliance": "HIPAA Compliance",
     "deaNumbers": "DEA Numbers",
-    "npiNumbers": "NPI Numbers"
+    "npiNumbers": "NPI Numbers",
+    "storeProfile": "Store profile",
+    "receipt": "Receipt",
+    "loyalty": "Loyalty",
+    "team": "Team",
+    "timeClock": "Time clock",
+    "dataBackups": "Data & backups"
   },
   "shift": {
     "title": "Shift Management",
@@ -444,7 +450,8 @@
     "accessDenied": "Access denied",
     "noPermission": "Your role does not have permission to view this section.",
     "interfaceLanguage": "Interface language",
-    "rtlNote": "Arabic flips the layout to right-to-left automatically."
+    "rtlNote": "Arabic flips the layout to right-to-left automatically.",
+    "dismiss": "Dismiss"
   },
   "notifications": {
     "title": "Notifications",
@@ -484,6 +491,25 @@
     "confirmDelete": "Are you sure you want to delete this item?",
     "unsavedChanges": "You have unsaved changes. Discard them?",
     "sessionExpired": "Your session has expired. Please log in again.",
-    "networkOffline": "You are offline. Changes will sync when connection is restored."
+    "networkOffline": "You are offline. Changes will sync when connection is restored.",
+    "driverLicense": "Driver license",
+    "drawerOpens": "Drawer opens",
+    "terminal2": "Terminal #2",
+    "claimAutoFiled": "Claim auto-filed",
+    "interactionOverride": "Interaction override documented",
+    "clinicalReason": "Clinical reason for dispensing anyway (required for audit)…",
+    "purchaserName": "Purchaser full name *",
+    "stateId": "State ID",
+    "idLast4": "ID last 4 *",
+    "payment1of2": "Payment 1 of 2",
+    "paymentMethod": "Payment method",
+    "splitOn": "Split on",
+    "splitTender": "Split tender",
+    "enterFirstAmount": "Enter the first payment amount",
+    "adjustLegs": "Adjust — legs must cover the total exactly",
+    "cashTendered": "Cash tendered",
+    "payment2Remainder": "Payment 2 · remainder",
+    "subtotal": "Subtotal",
+    "exact": "Exact"
   }
 }
