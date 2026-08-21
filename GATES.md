@@ -20,14 +20,14 @@ Gates marked CHECK are runnable; EXPECT gives the pass condition. Evidence line 
 - [x] Every remote domain table has seeded rows.
 - CHECK: `supabase db reset --local` then `psql`/`npx supabase` query counts
 - EXPECT: each domain table row count ≥ 1
-- EVIDENCE: Remote-only seed verification passed. `node scripts/db.mjs supabase/seed.sql` returned `ROWCOUNT 0` on rerun; remote counts include products 40, customers 9, transactions 10, staff 5, profiles 5, and auth.users 5.
+- EVIDENCE: Remote-only seed verification passed. `node scripts/db.mjs supabase/seed.sql` returned `ROWCOUNT 0` on rerun; remote counts include products 40, customers 9, transactions 10, staff 6, profiles 6, and auth.users 6.
 
 
 ## G4. Auth: every supported role can sign in
-- [ ] All supported role categories have seeded users and can sign in.
+- [x] All supported role categories have seeded users and can sign in.
 - CHECK: count auth users grouped by staff_role claim/profiles.role
 - EXPECT: super_admin, pharmacy_admin, manager, pharmacist, and cashier are all present and reachable
-- EVIDENCE: Five seeded Auth users sign in successfully, but the current roster contains super_admin, pharmacy_admin, pharmacist, and two cashier accounts; no separate manager account is seeded.
+- EVIDENCE: Six seeded Auth users now cover every supported role, including S-006 `K. Asante` (manager). Supabase Auth password grant for `s006@counterrx.local` returned HTTP 200 with an `access_token`. Staff/profile/Auth rosters are aligned: S-001 pharmacy_admin, S-002 pharmacist, S-003 cashier, S-004 cashier, S-005 super_admin, S-006 manager.
 
 
 ## G5. RLS active on all data tables

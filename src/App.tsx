@@ -235,7 +235,7 @@ function LockScreen() {
         </div>
 
         <p className="text-center text-[10px] text-inksoft mt-4 num">
-          Demo PINs — cashier <span className="font-bold text-ink">1111</span> · pharmacist <span className="font-bold text-ink">2222</span> · manager <span className="font-bold text-ink">3333</span>
+          Demo PINs — cashier <span className="font-bold text-ink">1111</span> · pharmacist <span className="font-bold text-ink">2222</span> · manager <span className="font-bold text-ink">6666</span>
         </p>
       </div>
     </div>
