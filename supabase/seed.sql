@@ -39,12 +39,6 @@ values
   ('00000000-0000-0000-0000-000000000004','00000000-0000-0000-0000-000000000004','{"sub":"00000000-0000-0000-0000-000000000004","email":"s004@counterrx.local","email_verified":true,"phone_verified":false}','email',now(),now(),now(),'00000000-0000-0000-0000-000000000004'),
   ('00000000-0000-0000-0000-000000000005','00000000-0000-0000-0000-000000000005','{"sub":"00000000-0000-0000-0000-000000000005","email":"s005@counterrx.local","email_verified":true,"phone_verified":false}','email',now(),now(),now(),'00000000-0000-0000-0000-000000000005') on conflict (id) do nothing;
 
-insert into public.profiles (id, staff_id, role) values
-  ('00000000-0000-0000-0000-000000000001','S-001','cashier'),
-  ('00000000-0000-0000-0000-000000000002','S-002','pharmacist'),
-  ('00000000-0000-0000-0000-000000000003','S-003','manager'),
-  ('00000000-0000-0000-0000-000000000004','S-004','pharmacy_admin'),
-  ('00000000-0000-0000-0000-000000000005','S-005','super_admin') on conflict (id) do nothing;
 -- GoTrue v2 returns `500 Database error querying schema` when these string
 -- columns are NULL instead of '' — normalize for freshly-seeded AND existing rows.
 update auth.users set
