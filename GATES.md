@@ -76,5 +76,8 @@ Gates marked CHECK are runnable; EXPECT gives the pass condition. Evidence line 
 - [x] route-guards — [`gates/route-guards.md`](gates/route-guards.md) (F7; browser item pending under G9)
 - [x] offline-outbox — [`gates/offline-outbox.md`](gates/offline-outbox.md) (F11)
 - [x] till-ops — [`gates/till-ops.md`](gates/till-ops.md) (Phase A roadmap)
+- [x] hardware — [`gates/hardware.md`](gates/hardware.md) (Phase E roadmap)
+- [x] clinical — [`gates/clinical.md`](gates/clinical.md) (Phase C roadmap)
+- [x] ai-openrouter — [`gates/ai-openrouter.md`](gates/ai-openrouter.md) (Phase G backend)
 
 ABANDON: (none)
