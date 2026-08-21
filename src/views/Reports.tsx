@@ -116,7 +116,7 @@ function MarginTab({ ledger }: { ledger: { sales: Transaction[]; refunds: Transa
   const [groupBy, setGroupBy] = useState<"product" | "category">("product");
 
   const rows = useMemo(() => {
-    const agg = new Map<string, { label: string; units: number; revenue: number; cogs: number }>();
+    const agg = new Map<string, { key: string; label: string; units: number; revenue: number; cogs: number }>();
     const keyOf = (l: TxLine) => groupBy === "product"
       ? l.productId
       : state.products.find((p) => p.id === l.productId)?.category ?? "other";
@@ -125,7 +125,7 @@ function MarginTab({ ledger }: { ledger: { sales: Transaction[]; refunds: Transa
       : CATEGORIES.find((c) => c.id === k)?.label ?? k;
     const add = (l: TxLine, sign: 1 | -1) => {
       const k = keyOf(l);
-      const cur = agg.get(k) ?? { label: labelOf(k), units: 0, revenue: 0, cogs: 0 };
+      const cur = agg.get(k) ?? { key: k, label: labelOf(k), units: 0, revenue: 0, cogs: 0 };
       cur.units += sign * l.qty;
       cur.revenue += sign * l.qty * l.price;
       cur.cogs += sign * l.qty * lineCost(l, state.products);
@@ -170,7 +170,7 @@ function MarginTab({ ledger }: { ledger: { sales: Transaction[]; refunds: Transa
           </thead>
           <tbody>
             {rows.map((r, i) => (
-              <tr key={r.label} className={cx("border-t border-mist/70 transition-colors hover:bg-pine-50/60", i % 2 === 1 && "bg-paper/50")}>
+              <tr key={r.key} className={cx("border-t border-mist/70 transition-colors hover:bg-pine-50/60", i % 2 === 1 && "bg-paper/50")}>
                 <td className="px-4 py-2 font-semibold text-ink">{r.label}</td>
                 <td className="px-3 py-2 text-center num text-inksoft">{r.units}</td>
                 <td className="px-3 py-2 text-end num text-ink">{money(r.revenue)}</td>
