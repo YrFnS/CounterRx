@@ -537,6 +537,7 @@ export function makeStaff(now: number): Staff[] {
     mk("S-002", "R. Mensah, RPh", "pharmacist", "2222", 180),
     mk("S-003", "A. Okafor", "cashier", "1111", 120),
     mk("S-004", "J. Boateng", "cashier", "4444", 45),
+    mk("S-005", "T. Okoye", "super_admin", "5555", 20),
   ];
 }
 

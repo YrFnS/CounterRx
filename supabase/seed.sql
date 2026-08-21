@@ -11,22 +11,23 @@ set search_path = public, extensions;
 /* Staff                                                                */
 /* ------------------------------------------------------------------ */
 insert into public.staff (id, name, role, pin_hash, initials, active) values
-  ('S-001','A. Okafor','cashier','ab26c63aac250675f176b35d43aaf5ca45f0ee87f0c313eac2542365d562b0ad','AO',true),
-  ('S-002','L. Mensah','pharmacist','d728a67cd4b5e867e946cb9a59ccf9358d47c9ed2ee538d445d40aac839a94d3','LM',true),
-  ('S-003','B. Whitfield','manager','7f1d5e41a157fb4fa663362886a7a99bd7501fca665a05276c270a74ab080584','BW',true),
-  ('S-004','R. Vance','pharmacy_admin','dbc1bfc7422e1dccbbdfd81d01c2793f8f949d849b788886d1839402cfc76d8c','RV',true),
+  ('S-001','D. Whitfield','pharmacy_admin','7f1d5e41a157fb4fa663362886a7a99bd7501fca665a05276c270a74ab080584','DW',true),
+  ('S-002','R. Mensah, RPh','pharmacist','d728a67cd4b5e867e946cb9a59ccf9358d47c9ed2ee538d445d40aac839a94d3','RM',true),
+  ('S-003','A. Okafor','cashier','ab26c63aac250675f176b35d43aaf5ca45f0ee87f0c313eac2542365d562b0ad','AO',true),
+  ('S-004','J. Boateng','cashier','dbc1bfc7422e1dccbbdfd81d01c2793f8f949d849b788886d1839402cfc76d8c','JB',true),
   ('S-005','T. Okoye','super_admin','09301567db8a90eed12393c9f0f70ca51a68511f42c076c09612aea63da79f2d','TO',true) on conflict (id) do nothing;
 
 /* ------------------------------------------------------------------ */
 /* Supabase Auth users + identities + profiles                          */
+/* Mirror of the app's makeStaff() roster (src/data.ts).               */
 /* ------------------------------------------------------------------ */
 insert into auth.users
   (instance_id, id, aud, role, email, encrypted_password, email_confirmed_at,
    raw_app_meta_data, raw_user_meta_data, created_at, updated_at, last_sign_in_at, is_sso_user, is_anonymous)
 values
-  ('00000000-0000-0000-0000-000000000000','00000000-0000-0000-0000-000000000001','authenticated','authenticated','s001@counterrx.local',crypt('CRxS0011111',gen_salt('bf')),now(),'{"provider":"email","providers":["email"]}','{}',now(),now(),now(),false,false),
+  ('00000000-0000-0000-0000-000000000000','00000000-0000-0000-0000-000000000001','authenticated','authenticated','s001@counterrx.local',crypt('CRxS0013333',gen_salt('bf')),now(),'{"provider":"email","providers":["email"]}','{}',now(),now(),now(),false,false),
   ('00000000-0000-0000-0000-000000000000','00000000-0000-0000-0000-000000000002','authenticated','authenticated','s002@counterrx.local',crypt('CRxS0022222',gen_salt('bf')),now(),'{"provider":"email","providers":["email"]}','{}',now(),now(),now(),false,false),
-  ('00000000-0000-0000-0000-000000000000','00000000-0000-0000-0000-000000000003','authenticated','authenticated','s003@counterrx.local',crypt('CRxS0033333',gen_salt('bf')),now(),'{"provider":"email","providers":["email"]}','{}',now(),now(),now(),false,false),
+  ('00000000-0000-0000-0000-000000000000','00000000-0000-0000-0000-000000000003','authenticated','authenticated','s003@counterrx.local',crypt('CRxS0031111',gen_salt('bf')),now(),'{"provider":"email","providers":["email"]}','{}',now(),now(),now(),false,false),
   ('00000000-0000-0000-0000-000000000000','00000000-0000-0000-0000-000000000004','authenticated','authenticated','s004@counterrx.local',crypt('CRxS0044444',gen_salt('bf')),now(),'{"provider":"email","providers":["email"]}','{}',now(),now(),now(),false,false),
   ('00000000-0000-0000-0000-000000000000','00000000-0000-0000-0000-000000000005','authenticated','authenticated','s005@counterrx.local',crypt('CRxS0055555',gen_salt('bf')),now(),'{"provider":"email","providers":["email"]}','{}',now(),now(),now(),false,false) on conflict (id) do nothing;
 
@@ -38,6 +39,12 @@ values
   ('00000000-0000-0000-0000-000000000004','00000000-0000-0000-0000-000000000004','{"sub":"00000000-0000-0000-0000-000000000004","email":"s004@counterrx.local","email_verified":true,"phone_verified":false}','email',now(),now(),now(),'00000000-0000-0000-0000-000000000004'),
   ('00000000-0000-0000-0000-000000000005','00000000-0000-0000-0000-000000000005','{"sub":"00000000-0000-0000-0000-000000000005","email":"s005@counterrx.local","email_verified":true,"phone_verified":false}','email',now(),now(),now(),'00000000-0000-0000-0000-000000000005') on conflict (id) do nothing;
 
+insert into public.profiles (id, staff_id, role) values
+  ('00000000-0000-0000-0000-000000000001','S-001','cashier'),
+  ('00000000-0000-0000-0000-000000000002','S-002','pharmacist'),
+  ('00000000-0000-0000-0000-000000000003','S-003','manager'),
+  ('00000000-0000-0000-0000-000000000004','S-004','pharmacy_admin'),
+  ('00000000-0000-0000-0000-000000000005','S-005','super_admin') on conflict (id) do nothing;
 -- GoTrue v2 returns `500 Database error querying schema` when these string
 -- columns are NULL instead of '' — normalize for freshly-seeded AND existing rows.
 update auth.users set
