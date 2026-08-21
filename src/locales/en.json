@@ -511,5 +511,19 @@
     "payment2Remainder": "Payment 2 · remainder",
     "subtotal": "Subtotal",
     "exact": "Exact"
+  },
+  "toast": {
+    "signedIn": "Signed in — {{name}} ({{role}})",
+    "staffAdded": "{{name}} added as {{role}} · PIN set",
+    "pinReset": "PIN reset — share it securely, it won't be shown again",
+    "prescriberAdded": "{{name}} added to prescriber directory",
+    "snapshotSaved": "Snapshot saved — “{{label}}”",
+    "snapshotDeleted": "Snapshot deleted",
+    "snapshotNotFound": "Snapshot not found",
+    "outOfStock": "{{name}} is out of stock",
+    "lowUnits": "Only {{avail}} base units of {{name}} on the shelf",
+    "paApproved": "{{id}} prior auth APPROVED — safe to fill",
+    "paRejected": "{{id}} prior auth REJECTED — {{note}}",
+    "dupeBackorder": "{{patient}} already has an open back-order for {{name}}"
   }
 }

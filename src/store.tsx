@@ -20,6 +20,7 @@ import type {
 import { makeStaff, makeSettings, makeBackOrders, makeRxTransfers, SNAPS_KEY, hashPin, ROLE_LABEL } from "./data";
 import type { BackendData, LoadResult } from "./lib/sync";
 import { loadBackendData, persistBackendData, signOutStaff, subscribeToBackend } from "./lib/sync";
+import i18n from "./i18n";
 
 export type View = "register" | "dashboard" | "customers" | "inventory" | "finance" | "reports" | "prescriptions" | "deliveries" | "history" | "settings";
 export type InventoryPreset = "all" | "low" | "expiring";
@@ -329,7 +330,7 @@ export function reducer(state: State, a: Action): State {
       const lockouts = { ...state.lockouts };
       delete lockouts[s.id];
       return withAudit(
-        withToast({ ...state, user: s, backendAuthenticated: false, lockouts }, "success", `Signed in — ${s.name} (${ROLE_LABEL[s.role]})`),
+        withToast({ ...state, user: s, backendAuthenticated: false, lockouts }, "success", i18n.t("toast.signedIn", { name: s.name, role: ROLE_LABEL[s.role] })),
         "system", `${s.name} signed in · role ${s.role} · ${state.settings.terminalId}`);
     }
 
@@ -356,7 +357,7 @@ export function reducer(state: State, a: Action): State {
         active: true, createdAt: Date.now(),
       };
       return withAudit(
-        withToast({ ...state, staff: [s, ...state.staff] }, "success", `${s.name} added as ${ROLE_LABEL[a.role]} · PIN set`),
+        withToast({ ...state, staff: [s, ...state.staff] }, "success", i18n.t("toast.staffAdded", { name: s.name, role: ROLE_LABEL[a.role] })),
         "system", `Staff created — ${s.name} (${id}, ${a.role})`);
     }
 
@@ -375,7 +376,7 @@ export function reducer(state: State, a: Action): State {
       const staff = state.staff.map((x) => (x.id === a.id ? { ...x, pinHash: hashPin(a.pin) } : x));
       const lockouts = { ...state.lockouts }; delete lockouts[a.id];
       return withAudit(
-        withToast({ ...state, staff, lockouts }, "success", "PIN reset — share it securely, it won't be shown again"),
+        withToast({ ...state, staff, lockouts }, "success", i18n.t("toast.pinReset")),
         "system", `PIN reset for ${state.staff.find((x) => x.id === a.id)?.name ?? a.id}`);
     }
 
@@ -383,7 +384,7 @@ export function reducer(state: State, a: Action): State {
       const id = `DR-${String(state.prescribers.length + 1).padStart(2, "0")}`;
       const pr: Prescriber = { ...a.prescriber, id };
       return withAudit(
-        withToast({ ...state, prescribers: [...state.prescribers, pr] }, "success", `${pr.name} added to prescriber directory`),
+        withToast({ ...state, prescribers: [...state.prescribers, pr] }, "success", i18n.t("toast.prescriberAdded", { name: pr.name })),
         "rx", `Prescriber added — ${pr.name} · NPI ${pr.npi}`);
     }
 
@@ -419,17 +420,17 @@ export function reducer(state: State, a: Action): State {
         transfers: state.transfers, audit: state.audit, staff: state.staff, settings: state.settings,
       };
       writeSnapshots([{ meta, data }, ...listSnapshots()]);
-      return withToast({ ...state, snapshotVersion: state.snapshotVersion + 1 }, "success", `Snapshot saved — “${a.label}”`);
+      return withToast({ ...state, snapshotVersion: state.snapshotVersion + 1 }, "success", i18n.t("toast.snapshotSaved", { label: a.label }));
     }
 
     case "SNAPSHOT_DELETE": {
       writeSnapshots(listSnapshots().filter((s) => s.meta.id !== a.id));
-      return withToast({ ...state, snapshotVersion: state.snapshotVersion + 1 }, "info", "Snapshot deleted");
+      return withToast({ ...state, snapshotVersion: state.snapshotVersion + 1 }, "info", i18n.t("toast.snapshotDeleted"));
     }
 
     case "SNAPSHOT_RESTORE": {
       const snap = listSnapshots().find((s) => s.meta.id === a.id);
-      if (!snap) return withToast(state, "error", "Snapshot not found");
+      if (!snap) return withToast(state, "error", i18n.t("toast.snapshotNotFound"));
       const d = snap.data as Partial<State>;
       return withToast(
         withAudit({
@@ -450,14 +451,14 @@ export function reducer(state: State, a: Action): State {
       const p = state.products.find((x) => x.id === a.productId);
       if (!p) return state;
       const avail = stockOf(p, state.products);              // kit-aware on-hand (§5)
-      if (avail <= 0) return withToast(state, "error", `${p.name} is out of stock`);
+      if (avail <= 0) return withToast(state, "error", i18n.t("toast.outOfStock", { name: p.name }));
       const factor = uomFactor(state, p.id, a.uom);
       const maxUom = Math.max(1, Math.floor(avail / factor));  // sellable count in this UOM
       const uomLabel = p.uoms?.find((u) => u.code === a.uom)?.label;
       const same = (c: { productId: string; uom?: string }) => c.productId === p.id && (c.uom ?? "") === (a.uom ?? "");
       const line = state.cart.find(same);
       if (line) {
-        if (line.qty >= maxUom) return withToast(state, "warn", `Only ${avail} base units of ${p.name} on the shelf`);
+        if (line.qty >= maxUom) return withToast(state, "warn", i18n.t("toast.lowUnits", { avail, name: p.name }));
         return {
           ...state, flashId: p.id, flashKey: state.flashKey + 1,
           cart: state.cart.map((c) => (same(c) ? { ...c, qty: c.qty + 1 } : c)),
@@ -505,8 +506,8 @@ export function reducer(state: State, a: Action): State {
       const next = withAudit({ ...state, prescriptions }, "rx",
         `Prior auth ${pa.status} — ${rx.id} · ${rx.patient}${pa.note ? ` · ${pa.note}` : ""}`);
       return ok
-        ? withToast(next, "success", `${rx.id} prior auth APPROVED — safe to fill`)
-        : withToast(next, "error", `${rx.id} prior auth REJECTED — ${pa.note}`);
+        ? withToast(next, "success", i18n.t("toast.paApproved", { id: rx.id }))
+        : withToast(next, "error", i18n.t("toast.paRejected", { id: rx.id, note: pa.note }));
     }
 
     case "PA_RESUBMIT": {
@@ -525,7 +526,7 @@ export function reducer(state: State, a: Action): State {
       const p = state.products.find((x) => x.id === a.productId);
       if (!p) return state;
       const dupe = state.backorders.find((b) => b.productId === a.productId && b.patient === a.patient && (b.status === "ordered" || b.status === "arrived" || b.status === "notified"));
-      if (dupe) return withToast(state, "warn", `${a.patient} already has an open back-order for ${p.name}`);
+      if (dupe) return withToast(state, "warn", i18n.t("toast.dupeBackorder", { patient: a.patient, name: p.name }));
       const id = `BO-${101 + state.backorders.length}`;
       const bo: BackOrder = {
         id, patient: a.patient, phone: a.phone, productId: a.productId, qty: a.qty,
