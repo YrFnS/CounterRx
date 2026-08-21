@@ -30,7 +30,7 @@ export default function Settings() {
     { id: "data", label: t("settings.dataBackups"), icon: <IDownload size={14} /> },
     { id: "language", label: t("settings.language"), icon: <IX size={14} /> },
     { id: "clinical", label: t("settings.clinical"), icon: <IPill size={14} /> },
-    { id: "coupons", label: t("analytics.coupons"), icon: <IPlus size={14} /> },
+    { id: "coupons", label: t("analytics.couponsTitle"), icon: <IPlus size={14} /> },
   ];
 
   return (

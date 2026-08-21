@@ -755,7 +755,7 @@
     "usageLabel": "AI activity · {{count}} calls logged"
   },
   "analytics": {
-    "title": "Title",
+    "title": "Analytics",
     "ltv": "Ltv",
     "totalSpend": "Totalspend",
     "avgBasket": "Avgbasket",

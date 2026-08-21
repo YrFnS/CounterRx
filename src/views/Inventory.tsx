@@ -264,6 +264,12 @@ export default function Inventory() {
                           aria-label={`UOM packs for ${p.name}`}>
                           <IBox size={13} />
                         </button>
+                        <button onClick={() => setForecasting(p)}
+                          title="AI demand forecast — predicted units & suggested reorder"
+                          className="grid place-items-center w-7 h-7 rounded-md border border-mist text-inksoft hover:border-honey-400 hover:text-honey-700 transition active:scale-90"
+                          aria-label={`Forecast ${p.name}`}>
+                          <ITrendUp size={13} />
+                        </button>
                         {p.coldChain && (
                           <button onClick={() => setColdFor(p)}
                             title="Cold-chain temperature log"
