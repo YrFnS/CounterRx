@@ -356,7 +356,9 @@
     "loyalty": "Loyalty",
     "team": "Team",
     "timeClock": "Time clock",
-    "dataBackups": "Data & backups"
+    "dataBackups": "Data & backups",
+    "clinical": "Clinical",
+    "restrictedCatalog": "Restricted OTC catalog"
   },
   "shift": {
     "title": "Shift Management",

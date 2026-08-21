@@ -9,7 +9,8 @@ import {
 import type { DragStartEvent, DragEndEvent, DragOverEvent } from "@dnd-kit/core";
 import { usePos, relTime } from "../store";
 import { stockOf, can, daysUntil, allergyConflicts } from "../data";
-import type { RxStatus, Prescription, BackOrderStatus } from "../data";
+import { findInteractions, detectDuplicateTherapy, dispenseBlockers } from "../lib/clinical";
+import type { RxStatus, Prescription, BackOrderStatus, Product } from "../data";
 import { cx, Badge, Modal } from "../ui";
 
 /* Client-side image resize → JPEG data-URL so hard-copy scans stay small enough for local storage.
@@ -34,7 +35,7 @@ function resizeToDataUrl(file: File, maxDim: number): Promise<string> {
     img.src = url;
   });
 }
-import { IRx, ICheck, IClock, IRegister, IShield, IGrab, IRefresh, ISend, IRecall, IX, IBox, ISwap, IArrowIn, IArrowOut, IDownload, IPlus, IScan, IAlert } from "../icons";
+import { IRx, ICheck, IClock, IRegister, IShield, IGrab, IRefresh, ISend, IRecall, IX, IBox, ISwap, IArrowIn, IArrowOut, IDownload, IPlus, IScan, IAlert, IPrint } from "../icons";
 
 const FLOW: RxStatus[] = ["new", "verifying", "ready", "waiting", "dispensed"];
 const LABEL: Record<RxStatus, string> = {
@@ -328,6 +329,7 @@ function RxCard({ rx, ghost, overlay }: { rx: Prescription; ghost?: boolean; ove
   const [showPrescriber, setShowPrescriber] = useState(false);
   const [showXferOut, setShowXferOut] = useState(false);
   const [viewScan, setViewScan] = useState(false);
+  const [labelOpen, setLabelOpen] = useState(false);
   const [allergyAck, setAllergyAck] = useState(false);
   const [allergyReason, setAllergyReason] = useState("");
   const stepIdx = FLOW.indexOf(rx.status);
@@ -341,6 +343,19 @@ function RxCard({ rx, ghost, overlay }: { rx: Prescription; ghost?: boolean; ove
   const patient = state.customers.find((c) => c.name.toLowerCase() === rx.patient.toLowerCase());
   const conflicts = allergyConflicts(patient?.allergies, p);
   const dispensing = next?.to === "dispensed";
+
+  /* drug–drug interaction screen: check basket (other dispensed Rx) against this Rx */
+  const interactionIds = [...state.prescriptions.filter((r) => r.status === "dispensed" && r.id !== rx.id).map((r) => r.productId), rx.productId];
+  const interactions = findInteractions(interactionIds);
+  const interactionBlocked = dispensing && interactions.filter((i) => i.severity === "major").length > 0;
+
+  /* duplicate therapy: same therapeutic class prescribed concurrently */
+  const duplicates = rx.productId ? detectDuplicateTherapy([rx.productId], state.products) : [];
+  const dupBlocked = dispensing && duplicates.length > 0;
+
+  /* refill / expiry enforcement (§5) — blocks dispense until resolved */
+  const blockers = dispenseBlockers(rx);
+
   const allergyBlocked = dispensing && conflicts.length > 0 && !allergyAck;
   const dispense = () => {
     if (conflicts.length > 0) {
@@ -408,6 +423,23 @@ function RxCard({ rx, ghost, overlay }: { rx: Prescription; ghost?: boolean; ove
         </div>
       )}
 
+      {interactionBlocked && (
+        <div className="mt-2 anim-fade-up flex items-start gap-1.5 rounded-md border-2 border-brick-500 bg-brick-100/70 px-2 py-1.5">
+          <IAlert size={12} className="text-brick-700 shrink-0 mt-px anim-pulse-dot" />
+          <p className="text-[10px] font-bold text-brick-700 leading-snug">
+            Major drug interaction — {interactions.filter((i) => i.severity === "major").map((i) => `${i.effect} ${i.action}`).join(" ")}
+          </p>
+        </div>
+      )}
+
+      {dupBlocked && (
+        <div className="mt-2 anim-fade-up flex items-start gap-1.5 rounded-md border-2 border-honey-500 bg-honey-100/70 px-2 py-1.5">
+          <IAlert size={12} className="text-honey-700 shrink-0 mt-px" />
+          <p className="text-[10px] font-bold text-honey-700 leading-snug">
+            Duplicate therapy — {duplicates.map((d) => d.reason).join("; ")}
+          </p>
+        </div>
+      )}
       <div className="mt-2.5 bg-paper border border-mist rounded-lg px-2.5 py-2">
         <p className="text-[13px] font-semibold text-ink flex items-center gap-1.5">
           <span className="text-brick-700 font-display">℞</span>
@@ -585,10 +617,20 @@ function RxCard({ rx, ghost, overlay }: { rx: Prescription; ghost?: boolean; ove
 
       <div className="mt-2.5 flex gap-1.5" onPointerDown={(e) => e.stopPropagation()}>
         {next && (
-          <button onClick={() => (dispensing ? dispense() : dispatch({ type: "RX_STATUS", id: rx.id, status: next.to }))}
+          <button
+            onClick={() => (dispensing ? dispense() : dispatch({ type: "RX_STATUS", id: rx.id, status: next.to }))}
+            disabled={dispensing && (allergyBlocked || interactionBlocked || dupBlocked || blockers.length > 0)}
             className={cx("flex-1 py-1.5 rounded-lg text-[11px] font-bold transition active:scale-[0.97] flex items-center justify-center gap-1",
-              allergyBlocked ? "bg-brick-600 text-paper hover:bg-brick-500" : "bg-pine-700 text-pine-50 hover:bg-pine-600")}>
-            <IClock size={11} /> {allergyBlocked ? "Allergy — review required" : next.label}
+              dispensing && (allergyBlocked || interactionBlocked || dupBlocked || blockers.length > 0)
+                ? "bg-brick-600 text-paper hover:bg-brick-500 cursor-not-allowed"
+                : "bg-pine-700 text-pine-50 hover:bg-pine-600")}
+            title={dispensing && (allergyBlocked ? "Allergy conflict — pharmacist override required" : interactionBlocked ? "Major drug interaction — pharmacist review required" : dupBlocked ? "Duplicate therapy detected — review before dispensing" : blockers.length > 0 ? blockers.join("; ") : "") || undefined}>
+            <IClock size={11} />
+            {allergyBlocked ? "Allergy — review required"
+              : interactionBlocked ? "⚠ Interaction — review required"
+              : dupBlocked ? "⚠ Duplicate therapy"
+              : blockers.length > 0 ? `Blocked: ${blockers[0]}`
+              : next.label}
           </button>
         )}
         {canAttach && (
@@ -622,6 +664,13 @@ function RxCard({ rx, ghost, overlay }: { rx: Prescription; ghost?: boolean; ove
             <ICheck size={11} /> Completed & logged
           </span>
         )}
+        {rx.status === "dispensed" && (
+          <button onClick={() => setLabelOpen(true)}
+            className="py-1.5 px-2.5 rounded-lg border border-mist bg-card text-inksoft text-[11px] font-bold hover:border-pine-400 hover:text-pine-700 transition active:scale-[0.97] flex items-center justify-center gap-1"
+            title="Print a 2x1 Rx label for this dispense">
+            <IPrint size={11} /> Label
+          </button>
+        )}
       </div>
 
       {showPrescriber && (
@@ -632,6 +681,9 @@ function RxCard({ rx, ghost, overlay }: { rx: Prescription; ghost?: boolean; ove
       )}
       {viewScan && rx.scan && (
         <ScanViewer rx={rx} onClose={() => setViewScan(false)} />
+      )}
+      {labelOpen && (
+        <RxLabel rx={rx} p={p} patient={patient ? { name: patient.name } : undefined} onClose={() => setLabelOpen(false)} />
       )}
     </article>
   );
@@ -1076,6 +1128,71 @@ function IntakeModal({ onClose }: { onClose: () => void }) {
           <IPlus size={15} /> Drop off for review
         </button>
       </div>
+    </Modal>
+  );
+}
+
+/* ================================================================== */
+/*  Rx label — printable 2×1" label for dispensed prescriptions (§6)  */
+/* ================================================================== */
+
+/** Build a 2×1" pharmacy label as an HTML blob that triggers the browser
+ *  print dialog on the label iframe. Called from PrescriptionCard when an Rx
+ *  is marked dispensed. */
+export function RxLabel({ rx, p, patient, onClose }: { rx: Prescription; p?: Product; patient?: { name: string }; onClose: () => void }) {
+  const { state } = usePos();
+  const s = state.settings;
+  const labelId = `rx-label-${rx.id}-${Date.now()}`;
+  const print = () => {
+    const iframe = document.getElementById(labelId) as HTMLIFrameElement | null;
+    const w = iframe?.contentWindow;
+    if (w) {
+      w.focus();
+      w.print();
+    }
+  };
+  return (
+    <Modal onClose={onClose} width={320} labelledBy="label-title">
+      <div className="px-5 py-4 border-b border-mist flex items-start justify-between">
+        <div>
+          <h2 id="label-title" className="font-display font-bold text-ink flex items-center gap-2"><IPrint size={17} className="text-pine-700" /> Rx label — {rx.id}</h2>
+          <p className="text-xs text-inksoft mt-0.5">2×1" thermal label preview</p>
+        </div>
+        <button onClick={onClose} className="p-1.5 rounded-md hover:bg-mist/60 text-inksoft" aria-label="Close"><IX size={14} /></button>
+      </div>
+      <div className="p-4">
+        <div className="border-2 border-dashed border-mist rounded-lg p-2 text-center mb-4">
+          <p className="text-[9px] font-bold uppercase tracking-wide text-inksoft">2" × 1" label</p>
+          <p className="text-[10px] text-inksoft mt-1">Prints at 203 DPI thermal</p>
+        </div>
+        <button onClick={print}
+          className="w-full flex items-center justify-center gap-2 py-2.5 rounded-lg bg-pine-700 text-pine-50 text-xs font-bold hover:bg-pine-600 transition active:scale-[0.98]">
+          <IPrint size={14} /> Print label
+        </button>
+        <p className="mt-2 text-[10px] text-inksoft text-center">Opens a print preview — select your 2×1" label roll printer.</p>
+      </div>
+      <iframe id={labelId} title={`Rx label for ${rx.id}`}
+        className="hidden"
+        srcDoc={`
+          <!doctype html>
+          <html><head><style>
+            @page { size: 2in 1in; margin: 0; }
+            body { margin: 0; padding: 2px 4px; font-family: monospace; font-size: 6px; line-height: 1.1; }
+            .h { font-size: 8px; font-weight: bold; letter-spacing: 0.5px; }
+            .l { display: block; }
+            .row { margin-bottom: 1px; }
+          </style></head>
+          <body>
+            <div class="h">${s.orgName || "Pharmacy"}</div>
+            <div class="row"><span class="l">℞ ${rx.id}</span><span class="l" style="float:right">Qty: ${rx.qty}</span></div>
+            <div class="row"><span class="l">${p?.name || rx.productId}</span></div>
+            <div class="row"><span class="l">Pts: ${patient?.name || rx.patient}</span></div>
+            <div class="row"><span class="l">SIG: ${rx.note || "—"}</span></div>
+            <div class="row"><span class="l">Refills: ${rx.refillsRemaining ?? 0}/${rx.refillsAuthorized ?? "–"}</span></div>
+            <div class="row"><span class="l">Exp: ${rx.rxExpiry || "—"}</span></div>
+            <div class="row" style="margin-top:2px;font-weight:bold">${s.terminalId || "REG-1"}</div>
+          </body></html>`}
+      />
     </Modal>
   );
 }

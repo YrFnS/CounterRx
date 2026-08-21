@@ -124,7 +124,9 @@ values
   ('mmwash','SKU-MMWASH','890MMWASH567890','Magic Mouthwash 240ml','Diphenhydramine / viscous lidocaine / antacid','In-house compound','compound','Suspension · 240ml bottle',18.50,7.40,2,true,'Compounded in-house','[{"batch":"MMW-26A03","expiry":"2026-09-30","qty":6}]','[]','[]','[]',NULL,NULL,NULL,NULL,NULL,NULL,true),
   ('amx250','SKU-AMX250','890AMX250567890','Amoxicillin 250mg','Amoxicillin trihydrate','Novex Pharma','antibiotics','Capsule · strip of 10',6.20,3.40,30,true,'MediSource Ltd','[{"batch":"AMX25-26A01","expiry":"2027-03-10","qty":90}]','[]','[]','[]',NULL,NULL,NULL,NULL,NULL,'amx500',false),
   ('kit-flu','SKU-KIT-FLU','890KIT-FLU567890','Flu Relief Kit','Cetirizine + cough syrup + ORS','CounterRx bundle','coldflu','Bundle · 3 products',13.90,0.00,5,false,'Assembled in-store','[]','[]','[]','[{"productId":"cet10","qty":1},{"productId":"cfsyrup","qty":1},{"productId":"ors5","qty":2}]',NULL,NULL,NULL,NULL,NULL,NULL,false),
-  ('kit-fa','SKU-KIT-FA','890KIT-FA567890','Travel First-Aid Kit','Bandages + antiseptic','CounterRx bundle','firstaid','Bundle · 2 products',8.50,0.00,5,false,'Assembled in-store','[]','[]','[]','[{"productId":"band","qty":1},{"productId":"detl","qty":1}]',NULL,NULL,NULL,NULL,NULL,NULL,false) on conflict (id) do nothing;
+  ('kit-fa','SKU-KIT-FA','890KIT-FA567890','Travel First-Aid Kit','Bandages + antiseptic','CounterRx bundle','firstaid','Bundle · 2 products',8.50,0.00,5,false,'Assembled in-store','[]','[]','[]','[{"productId":"band","qty":1},{"productId":"detl","qty":1}]',NULL,NULL,NULL,NULL,NULL,NULL,false),
+  ('oxy30','SKU-OXY30','890OXY30567890','Oxycodone 30mg','Oxycodone HCl','Roxicodone','cns','Tablet · strip of 10',18.50,12.80,12,true,'MediSource Ltd','[{"batch":"OXY-25G22","expiry":"2027-04-12","qty":24}]','[]','[{"key":"Storage","value":"Locked schedule cabinet"},{"key":"Hazard class","value":"C-II · count sheet"}]','[]',NULL,NULL,'C-II',NULL,NULL,NULL,false),
+  ('mor15','SKU-MOR15','890MOR15567890','Morphine 15mg','Morphine sulfate','MS Contin','cns','Tablet · strip of 10',15.90,11.00,10,true,'MediSource Ltd','[{"batch":"MOR-25F08","expiry":"2027-05-22","qty":16}]','[]','[]','[]',NULL,NULL,NULL,NULL,NULL,NULL,false) on conflict (id) do nothing;
 
 /* ------------------------------------------------------------------ */
 /* Prescribers                                                          */
@@ -294,6 +296,40 @@ insert into public.web_orders (id, customer_name, phone, items, type, channel, p
   ('WEB-117','Omar Haddad','(555) 210-7743','[{"productId":"cet10","name":"Cetirizine 10mg","qty":2},{"productId":"vitc","name":"Vitamin C 1000mg","qty":1}]','otc','web','delivery','new','Deliver after 5pm please',NULL,(extract(epoch from now()-interval '5 hours')*1000)::bigint),
   ('WEB-116','Grace Lin','(555) 655-7702','[{"productId":"insg","name":"Insulin glargine (photo attached)","qty":2}]','rx_upload','app','in_store','new','Uploaded photo of new Rx from Dr. Adeyemi',NULL,(extract(epoch from now()-interval '9 hours')*1000)::bigint),
   ('WEB-115','Daniel Osei','(555) 402-5519','[{"productId":"atv20","name":"Atorvastatin 20mg","qty":2}]','refill','web','in_store','converted',NULL,NULL,(extract(epoch from now()-interval '30 hours')*1000)::bigint) on conflict (id) do nothing;
+
+/* ------------------------------------------------------------------ */
+/* Clinical interaction pairs (Phase C)                                  */
+/* ------------------------------------------------------------------ */
+insert into public.interaction_pairs (a, b, severity, effect, action) values
+  ('codsyr','alpr05','major','Opioid + benzodiazepine → additive CNS depression, respiratory risk (FDA boxed warning).','Avoid combination; if unavoidable use lowest dose, counsel on sedation.'),
+  ('codsyr','zolp5','major','Opioid + sedative-hypnotic → additive CNS depression.','Avoid concurrent use; monitor for excessive sedation.'),
+  ('tram50','alpr05','major','Opioid + benzodiazepine → additive CNS depression.','Avoid combination; counsel on respiratory depression risk.'),
+  ('tram50','zolp5','major','Opioid + sedative-hypnotic → additive CNS depression.','Avoid concurrent use or reduce doses.'),
+  ('codsyr','tram50','major','Duplicate opioid therapy → overdose & serotonin-syndrome risk.','Dispense one opioid only; contact prescriber.'),
+  ('alpr05','zolp5','major','Benzodiazepine + non-benzodiazepine hypnotic → severe additive CNS depression.','Avoid concurrent use; if unavoidable use lowest doses and warn on sedation driving risk.'),
+  ('asa75','ibu400','moderate','Ibuprofen blunts aspirin''s antiplatelet effect; ↑ GI bleed risk.','Separate dosing ≥2h; consider gastroprotection.'),
+  ('asa75','diclo50','moderate','NSAID + antiplatelet → ↑ GI bleed risk.','Use lowest NSAID dose, shortest duration; consider PPI.'),
+  ('ibu400','diclo50','moderate','Therapeutic duplication — two NSAIDs.','Dispense one NSAID only.'),
+  ('cipro500','alpr05','moderate','CYP3A4 inhibition raises alprazolam levels → excess sedation.','Reduce alprazolam dose; monitor sedation.'),
+  ('cet10','alpr05','moderate','Antihistamine + benzodiazepine → additive sedation.','Counsel against driving; avoid alcohol.'),
+  ('azi250','atv20','moderate','Macrolide raises statin exposure → myopathy risk.','Watch for muscle pain; consider holding statin during course.'),
+  ('atv20','amx500','moderate','Macrolide antibiotic raises statin levels via CYP3A4 inhibition.','Monitor for myalgia; consider statin dose reduction during the course.'),
+  ('cet10','zolp5','moderate','Antihistamine + sedative-hypnotic → additive next-day impairment.','Counsel on drowsiness; avoid operating machinery.'),
+  ('met500','insg','moderate','Metformin + insulin increases hypoglycemia risk.','Check glucose before and after; adjust insulin dose down.'),
+  ('omz20','atv20','moderate','Omeprazole raises atorvastatin exposure via CYP2C19/3A4 inhibition.','Monitor for statin myopathy signs.'),
+  ('diclo50','asa75','moderate','NSAID + aspirin → additive GI ulceration and bleeding risk.','Add gastroprotection if co-prescribed long-term.'),
+  ('cfsyrup','alpr05','moderate','Antitussive + benzodiazepine → additive sedation.','Counsel on sedation and fall risk in elderly.'),
+  ('met500','atv20','moderate','Metformin + statin — monitor for combined lactic acidosis risk in renal impairment.','Check renal function before co-train.'),
+  ('zolp5','cet10','moderate','Sedative-hypnotic + antihistamine → prolonged psychomotor impairment.','Counsel on next-day drowsiness; avoid alcohol.')
+on conflict (a, b) do update set severity = excluded.severity, effect = excluded.effect, action = excluded.action;
+
+/* ------------------------------------------------------------------ */
+/* C-II movement log sample (Phase C)                                   */
+/* ------------------------------------------------------------------ */
+insert into public.c2_movements (product_id, direction, qty, patient_name, rx_id, pharmacist, dea_number, staff_id, created_at) values
+  ('oxy30','dispense',1,'Helen Okafor','RX-2399','R. Mensah, RPh','FB4482913','S-021',now() - interval '3 days'),
+  ('oxy30','receive',30,'MediSource Ltd',NULL,'R. Mensah, RPh','FB4482913','S-021',now() - interval '4 days')
+on conflict (product_id, direction, created_at) do nothing;
 
 /* ------------------------------------------------------------------ */
 /* Time clock + snapshots                                               */

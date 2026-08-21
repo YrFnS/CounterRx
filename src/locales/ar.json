@@ -356,7 +356,9 @@
     "loyalty": "Loyalty",
     "team": "Team",
     "timeClock": "Time clock",
-    "dataBackups": "Data & backups"
+    "dataBackups": "Data & backups",
+    "clinical": "سريري",
+    "restrictedCatalog": "كتالوج الأدوية المقيدة"
   },
   "shift": {
     "title": "إدارة الورديات",
