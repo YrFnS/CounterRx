@@ -6,7 +6,7 @@ import { PosProvider, usePos } from "./store";
 import { signInStaff } from "./lib/sync";
 import type { View } from "./store";
 import { CASHIER, daysUntil, nearestExpiry, stockOf, hashPin, ROLE_LABEL } from "./data";
-import type { Product, Transaction, Prescription, Staff } from "./data";
+import type { Product, Transaction, Prescription, Staff, Role } from "./data";
 import { cx } from "./ui";
 import { PaymentModal, ReceiptModal, DataExchangeModal } from "./modals";
 import { ToastHost } from "./ui";
@@ -49,6 +49,22 @@ const NAV: { id: View; label: string; icon: ReactNode; key: string }[] = [
   { id: "history", label: "nav.history", icon: <IHistory size={17} />, key: "F6" },
   { id: "settings", label: "nav.settings", icon: <IGear size={17} />, key: "F9" },
 ];
+
+/* role-based route guards (F7): which roles may open each view. Mirrors PERMS intent:
+   settings/reports/finance/prescriptions are not cashier surfaces; super_admin is implicit. */
+const VIEW_ROLES: Record<View, Role[]> = {
+  register: ["super_admin", "pharmacy_admin", "pharmacist", "manager", "cashier"],
+  dashboard: ["super_admin", "pharmacy_admin", "pharmacist", "manager", "cashier"],
+  customers: ["super_admin", "pharmacy_admin", "pharmacist", "manager", "cashier"],
+  inventory: ["super_admin", "pharmacy_admin", "pharmacist", "manager", "cashier"],
+  deliveries: ["super_admin", "pharmacy_admin", "pharmacist", "manager", "cashier"],
+  history: ["super_admin", "pharmacy_admin", "pharmacist", "manager", "cashier"],
+  finance: ["super_admin", "pharmacy_admin", "manager"],
+  reports: ["super_admin", "pharmacy_admin", "pharmacist", "manager"],
+  prescriptions: ["super_admin", "pharmacy_admin", "pharmacist"],
+  settings: ["super_admin", "pharmacy_admin"],
+};
+
 
 export default function App() {
   return (
@@ -251,6 +267,11 @@ function Shell() {
   const [navOpen, setNavOpen] = useState(false);
   const go = (view: View) => { dispatch({ type: "GO", view }); setNavOpen(false); };
 
+  /* role-based route guards (F7): hide restricted nav, deny restricted views */
+  const role = state.user?.role;
+  const viewAllowed = !role || (VIEW_ROLES[state.view]?.includes(role) ?? false);
+  const navItems = role ? NAV.filter((n) => VIEW_ROLES[n.id]?.includes(role)) : NAV;
+
   /* reflect the active language in <html dir> (F5: RTL activation) */
   useEffect(() => {
     document.documentElement.dir = i18n.language === "ar" ? "rtl" : "ltr";
@@ -371,7 +392,7 @@ function Shell() {
         </div>
 
         <nav className="relative flex-1 px-3 space-y-1 mt-1">
-          {NAV.map((n) => {
+          {navItems.map((n) => {
             const active = state.view === n.id;
             const badge = n.id === "inventory" ? lowStock.length + expiring.length
               : n.id === "prescriptions" ? newRx
@@ -450,16 +471,27 @@ function Shell() {
           </div>
         )}
         <main className="flex-1 min-h-0 min-w-0">
-          {state.view === "register" && <Register />}
-          {state.view === "dashboard" && <Dashboard />}
-          {state.view === "customers" && <Customers />}
-          {state.view === "inventory" && <Inventory />}
-          {state.view === "finance" && <Finance />}
-          {state.view === "reports" && <Reports />}
-          {state.view === "prescriptions" && <Prescriptions />}
-          {state.view === "deliveries" && <Deliveries />}
-          {state.view === "history" && <History />}
-          {state.view === "settings" && <Settings />}
+          {viewAllowed ? (
+            <>
+              {state.view === "register" && <Register />}
+              {state.view === "dashboard" && <Dashboard />}
+              {state.view === "customers" && <Customers />}
+              {state.view === "inventory" && <Inventory />}
+              {state.view === "finance" && <Finance />}
+              {state.view === "reports" && <Reports />}
+              {state.view === "prescriptions" && <Prescriptions />}
+              {state.view === "deliveries" && <Deliveries />}
+              {state.view === "history" && <History />}
+              {state.view === "settings" && <Settings />}
+            </>
+          ) : (
+            <div className="flex items-center justify-center h-full px-6">
+              <div className="text-center">
+                <p className="text-base font-bold text-ink">Access denied</p>
+                <p className="text-xs text-inksoft mt-1">Your role does not have permission to view this section.</p>
+              </div>
+            </div>
+          )}
         </main>
       </div>
 
