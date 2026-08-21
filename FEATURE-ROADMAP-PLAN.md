@@ -8,9 +8,15 @@ client build (USER.md rule: a static SPA ships every injected key; provider keys
 behind a serverless function).
 
 Each phase is independently shippable (commit + gate + tests green). Gaps below are the ones
-verified against the code in 2026-08-21 (see the "still lacking" analysis). Items marked
-**(partner)** need a real-world credential/contract (DEA/Surescripts/NCPDP trading partner)
-and are spec'd, not implemented, until a partner exists.
+verified against the code in 2026-08-21 (see the "still lacking" analysis).
+
+**Scope (2026-08-21 decision):** active phases are **A, B, C, E, G**. **D** (insurance
+claims), **F** (analytics/engagement), and **H** (quality/ops) are **deferred** — D needs an
+NCPDP trading-partner gateway, F's digital receipts need a mail/SMS provider, H's error
+monitoring needs Sentry. Note: parts of F and H are actually third-party-free (LTV,
+supplier performance, expiry-value-at-risk reports; coupons; terminal IDs; org export;
+CI/CD deploy; DB backups) and can be lifted in later if wanted — skipping is a scope
+choice, not a requirement.
 
 ## Phase A — Till ops & cash handling (no AI, pure logic+UI)
 
@@ -123,7 +129,11 @@ configurable loyalty, promotions, notifications.
 - Gate `gates/analytics-engagement.md`: LTV/supplier/expiry reports match seeded data;
   coupon applies; digital receipt emails (dev mode logs instead of sending).
 
-## Phase G — AI via OpenRouter (the PharmacyNext differentiator)
+## Phase G — AI via OpenRouter, integrated into the app (the PharmacyNext differentiator)
+
+Not a chat wrapper: AI is a **feature layer inside existing screens** — OCR intake in
+Prescriptions, interaction assist at the Register, forecasting/reorder in Inventory, alerts
+on the Dashboard. No chat UI.
 
 Closes: Rx OCR, interaction checker assist, demand forecasting, reorder suggestions,
 anomaly detection, dashboard alerts.
@@ -175,21 +185,16 @@ Closes: error tracking, CI/CD, automated backups, full org export, multi-termina
 ## Dispatch order & gates
 
 Phases A→B→C are the core value and are AI-independent — build them first, in order
-(each commits with its gate). D/E need partners for live use but the local spec parts can
-land any time. F before G (reports + digital receipts are inputs to alerts). G last but
-standalone. H can interleave.
+(each commits with its gate). E is device-dependent and flag-gated; land any time. G last,
+standalone. D/F/H deferred (external partners) — re-open when a partner/credential exists.
 
-| Phase | Gate | AI | Partner needed for live use |
+| Phase | Gate | AI | External dependency |
 |---|---|---|---|
 | A Till ops | `gates/till-ops.md` | — | — |
 | B Supply chain | `gates/supply-chain.md` | — | — |
 | C Clinical | `gates/clinical.md` | — | — |
-| D Claims | `gates/claims.md` | — | NCPDP/gateway |
-| E Hardware | `gates/hardware.md` | — | device-specific |
-| F Analytics & engagement | `gates/analytics-engagement.md` | — | Resend/SMS keys |
+| E Hardware | `gates/hardware.md` | — | device-specific (flag-gated) |
 | G AI (OpenRouter) | `gates/ai-openrouter.md` | OpenRouter via Edge Function | OpenRouter key |
-| H Quality & ops | `gates/quality-ops.md` | — | Sentry DSN |
 
-Abandon-scope note: EPCS/Surescripts e-prescribing and DEA 222 filing are **(partner)** —
-they're spec'd inside Phase C/D but not implemented without a real credential. Scale
-integration (Phase E) is optional/flag-gated.
+Deferred: D Claims (NCPDP gateway), F Analytics & engagement (mail/SMS provider), H Quality
+& ops (Sentry DSN) — most of F/H is actually dependency-free and can be lifted later.
