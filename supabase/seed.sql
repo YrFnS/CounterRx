@@ -329,9 +329,9 @@ on conflict (a, b) do update set severity = excluded.severity, effect = excluded
 /* ------------------------------------------------------------------ */
 /* C-II movement log sample (Phase C)                                   */
 /* ------------------------------------------------------------------ */
-insert into public.c2_movements (product_id, direction, qty, patient_name, rx_id, pharmacist, dea_number, staff_id, created_at) values
-  ('oxy30','dispense',1,'Helen Okafor','RX-2399','R. Mensah, RPh','FB4482913','S-021',now() - interval '3 days'),
-  ('oxy30','receive',30,'MediSource Ltd',NULL,'R. Mensah, RPh','FB4482913','S-021',now() - interval '4 days')
+insert into public.c2_movements (organization_id, product_id, direction, qty, patient_name, rx_id, pharmacist, dea_number, staff_id, created_at) values
+  ('00000000-0000-0000-0000-000000000001','oxy30','dispense',1,'Helen Okafor','RX-2399','R. Mensah, RPh','FB4482913','S-021',now() - interval '3 days'),
+  ('00000000-0000-0000-0000-000000000001','oxy30','receive',30,'MediSource Ltd',NULL,'R. Mensah, RPh','FB4482913','S-021',now() - interval '4 days')
 on conflict (product_id, direction, created_at) do nothing;
 
 /* ------------------------------------------------------------------ */
