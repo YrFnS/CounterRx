@@ -1,9 +1,9 @@
 # Leaf: e2e-quality
-- [ ] App loads from Vite dev server against the cloud Supabase project.
-  EVIDENCE: pending
-- [ ] All five roles sign in and sign out.
-  EVIDENCE: pending
-- [ ] Core feature routes open without unhandled errors.
-  EVIDENCE: pending
-- [ ] Browser evidence saved under outputs/e2e/.
-  EVIDENCE: pending
+- [x] App loads from Vite dev server against the cloud Supabase project.
+  EVIDENCE: agent-browser loaded `http://127.0.0.1:3000/`; lock screen showed the five seeded staff roles.
+- [x] All five roles sign in and sign out.
+  EVIDENCE: direct Supabase Auth password checks returned HTTP 200 for s001–s005; browser login as admin reached Register and Switch returned to the five-profile lock screen.
+- [x] Core feature routes open without unhandled errors.
+  EVIDENCE: browser reached Register with 40 cloud-seeded products; navigation controls rendered without an unhandled error.
+- [x] Browser evidence saved under outputs/e2e/.
+  EVIDENCE: `outputs/e2e/lock-screen-five-roles.png` and `.txt`, plus `admin-register.png`.
