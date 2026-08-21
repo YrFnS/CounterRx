@@ -147,6 +147,7 @@ type Action =
   | { type: "NEW_REFILL"; rxId: string }
   | { type: "RESTORE"; products: Product[]; transactions: Transaction[]; prescriptions: Prescription[]; customers?: Customer[]; audit?: AuditEntry[] }
   | { type: "ADD_PRODUCT"; product: Product }
+  | { type: "SET_REORDER_LEVEL"; productId: string; reorderLevel: number }
   | { type: "REFUND_TX"; txId: string; reason: string }
   | { type: "RX_STATUS"; id: string; status: RxStatus }
   | { type: "RX_TO_CART"; id: string }
@@ -1273,6 +1274,16 @@ export function reducer(state: State, a: Action): State {
         withAudit({ ...state, products: [a.product, ...state.products] }, "stock", `New SKU — ${a.product.name} (${a.product.sku})`),
         "success", `${a.product.name} added to catalog`,
       );
+
+    /* Phase G: apply an AI-suggested reorder level — user-initiated from the forecast dialog */
+    case "SET_REORDER_LEVEL": {
+      const target = state.products.find((x) => x.id === a.productId);
+      if (!target) return state;
+      return withAudit(
+        { ...state, products: state.products.map((x) => (x.id === a.productId ? { ...x, reorderLevel: Math.max(0, Math.round(a.reorderLevel)) } : x)) },
+        "stock", `Reorder level for ${target.name} set to ${Math.max(0, Math.round(a.reorderLevel))} (AI forecast, user-applied)`,
+      );
+    }
 
     case "RX_STATUS": {
       const rx = state.prescriptions.find((x) => x.id === a.id);

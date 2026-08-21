@@ -1,12 +1,14 @@
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { usePos, money, relTime, unitPrice, cartTotals, uomFactor } from "../store";
 import { CATEGORIES, TAX_RATE, daysUntil, stockOf, nearestExpiry, bulkPct, fefoBatches, findInteractions, allergyConflicts } from "../data";
 import type { CategoryId, Product } from "../data";
-import { cx, Badge, Empty } from "../ui";
+import { aiClassify } from "../lib/ai";
+import { cartToInteractionPrompt, parseClassifyJson } from "../lib/ai-ui";
+import { cx, Badge, Empty, Modal } from "../ui";
 import {
-  ISearch, IScan, IPlus, IMinus, ITrash, IPause, IRecall, IX, ICart, IPill, IChevD, ISpark as ISparkIcon, IEdit, ITag, IUsers, IAlert, IPrint, ICold,
+  ISearch, IScan, IPlus, IMinus, ITrash, IPause, IRecall, IX, ICart, IPill, IChevD, ISpark as ISparkIcon, IEdit, ITag, IUsers, IAlert, IPrint, ICold, ICheck,
 } from "../icons";
 import ShiftBar from "./Till";
 import { printReceipt, HardwareError } from "../lib/hardware";
@@ -290,6 +292,15 @@ export default function Register() {
         </div>
 
         <CustomerAttach />
+
+        {/* Phase G (P1): AI second-pass interaction check — advisory only, never blocks checkout */}
+        {state.cart.length > 0 && (
+          <AiSecondPass
+            meds={cartLines.map(({ line, p }) => ({ productId: p.id, name: p.name, generic: p.generic, qty: line.qty }))}
+            allergies={attachedCustomer?.allergies ?? []}
+            patientName={attachedCustomer?.name ?? ""}
+          />
+        )}
 
         {subPrompt && (
           <div className="mx-4 mt-3 rounded-lg border-2 border-pine-500 bg-pine-100/70 p-3 anim-fade-up shadow-lift">
@@ -778,5 +789,140 @@ function ProductCard({ p, hl = [], flashing, flashKey, onAdd }: {
         </span>
       )}
     </button>
+  );
+}
+
+/* ================================================================== */
+/*  Phase G — AI second-pass interaction check (advisory only)        */
+/* ================================================================== */
+
+interface AiConflict {
+  product_id?: string;
+  mechanism?: string;
+  severity?: string;
+  recommendation?: string;
+}
+
+/** LLM cross-check of the basket against the patient's allergy list as a
+ *  SECOND pass over the curated Phase C checker. Surfaces novel conflicts in a
+ *  review dialog for the pharmacist; NEVER blocks checkout. Degrades to an
+ *  inline note when the function is unreachable. */
+function AiSecondPass({ meds, allergies, patientName }: {
+  meds: Array<{ productId: string; name: string; generic: string; qty: number }>;
+  allergies: string[];
+  patientName: string;
+}) {
+  const { t } = useTranslation();
+  const { dispatch, state } = usePos();
+  const [busy, setBusy] = useState(false);
+  const [failed, setFailed] = useState(false);
+  const [conflicts, setConflicts] = useState<AiConflict[] | null>(null);
+  const [dialogOpen, setDialogOpen] = useState(false);
+
+  /* re-run whenever the cart contents change */
+  const cartKey = meds.map((m) => `${m.productId}:${m.qty}`).join("|");
+  useEffect(() => {
+    setConflicts(null);
+    setFailed(false);
+    setDialogOpen(false);
+  }, [cartKey]);
+
+  const run = async () => {
+    if (busy || meds.length === 0) return;
+    setBusy(true);
+    setFailed(false);
+    try {
+      const { system, user } = cartToInteractionPrompt({ cart: meds, allergies, patientName });
+      const res = await aiClassify(system, user);
+      const parsed = parseClassifyJson(res?.text ?? "") as { conflicts?: AiConflict[]; overall?: string } | null;
+      const found = Array.isArray(parsed?.conflicts) ? parsed!.conflicts! : [];
+      setConflicts(found);
+      if (found.length > 0) {
+        dispatch({
+          type: "AUDIT_LOG",
+          kind: "rx",
+          detail: `AI second pass flagged ${found.length} novel conflict${found.length === 1 ? "" : "s"} on the basket — pharmacist review opened`,
+        });
+      }
+    } catch {
+      setFailed(true);
+      dispatch({ type: "TOAST", kind: "info", msg: t("ai.assistFailed") });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const hasResult = conflicts !== null;
+  const count = conflicts?.length ?? 0;
+
+  return (
+    <div className="px-4 pt-2">
+      {!hasResult && (
+        <button onClick={run} disabled={busy}
+          className={cx("w-full flex items-center justify-center gap-1.5 py-1.5 rounded-md border border-dashed text-[11px] font-bold transition active:scale-[0.98]",
+            failed ? "border-mist bg-card text-inksoft/70" : "border-pine-300 bg-pine-50/50 text-pine-700 hover:bg-pine-100",
+            busy && "opacity-60 cursor-wait")}>
+          <ISparkIcon size={11} /> {busy ? t("ai.assistRunning") : failed ? `${t("ai.assistButton")} · retry` : t("ai.assistButton")}
+        </button>
+      )}
+      {hasResult && count === 0 && (
+        <p className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md border border-pine-200 bg-pine-100/60 text-[10px] font-semibold text-pine-700">
+          <ICheck size={10} /> {t("ai.assistClean")}
+        </p>
+      )}
+      {hasResult && count > 0 && (
+        <button onClick={() => setDialogOpen(true)}
+          className="w-full mt-0.5 flex items-center gap-2 px-2.5 py-2 rounded-md border-2 border-honey-500 bg-honey-100/70 hover:bg-honey-100 transition text-start">
+          <IAlert size={13} className="text-honey-700 shrink-0 anim-pulse-dot" />
+          <span className="min-w-0">
+            <span className="block text-[11px] font-bold text-honey-800">{t("ai.assistConflicts")} · {count}</span>
+            <span className="block text-[9px] font-semibold text-honey-700 truncate">{t("pos.interactionWarning")}</span>
+          </span>
+          <IChevD size={12} className="-rotate-90 text-honey-700 shrink-0" />
+        </button>
+      )}
+
+      {dialogOpen && conflicts && (
+        <Modal onClose={() => setDialogOpen(false)} width={520} labelledBy="ai-sp-title">
+          <div className="px-5 py-4 border-b border-mist flex items-start justify-between">
+            <div>
+              <h2 id="ai-sp-title" className="font-display font-bold text-ink flex items-center gap-2">
+                <ISparkIcon size={16} className="text-pine-700" /> {t("ai.assistTitle")}
+              </h2>
+              <p className="text-xs text-inksoft mt-0.5">{t("ai.assistHint")}</p>
+            </div>
+            <button onClick={() => setDialogOpen(false)} className="p-1.5 rounded-md hover:bg-mist/60 text-inksoft" aria-label={t("common.close")}><IX size={14} /></button>
+          </div>
+          <div className="p-5 space-y-3 max-h-[56vh] overflow-y-auto scroll-slim">
+            <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-brick-700 flex items-center gap-1.5">
+              <IAlert size={10} /> {t("ai.assistConflicts")} — {patientName || "walk-in"}
+            </p>
+            {conflicts.map((c, i) => (
+              <div key={i} className="rounded-lg border border-honey-300/70 bg-honey-100/40 px-3 py-2.5 space-y-1">
+                <div className="flex items-center justify-between gap-2">
+                  <p className="text-xs font-bold text-ink truncate">{state.products.find((p) => p.id === c.product_id)?.name ?? c.product_id ?? "—"}</p>
+                  {c.severity && (
+                    <span className="num shrink-0 px-1.5 py-0.5 rounded text-[9px] font-bold uppercase tracking-wide bg-honey-500 text-pine-950">
+                      {c.severity}
+                    </span>
+                  )}
+                </div>
+                {c.mechanism && <p className="text-[11px] text-inksoft leading-snug"><span className="font-bold text-ink">{t("ai.assistMechanism")}:</span> {c.mechanism}</p>}
+                {c.recommendation && <p className="text-[11px] text-pine-800 leading-snug"><span className="font-bold">{t("ai.assistRecommendation")}:</span> {c.recommendation}</p>}
+              </div>
+            ))}
+            <p className="text-[10px] text-inksoft leading-snug border-t border-mist pt-2.5">
+              AI output is advisory only — the curated interaction database still governs checkout. Document any override in the audit trail.
+            </p>
+          </div>
+          <div className="px-5 py-4 border-t border-mist flex justify-end">
+            <button onClick={() => setDialogOpen(false)}
+              className="px-4 py-2 rounded-lg bg-pine-700 text-pine-50 text-xs font-bold hover:bg-pine-600 transition active:scale-95">
+              {t("ai.assistDismiss")}
+            </button>
+          </div>
+        </Modal>
+      )}
+    </div>
   );
 }
