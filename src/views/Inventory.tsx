@@ -3,8 +3,11 @@ import { useTranslation } from "react-i18next";
 import { usePos, money, relTime, clockTime } from "../store";
 import { CATEGORIES, daysUntil, fefoBatches, stockOf, nearestExpiry, newBatchCode, FIELD_SUGGESTIONS, BRANCHES, can, ndcLookup } from "../data";
 import type { CategoryId, Product, Batch, TransferStatus, Transaction } from "../data";
+import { aiForecast } from "../lib/ai";
+import type { ForecastRow } from "../lib/ai";
+import { buildForecastPayload, historyFromTransactions } from "../lib/ai-ui";
 import { cx, Badge, Modal, StockBar, Empty, CustomFieldsBlock } from "../ui";
-import { ISearch, IPlus, IBox, IAlert, IDownload, IEdit, IX, ICheck, IReport, ICalendar, IClipboard, ITag, ISwap, IScan, IUsers, IFlask } from "../icons";
+import { ISearch, IPlus, IBox, IAlert, IDownload, IEdit, IX, ICheck, IReport, ICalendar, IClipboard, ITag, ISwap, IScan, IUsers, IFlask, ITrendUp, IClock } from "../icons";
 
 type Filter = "all" | "low" | "expiring" | "rx" | "controlled";
 
@@ -17,6 +20,7 @@ export default function Inventory() {
   const [monthFilter, setMonthFilter] = useState<string | null>(null);
   const [adjusting, setAdjusting] = useState<Product | null>(null);
   const [receiving, setReceiving] = useState<Product | null>(null);
+  const [forecasting, setForecasting] = useState<Product | null>(null);
   const [adding, setAdding] = useState(false);
   const [counting, setCounting] = useState(false);
   const [compounding, setCompounding] = useState(false);
@@ -246,6 +250,11 @@ export default function Inventory() {
                     </td>
                     <td className="px-4 py-2.5">
                       <div className="flex justify-end gap-1.5">
+                        <button onClick={() => setForecasting(p)}
+                          title={`AI demand forecast for ${p.name} from recent sales`}
+                          className="px-2 py-1.5 rounded-md border border-pine-200 bg-pine-50 text-pine-700 text-[11px] font-bold hover:bg-pine-100 transition active:scale-95 flex items-center gap-1">
+                          <ITrendUp size={11} /> Forecast
+                        </button>
                         <button onClick={() => setReceiving(p)}
                           title={`Receive stock from ${p.supplier}`}
                           className="px-2 py-1.5 rounded-md border border-pine-200 bg-pine-50 text-pine-700 text-[11px] font-bold hover:bg-pine-700 hover:text-pine-50 transition active:scale-95">
@@ -272,6 +281,7 @@ export default function Inventory() {
 
       {adjusting && <AdjustModal p={adjusting} onClose={() => setAdjusting(null)} />}
       {receiving && <ReceiveModal p={receiving} onClose={() => setReceiving(null)} />}
+      {forecasting && <ForecastModal p={forecasting} onClose={() => setForecasting(null)} />}
       {compounding && <CompoundModal onClose={() => setCompounding(false)} />}
       {adding && <AddProductModal onClose={() => setAdding(false)} />}
       {report && <ReportModal mode={report} onClose={() => setReport(null)} />}
@@ -1295,6 +1305,114 @@ function AddProductModal({ onClose }: { onClose: () => void }) {
             valid ? "bg-pine-700 text-pine-50 hover:bg-pine-600" : "bg-mist text-inksoft/60 cursor-not-allowed")}>
           Add to catalog
         </button>
+      </div>
+    </Modal>
+  );
+}
+
+/* ================================================================== */
+/*  Phase G — AI demand forecast + reorder suggestion (per product)   */
+/* ================================================================== */
+
+/** Per-product "Forecast" action: pulls the last 30 days of sales for this
+ *  product from existing transaction state, calls aiForecast, and renders
+ *  predicted demand + a suggested reorder qty the user can act on (one click
+ *  updates the product's static reorderLevel). AI output only applies after an
+ *  explicit user click; failures degrade to a toast. */
+function ForecastModal({ p, onClose }: { p: Product; onClose: () => void }) {
+  const { t } = useTranslation();
+  const { state, dispatch } = usePos();
+  const [busy, setBusy] = useState(false);
+  const [failed, setFailed] = useState(false);
+  const [rows, setRows] = useState<ForecastRow[] | null>(null);
+
+  const run = async () => {
+    if (busy) return;
+    setBusy(true);
+    setFailed(false);
+    try {
+      const history = historyFromTransactions(
+        state.transactions.filter((tx) => tx.lines.some((l) => l.productId === p.id)),
+        30,
+      );
+      const payload = buildForecastPayload(
+        [{ id: p.id, name: p.name, category: p.category, reorderLevel: p.reorderLevel, cost: p.cost }],
+        history,
+      );
+      const res = await aiForecast(payload.history, payload.products);
+      setRows(Array.isArray(res) ? res : []);
+    } catch {
+      setFailed(true);
+      dispatch({ type: "TOAST", kind: "error", msg: t("ai.forecastFailed") });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  /* auto-run once on open */
+  useEffect(() => { void run(); /* eslint-disable-line react-hooks/exhaustive-deps */ }, []);
+
+  const row = rows?.find((r) => String(r.product_id) === p.id) ?? rows?.[0] ?? null;
+  const stock = stockOf(p);
+
+  return (
+    <Modal onClose={onClose} width={440} labelledBy="fc-title">
+      <div className="px-5 py-4 border-b border-mist flex items-start justify-between">
+        <div>
+          <h2 id="fc-title" className="font-display font-bold text-ink flex items-center gap-2">
+            <ITrendUp size={16} className="text-pine-700" /> {t("ai.forecastTitle")}
+          </h2>
+          <p className="text-xs text-inksoft mt-0.5">{p.name} · {stock} on shelf · par {p.reorderLevel}</p>
+        </div>
+        <button onClick={onClose} className="p-1.5 rounded-md hover:bg-mist/60 text-inksoft" aria-label={t("common.close")}><IX size={14} /></button>
+      </div>
+
+      <div className="p-5 space-y-3">
+        {busy && (
+          <p className="flex items-center gap-2 px-3 py-3 rounded-lg bg-honey-100/50 border border-honey-300/60 text-[12px] font-bold text-honey-700">
+            <IClock size={13} /> {t("ai.forecastRunning")}
+          </p>
+        )}
+        {failed && !busy && (
+          <button onClick={run}
+            className="w-full px-3 py-3 rounded-lg bg-brick-100/50 border border-brick-300/60 text-[11px] font-bold text-brick-700 hover:bg-brick-100 transition text-start">
+            {t("ai.forecastFailed")} — click to retry
+          </button>
+        )}
+        {!busy && !failed && row && (
+          <>
+            <div className="grid grid-cols-2 gap-2.5">
+              <div className="rounded-lg border border-pine-200 bg-pine-50 px-3 py-2.5">
+                <p className="text-[9px] font-bold uppercase tracking-[0.14em] text-pine-700">{t("ai.forecastDemand")}</p>
+                <p className="num text-xl font-bold text-pine-800 leading-tight mt-0.5">{Math.round(row.predicted_demand)}</p>
+              </div>
+              <div className="rounded-lg border border-honey-300/60 bg-honey-100/50 px-3 py-2.5">
+                <p className="text-[9px] font-bold uppercase tracking-[0.14em] text-honey-700">{t("ai.forecastReorder")}</p>
+                <p className="num text-xl font-bold text-honey-800 leading-tight mt-0.5">+{Math.round(row.suggested_reorder_qty)}</p>
+              </div>
+            </div>
+            {row.note && (
+              <p className="text-[11px] text-inksoft leading-snug px-1">
+                <span className="font-bold text-ink">{t("ai.forecastNote")}:</span> {row.note}
+              </p>
+            )}
+            <button
+              onClick={() => {
+                dispatch({ type: "SET_REORDER_LEVEL", productId: p.id, reorderLevel: Math.max(0, Math.round(row.suggested_reorder_qty)) });
+                dispatch({ type: "TOAST", kind: "success", msg: t("ai.forecastApplied") });
+                onClose();
+              }}
+              className="w-full py-2.5 rounded-lg font-display font-bold text-sm transition active:scale-[0.98] flex items-center justify-center gap-2 bg-pine-700 text-pine-50 hover:bg-pine-600 shadow-lift">
+              <ICheck size={14} /> {t("ai.forecastApply")} ({Math.max(0, Math.round(row.suggested_reorder_qty))})
+            </button>
+            <p className="text-[10px] text-inksoft leading-snug text-center">
+              Replaces the static reorder level — you can change it back any time in the product form.
+            </p>
+          </>
+        )}
+        {!busy && !failed && rows !== null && !row && (
+          <p className="text-xs text-inksoft text-center py-4">{t("ai.forecastEmpty")}</p>
+        )}
       </div>
     </Modal>
   );
