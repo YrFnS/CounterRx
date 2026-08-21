@@ -7,3 +7,5 @@
   EVIDENCE: browser reached Register with 40 cloud-seeded products; navigation controls rendered without an unhandled error.
 - [x] Browser evidence saved under outputs/e2e/.
   EVIDENCE: `outputs/e2e/lock-screen-five-roles.png` and `.txt`, plus `admin-register.png`.
+
+Additional browser evidence: independent agent-browser sessions logged in as pharmacist, cashier, second cashier, and super admin; each reached Register. The admin session also returned to the five-profile lock screen via Switch.

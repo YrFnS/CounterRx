@@ -11,3 +11,5 @@
   CHECK: `node scripts/db.mjs supabase/seed.sql`
   EXPECT: exit 0
   EVIDENCE: `node scripts/db.mjs supabase/seed.sql` exited 0 (`ROWCOUNT 0` on idempotent rerun); remote counts include products 40, customers 9, transactions 10, staff 5, profiles 5, auth.users 5.
+
+Additional auth evidence: direct Auth password checks returned HTTP 200 for all five seeded demo credentials after the GoTrue NULL-string normalization.
