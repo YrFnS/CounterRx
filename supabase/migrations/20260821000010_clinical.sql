@@ -29,24 +29,26 @@ create policy interaction_pairs_write on public.interaction_pairs for all to aut
   using (public.is_clinical()) with check (public.is_clinical());
 
 -- seed: 11 additional interaction pairs beyond the 9 already in the app constant
-insert into public.interaction_pairs (a, b, severity, effect, action) values
-  ('alpr05', 'zolp5', 'major', 'Benzodiazepine + non-benzodiazepine hypnotic → severe additive CNS depression.', 'Avoid concurrent use; if unavoidable use lowest doses and warn on sedation driving risk.'),
-  ('tram50', 'codsyr', 'major', 'Concurrent opioid therapy — additive CNS and respiratory depression.', 'Dispense one opioid only; counsel on overdose risk.'),
-  ('atv20', 'amx500', 'moderate', 'Macrolide antibiotic raises statin levels via CYP3A4 inhibition.', 'Monitor for myalgia; consider statin dose reduction during the course.'),
-  ('cet10', 'zolp5', 'moderate', 'Antihistamine + sedative-hypnotic → additive next-day impairment.', 'Counsel on drowsiness; avoid operating machinery.'),
-  ('met500', 'insg', 'moderate', 'Metformin + insulin increases hypoglycemia risk.', 'Check glucose before and after; adjust insulin dose down.'),
-  ('omz20', 'atv20', 'moderate', 'Omeprazole raises atorvastatin exposure via CYP2C19/3A4 inhibition.', 'Monitor for statin myopathy signs.'),
-  ('diclo50', 'asa75', 'moderate', 'NSAID + aspirin → additive GI ulceration and bleeding risk.', 'Add gastroprotection if co-prescribed long-term.'),
-  ('glucometer', 'insg', 'moderate', 'Labeling cross-check: glucometer strips for insulin titration.', 'Ensure patient trained on device matching strips.'),
-  ('cfsyrup', 'alpr05', 'moderate', 'Antitussive + benzodiazepine → additive sedation.', 'Counsel on sedation and fall risk in elderly.'),
-  ('vicoprofen', 'alpr05', 'major', 'Opioid + benzodiazepine combination carries FDA boxed warning.', 'Avoid; if absolutely necessary use lowest effective dose.'),
-  ('met500', 'atv20', 'moderate', 'Metformin + statin — monitor for combined lactic acidosis risk in renal impairment.', 'Check renal function before co-train.'),
-  ('zolp5', 'cet10', 'moderate', 'Sedative-hypnotic + antihistamine → prolonged psychomotor impairment.', 'Counsel on next-day drowsiness; avoid alcohol.');
+-- organization_id is set explicitly to the seeded org (the column default calls
+-- current_org_id(), which is NULL outside an authenticated session context).
+insert into public.interaction_pairs (organization_id, a, b, severity, effect, action) values
+  ('00000000-0000-0000-0000-000000000001', 'alpr05', 'zolp5', 'major', 'Benzodiazepine + non-benzodiazepine hypnotic → severe additive CNS depression.', 'Avoid concurrent use; if unavoidable use lowest doses and warn on sedation driving risk.'),
+  ('00000000-0000-0000-0000-000000000001', 'tram50', 'codsyr', 'major', 'Concurrent opioid therapy — additive CNS and respiratory depression.', 'Dispense one opioid only; counsel on overdose risk.'),
+  ('00000000-0000-0000-0000-000000000001', 'atv20', 'amx500', 'moderate', 'Macrolide antibiotic raises statin levels via CYP3A4 inhibition.', 'Monitor for myalgia; consider statin dose reduction during the course.'),
+  ('00000000-0000-0000-0000-000000000001', 'cet10', 'zolp5', 'moderate', 'Antihistamine + sedative-hypnotic → additive next-day impairment.', 'Counsel on drowsiness; avoid operating machinery.'),
+  ('00000000-0000-0000-0000-000000000001', 'met500', 'insg', 'moderate', 'Metformin + insulin increases hypoglycemia risk.', 'Check glucose before and after; adjust insulin dose down.'),
+  ('00000000-0000-0000-0000-000000000001', 'omz20', 'atv20', 'moderate', 'Omeprazole raises atorvastatin exposure via CYP2C19/3A4 inhibition.', 'Monitor for statin myopathy signs.'),
+  ('00000000-0000-0000-0000-000000000001', 'diclo50', 'asa75', 'moderate', 'NSAID + aspirin → additive GI ulceration and bleeding risk.', 'Add gastroprotection if co-prescribed long-term.'),
+  ('00000000-0000-0000-0000-000000000001', 'glucometer', 'insg', 'moderate', 'Labeling cross-check: glucometer strips for insulin titration.', 'Ensure patient trained on device matching strips.'),
+  ('00000000-0000-0000-0000-000000000001', 'cfsyrup', 'alpr05', 'moderate', 'Antitussive + benzodiazepine → additive sedation.', 'Counsel on sedation and fall risk in elderly.'),
+  ('00000000-0000-0000-0000-000000000001', 'vicoprofen', 'alpr05', 'major', 'Opioid + benzodiazepine combination carries FDA boxed warning.', 'Avoid; if absolutely necessary use lowest effective dose.'),
+  ('00000000-0000-0000-0000-000000000001', 'met500', 'atv20', 'moderate', 'Metformin + statin — monitor for combined lactic acidosis risk in renal impairment.', 'Check renal function before co-train.'),
+  ('00000000-0000-0000-0000-000000000001', 'zolp5', 'cet10', 'moderate', 'Sedative-hypnotic + antihistamine → prolonged psychomotor impairment.', 'Counsel on next-day drowsiness; avoid alcohol.');
 
 -- rx-docs: Supabase Storage bucket for hard-copy prescription scans
 -- (created via SQL so the bucket policy is deterministic and reviewable).
-insert into storage.buckets (id, name, public, avif_autodetect_version, created_at)
-values ('rx-docs', 'rx-docs', false, 0, now())
+insert into storage.buckets (id, name, public, created_at)
+values ('rx-docs', 'rx-docs', false, now())
 on conflict (id) do nothing;
 
 create policy "rx-docs: authenticated users can read their org's scans"
