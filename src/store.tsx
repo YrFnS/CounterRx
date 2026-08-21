@@ -1588,9 +1588,15 @@ export function PosProvider({ children }: { children: ReactNode }) {
     state.apInvoices, state.expenses, state.deliveries, state.webOrders, state.timeEntries,
     state.staff, state.settings, state.restrictedLog, state.audit, state.shifts, state.snapshotVersion]);
 
-  /* track connectivity so the UI can show offline state (6.5) */
+  /* track connectivity so the UI can show offline state (6.5); retry persist on reconnect (F11) */
   useEffect(() => {
-    const on = () => dispatch({ type: "SET_ONLINE", online: true });
+    const on = () => {
+      dispatch({ type: "SET_ONLINE", online: true });
+      // Retry persist on reconnect: push any offline edits queued in localStorage.
+      if (hydratedRef.current && stateRef.current.backendAuthenticated) {
+        queueMicrotask(() => { void persistBackendData(backendDataFromState(stateRef.current)); });
+      }
+    };
     const off = () => dispatch({ type: "SET_ONLINE", online: false });
     window.addEventListener("online", on);
     window.addEventListener("offline", off);
