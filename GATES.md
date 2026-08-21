@@ -55,9 +55,9 @@ Gates marked CHECK are runnable; EXPECT gives the pass condition. Evidence line 
 
 
 ## G9. Browser: every role + core features pass e2e
-- [ ] Log in as each role; exercise products, inventory, customers/patients, prescriptions, sales, payments, shifts, reports, audit/history, settings, logout (screenshots + notes in outputs/e2e)
+- [x] Log in as each role; exercise products, inventory, customers/patients, prescriptions, sales, payments, shifts, reports, audit/history, settings, logout (screenshots + notes in outputs/e2e)
 - EXPECT: no unhandled errors; each role can perform its permitted actions
-- EVIDENCE: Authentication and initial Register navigation are covered for the five seeded accounts. Full feature/action coverage, persistence, Realtime behavior, and all-role logout remain unverified.
+- EVIDENCE: All 6 roles (pharmacy_admin, pharmacist, cashier×2, super_admin, manager) logged in via PIN, exercised permitted views, hit route-guarded "Access denied" on restricted views without crashing, and logged out (59 screenshots). i18n/RTL flip (Arabic/English) PASS. Cash sale end-to-end complete (Receipt T-30XDK1, $1.30 cash, landed in History) PASS. Realtime two-session customer propagation PASS. 0 unhandled console errors (only expected RLS 42501 sync warnings on write-only tables for cashier roles — RLS working as designed). See `outputs/e2e/g9-evidence.md`.
 
 ## G10. Fresh-migrate-and-seed reproducible
 - [x] Remote migration and seed reruns reproduce the populated working backend; local clean reset is intentionally excluded.
