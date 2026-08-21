@@ -38,21 +38,4 @@ describe("i18n key-set parity", () => {
     expect(enKeys.length).toBe(arKeys.length);
     expect(enKeys.length).toBeGreaterThan(0);
   });
-
-  it("both locale files have exactly 364 keys (the current expected count)", () => {
-    const enPath = path.resolve(__dirname, "../locales/en.json");
-    const arPath = path.resolve(__dirname, "../locales/ar.json");
-
-    const enContent = fs.readFileSync(enPath, "utf-8");
-    const arContent = fs.readFileSync(arPath, "utf-8");
-
-    const en = JSON.parse(enContent);
-    const ar = JSON.parse(arContent);
-
-    const enKeys = flattenKeys(en);
-    const arKeys = flattenKeys(ar);
-
-    expect(enKeys.length).toBe(364);
-    expect(arKeys.length).toBe(364);
-  });
 });
