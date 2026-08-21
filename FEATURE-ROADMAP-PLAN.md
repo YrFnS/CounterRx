@@ -10,13 +10,11 @@ behind a serverless function).
 Each phase is independently shippable (commit + gate + tests green). Gaps below are the ones
 verified against the code in 2026-08-21 (see the "still lacking" analysis).
 
-**Scope (2026-08-21 decision):** active phases are **A, B, C, E, G**. **D** (insurance
-claims), **F** (analytics/engagement), and **H** (quality/ops) are **deferred** — D needs an
-NCPDP trading-partner gateway, F's digital receipts need a mail/SMS provider, H's error
-monitoring needs Sentry. Note: parts of F and H are actually third-party-free (LTV,
-supplier performance, expiry-value-at-risk reports; coupons; terminal IDs; org export;
-CI/CD deploy; DB backups) and can be lifted in later if wanted — skipping is a scope
-choice, not a requirement.
+**Scope (2026-08-21 decision):** active phases are **A, B, C, E, F (minus digital receipts), G**.
+**D** (insurance claims) and **H** (quality/ops) are **deferred** — D needs an NCPDP
+trading-partner gateway; H's error monitoring needs Sentry (its CI/CD, backups, terminal
+IDs, and org export are dependency-free and can be lifted in later if wanted). Digital
+receipts inside F are **excluded** — they'd need a mail/SMS provider, and we skip Resend.
 
 ## Phase A — Till ops & cash handling (no AI, pure logic+UI)
 
@@ -113,21 +111,20 @@ Closes: thermal receipt printer, cash-drawer kick, barcode label printing, scale
 - Gate `gates/hardware.md`: serial module unit-tests the escape sequence builder; fallback
   path unchanged.
 
-## Phase F — Analytics & engagement
+## Phase F — Analytics & engagement (no external provider)
 
-Closes: customer LTV, supplier performance, expiry value-at-risk, digital receipts,
-configurable loyalty, promotions, notifications.
+Closes: customer LTV, supplier performance, expiry value-at-risk, configurable loyalty,
+promotions/coupons. Digital receipts (email/SMS) are **excluded** — they'd need a
+mail/SMS provider, and per the 2026-08-21 scope decision we skip Resend entirely; print
+receipts stay as-is.
 
 - **Reports:** LTV (lifetime spend − refunds, cohort by signup), supplier performance
   (fill rate/lead time/damage — data exists in POs/AP), expiry value-at-risk
   (cost of lots expiring ≤90d). All exportable CSV (export helper exists).
-- **Digital receipts:** email/SMS receipt — send via Edge Function using a transactional
-  provider (Resend for email — **(partner)** for the API key; SMS provider later). PDF or
-  HTML receipt from existing receipt data.
 - **Configurable loyalty/promotions:** org settings gain loyalty rate/tiers and a coupons
   table (code, %/amount, expiry, customer scope) applied in the payment modal.
 - Gate `gates/analytics-engagement.md`: LTV/supplier/expiry reports match seeded data;
-  coupon applies; digital receipt emails (dev mode logs instead of sending).
+  coupon applies and deducts; loyalty tiers configurable per org.
 
 ## Phase G — AI via OpenRouter, integrated into the app (the PharmacyNext differentiator)
 
@@ -185,8 +182,9 @@ Closes: error tracking, CI/CD, automated backups, full org export, multi-termina
 ## Dispatch order & gates
 
 Phases A→B→C are the core value and are AI-independent — build them first, in order
-(each commits with its gate). E is device-dependent and flag-gated; land any time. G last,
-standalone. D/F/H deferred (external partners) — re-open when a partner/credential exists.
+(each commits with its gate). E is device-dependent and flag-gated; land any time. F is
+pure app (no provider) and can land with or after C. G last, standalone. D/H deferred
+(external partners) — re-open when a partner/credential exists.
 
 | Phase | Gate | AI | External dependency |
 |---|---|---|---|
@@ -194,7 +192,8 @@ standalone. D/F/H deferred (external partners) — re-open when a partner/creden
 | B Supply chain | `gates/supply-chain.md` | — | — |
 | C Clinical | `gates/clinical.md` | — | — |
 | E Hardware | `gates/hardware.md` | — | device-specific (flag-gated) |
+| F Analytics & engagement | `gates/analytics-engagement.md` | — | none (digital receipts excluded) |
 | G AI (OpenRouter) | `gates/ai-openrouter.md` | OpenRouter via Edge Function | OpenRouter key |
 
-Deferred: D Claims (NCPDP gateway), F Analytics & engagement (mail/SMS provider), H Quality
-& ops (Sentry DSN) — most of F/H is actually dependency-free and can be lifted later.
+Deferred: D Claims (NCPDP gateway), H Quality & ops (Sentry DSN; CI/CD, backups, terminal
+IDs, org export are dependency-free and liftable later).
