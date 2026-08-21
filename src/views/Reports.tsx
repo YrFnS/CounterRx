@@ -2,11 +2,11 @@ import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import i18n from "../i18n";
 import type { ReactNode } from "react";
-import { usePos, money } from "../store";
-import { CATEGORIES, fefoBatches } from "../data";
-import type { Product, TxLine, Transaction, PayMethod } from "../data";
-import { cx, Badge, Empty } from "../ui";
-import { ITrendUp, IDownload, IX, IPlus, IBox, ICash, ISearch } from "../icons";
+import { usePos, money, clockTime } from "../store";
+import { CATEGORIES, fefoBatches, generateXReport, generateZReport } from "../data";
+import type { Product, TxLine, Transaction, PayMethod, Shift, ZReport } from "../data";
+import { cx, Badge, Empty, Modal } from "../ui";
+import { ITrendUp, IDownload, IX, IPlus, IBox, ICash, ISearch, ICalendar } from "../icons";
 
 /* ------------------------------------------------------------------ */
 /*  Costing helpers — every figure below derives from lot-level cost    */
@@ -39,7 +39,7 @@ const PRESETS: { id: Preset; label: string }[] = [
 ];
 
 /* ================= MAIN VIEW ================= */
-type Tab = "margin" | "valuation" | "pnl" | "builder";
+type Tab = "margin" | "valuation" | "pnl" | "builder" | "till";
 export default function Reports() {
   const { t } = useTranslation();
   const { state } = usePos();
@@ -59,6 +59,7 @@ export default function Reports() {
     { id: "valuation", label: i18n.t("reports.cogsValuation"), icon: <IBox size={14} /> },
     { id: "pnl", label: "P&L", icon: <ICash size={14} /> },
     { id: "builder", label: i18n.t("reports.builder"), icon: <ISearch size={14} /> },
+    { id: "till", label: i18n.t("reports.till"), icon: <ICash size={14} /> },
   ];
 
   return (
@@ -100,6 +101,7 @@ export default function Reports() {
         {tab === "valuation" && <ValuationTab ledger={ledger} />}
         {tab === "pnl" && <PnlTab ledger={ledger} />}
         {tab === "builder" && <BuilderTab from={from} to={to} preset={preset} />}
+        {tab === "till" && <TillTab />}
       </div>
     </div>
   );
@@ -550,5 +552,184 @@ function ExportCsv({ name, head, rows }: { name: string; head: string[]; rows: (
       className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-pine-700 text-pine-50 text-xs font-bold hover:bg-pine-600 transition active:scale-95">
       <IDownload size={13} /> Export CSV
     </button>
+  );
+}
+
+/* ================= TILL TAB (Phase A) — X/Z reports ================= */
+function TillTab() {
+  const { t } = useTranslation();
+  const { state, dispatch } = usePos();
+  const [closing, setClosing] = useState<Shift | null>(null);
+  const [counted, setCounted] = useState("");
+  const [notes, setNotes] = useState("");
+  const [viewShift, setViewShift] = useState<Shift | null>(null);
+
+  const openShift = state.currentShift;
+  const closedShifts = useMemo(
+    () => state.shifts.filter((s) => s.status === "closed").sort((a, b) => b.openedAt - a.openedAt),
+    [state.shifts]);
+
+  const xReport = openShift ? generateXReport(openShift) : null;
+
+  return (
+    <div className="space-y-4">
+      {/* open shift — live X snapshot, Z closes it */}
+      {openShift && xReport ? (
+        <div className="rounded-xl border-2 border-pine-300 bg-pine-50/40 p-4 anim-fade-up">
+          <div className="flex items-center justify-between flex-wrap gap-2">
+            <div>
+              <h2 className="font-display font-bold text-ink flex items-center gap-2"><ICash size={18} className="text-pine-700" /> {t("reports.tillOpen")} · {openShift.id}</h2>
+              <p className="text-[11px] text-inksoft mt-0.5">{openShift.cashierName} · {openShift.terminalId} · opened {clockTime(openShift.openedAt)}</p>
+            </div>
+            <div className="flex gap-2">
+              <button onClick={() => setViewShift(openShift)}
+                className="flex items-center gap-1.5 px-3.5 py-2 rounded-lg border border-mist bg-card text-xs font-bold text-ink hover:border-pine-400 hover:bg-pine-50 transition active:scale-95">
+                <ICalendar size={14} /> {t("reports.xReport")}
+              </button>
+              <button onClick={() => { setCounted(String(openShift.expectedCash)); setNotes(""); setClosing(openShift); }}
+                className="flex items-center gap-1.5 px-3.5 py-2 rounded-lg bg-ink text-paper text-xs font-bold hover:bg-pine-900 transition active:scale-95 shadow-lift">
+                {t("reports.zReport")}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : (
+        <div className="rounded-xl border border-mist bg-card p-6 text-center">
+          <p className="text-sm text-inksoft">{t("reports.noOpenShift")}</p>
+          <button onClick={() => dispatch({ type: "SHIFT_OPEN", terminalId: "", openingBalance: 0 })}
+            className="mt-3 px-4 py-2 rounded-lg bg-pine-700 text-pine-50 text-xs font-bold hover:bg-pine-600 transition active:scale-95">
+            {t("reports.openShiftNow")}
+          </button>
+        </div>
+      )}
+
+      {/* closed-shift history */}
+      <div>
+        <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-inksoft mb-2">{t("reports.closedShifts")}</p>
+        {closedShifts.length === 0 ? (
+          <p className="text-xs text-inksoft">{t("reports.noClosedShifts")}</p>
+        ) : (
+          <div className="grid sm:grid-cols-2 gap-2">
+            {closedShifts.map((s) => {
+              const z = generateZReport(s);
+              return (
+                <button key={s.id} onClick={() => setViewShift(s)}
+                  className="text-start rounded-lg border border-mist bg-card px-3 py-2.5 hover:border-pine-400 transition">
+                  <div className="flex items-center justify-between">
+                    <span className="num font-bold text-ink">{s.id}</span>
+                    <span className={cx("num text-xs font-bold", (z?.overShort ?? 0) >= 0 ? "text-pine-700" : "text-brick-700")}>
+                      {(z?.overShort ?? 0) >= 0 ? "+" : "−"}{money(Math.abs(z?.overShort ?? 0))}
+                    </span>
+                  </div>
+                  <p className="text-[10px] text-inksoft mt-0.5">{s.cashierName} · {clockTime(s.closedAt ?? s.openedAt)}</p>
+                </button>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      {/* Z close dialog — counted cash → over/short */}
+      {closing && (
+        <Modal onClose={() => setClosing(null)} width={460} labelledBy="z-title">
+          <div className="px-5 py-4 border-b border-mist">
+            <h2 id="z-title" className="font-display font-bold text-ink">{t("reports.zClose")} · {closing.id}</h2>
+            <p className="text-xs text-inksoft mt-0.5">{t("reports.zCloseHint")}</p>
+          </div>
+          <div className="p-5 space-y-4">
+            <div className="grid grid-cols-2 gap-3 text-sm">
+              <div className="rounded-lg bg-paper border border-mist px-3 py-2"><p className="text-[10px] font-bold uppercase tracking-wide text-inksoft">{t("shift.expectedCash")}</p><p className="num font-bold text-ink">{money(closing.expectedCash)}</p></div>
+              <div className="rounded-lg bg-paper border border-mist px-3 py-2"><p className="text-[10px] font-bold uppercase tracking-wide text-inksoft">{t("shift.openingBalance")}</p><p className="num font-bold text-ink">{money(closing.openingBalance)}</p></div>
+            </div>
+            <div>
+              <label className="text-[11px] font-semibold uppercase tracking-[0.14em] text-inksoft">{t("reports.countedCash")}</label>
+              <input value={counted} onChange={(e) => setCounted(e.target.value.replace(/[^\d.]/g, ""))}
+                inputMode="decimal" autoFocus
+                className="num w-full mt-1.5 px-3 py-2.5 rounded-lg border-2 border-mist bg-card text-base font-semibold text-ink focus:border-pine-500 focus:outline-none transition" />
+            </div>
+            <div>
+              <label className="text-[11px] font-semibold uppercase tracking-[0.14em] text-inksoft">{t("shift.notes")}</label>
+              <textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={2}
+                className="w-full mt-1.5 px-3 py-2.5 rounded-lg border border-mist bg-card text-sm focus:border-pine-500 focus:outline-none transition" />
+            </div>
+            <div className={cx("rounded-lg px-3 py-2 text-sm font-bold", (parseFloat(counted) - closing.expectedCash) >= 0 ? "bg-pine-100 text-pine-800" : "bg-brick-100 text-brick-700")}>
+              {t("reports.overUnder")}: {(parseFloat(counted) - closing.expectedCash) >= 0 ? "+" : "−"}{money(Math.abs(parseFloat(counted) || 0 - closing.expectedCash))}
+            </div>
+            <button onClick={() => { dispatch({ type: "SHIFT_CLOSE", countedCash: parseFloat(counted) || 0, notes: notes.trim() || undefined }); setClosing(null); }}
+              className="w-full py-2.5 rounded-lg bg-ink text-paper text-sm font-bold hover:bg-pine-900 transition active:scale-[0.98] shadow-lift">
+              {t("reports.confirmClose")}
+            </button>
+          </div>
+        </Modal>
+      )}
+
+      {/* X / Z report viewer */}
+      {viewShift && <XZReport shift={viewShift} onClose={() => setViewShift(null)} />}
+    </div>
+  );
+}
+
+function XZReport({ shift, onClose }: { shift: Shift; onClose: () => void }) {
+  const { t } = useTranslation();
+  const r = shift.status === "closed" ? generateZReport(shift) : generateXReport(shift);
+  if (!r) return null;
+  const isZ = "countedCash" in r;
+  const tenders = (Object.entries(r.tenderBreakdown) as [string, number][]).filter(([, v]) => v !== 0);
+  return (
+    <Modal onClose={onClose} width={520} labelledBy="xz-title">
+      <div className="px-5 py-4 border-b border-mist flex items-center justify-between">
+        <div>
+          <h2 id="xz-title" className="font-display font-bold text-ink flex items-center gap-2"><ICash size={17} className="text-pine-700" /> {isZ ? t("reports.zReport") : t("reports.xReport")} · {shift.id}</h2>
+          <p className="text-[11px] text-inksoft mt-0.5">{shift.cashierName} · {shift.terminalId} · {clockTime(shift.openedAt)}</p>
+        </div>
+        <button onClick={onClose} className="p-1.5 rounded-md hover:bg-mist/60 text-inksoft" aria-label="Close"><IX size={14} /></button>
+      </div>
+      <div className="p-5 space-y-3 text-sm">
+        <div className="grid grid-cols-3 gap-2">
+          <Stat label={t("shift.transactionCount")} value={String(r.transactionCount)} />
+          <Stat label={t("shift.totalSales")} value={money(r.salesTotal)} />
+          <Stat label={t("shift.totalRefunds")} value={money(r.refundsTotal)} />
+        </div>
+        <div>
+          <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-inksoft mb-1">{t("shift.tenderTotals")}</p>
+          <div className="space-y-1">
+            {tenders.length === 0 && <p className="text-xs text-inksoft">—</p>}
+            {tenders.map(([m, v]) => (
+              <div key={m} className="flex justify-between"><span className="text-ink capitalize">{m.replace("_", " ")}</span><span className="num text-ink">{money(v)}</span></div>
+            ))}
+          </div>
+        </div>
+        <div className="rounded-lg bg-paper border border-mist px-3 py-2 flex justify-between"><span className="text-inksoft">{t("shift.paidIn")}</span><span className="num text-pine-700">{money(shift.paidInTotal)}</span></div>
+        <div className="rounded-lg bg-paper border border-mist px-3 py-2 flex justify-between"><span className="text-inksoft">{t("shift.paidOut")}</span><span className="num text-brick-700">−{money(shift.paidOutTotal)}</span></div>
+        <div className="rounded-lg bg-paper border border-mist px-3 py-2 flex justify-between"><span className="font-bold text-ink">{t("reports.currentCash")}</span><span className="num font-bold text-ink">{money(r.currentCash)}</span></div>
+        {isZ && (
+          <>
+            <div className="rounded-lg bg-paper border border-mist px-3 py-2 flex justify-between"><span className="text-inksoft">{t("reports.countedCash")}</span><span className="num text-ink">{money((r as ZReport).countedCash)}</span></div>
+            <div className={cx("rounded-lg px-3 py-2 flex justify-between font-bold", (r as ZReport).overShort >= 0 ? "bg-pine-100 text-pine-800" : "bg-brick-100 text-brick-700")}>
+              <span>{t("shift.overShort")}</span><span className="num">{(r as ZReport).overShort >= 0 ? "+" : "−"}{money(Math.abs((r as ZReport).overShort))}</span>
+            </div>
+          </>
+        )}
+        {shift.cashMovements.length > 0 && (
+          <div className="pt-1">
+            <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-inksoft mb-1">{t("reports.cashMovements")}</p>
+            <div className="space-y-1">
+              {shift.cashMovements.map((m) => (
+                <div key={m.id} className="flex justify-between text-xs"><span className="text-ink">{m.reason}<span className="text-inksoft"> · {clockTime(m.at)}</span></span><span className={cx("num font-semibold", m.type === "paid_in" ? "text-pine-700" : "text-brick-700")}>{m.type === "paid_in" ? "+" : "−"}{money(m.amount)}</span></div>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+    </Modal>
+  );
+}
+
+function Stat({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-lg bg-paper border border-mist px-3 py-2 text-center">
+      <p className="num text-sm font-bold text-ink">{value}</p>
+      <p className="text-[9px] font-bold uppercase tracking-wide text-inksoft">{label}</p>
+    </div>
   );
 }

@@ -3,8 +3,8 @@ import { useTranslation } from "react-i18next";
 import type { ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { usePos, money, cartTotals } from "./store";
-import { TAX_RATE, findInteractions, can } from "./data";
-import type { PayMethod, PaymentLeg, Transaction, Product } from "./data";
+import { TAX_RATE, findInteractions, can, creditByCode } from "./data";
+import type { PayMethod, PaymentLeg, Transaction, Product, StoreCredit } from "./data";
 import { Modal, cx } from "./ui";
 import { ICash, ICard, IShield, IX, IPrint, ICheck, ISplit, IUsers, IStar, IAlert, ICode, ICopy, IDownload } from "./icons";
 
@@ -28,6 +28,11 @@ export function PaymentModal() {
   const [rIdLast4, setRIdLast4] = useState("");
 
   const customer = state.customers.find((c) => c.id === state.saleCustomerId) ?? null;
+  const [creditCode, setCreditCode] = useState("");
+  const creditMatch: StoreCredit | undefined = creditCode.trim()
+    ? creditByCode(state.storeCredits, creditCode)
+    : undefined;
+  const creditBalance = creditMatch?.balance ?? 0;
 
   /* drug–drug interaction check across the cart (§3/§4) */
   const interactions = useMemo(
@@ -62,13 +67,15 @@ export function PaymentModal() {
   const interactionOk = major.length === 0 || overrideAck;
   /* behind-the-counter sales need purchaser name + ID last-4 */
   const restrictedOk = restrictedLines.length === 0 || (rPurchaser.trim().length >= 2 && /^\d{4}$/.test(rIdLast4));
-  const canConfirm = paymentOk && controlledOk && interactionOk && restrictedOk;
+  const canConfirm = paymentOk && controlledOk && interactionOk && restrictedOk
+    && (leg1 !== "store_credit" || !!creditMatch);
   const hasRx = state.cart.some((c) => product(c.productId)?.rx);
 
   const methods: { id: PayMethod; label: string; icon: ReactNode; hint: string }[] = [
     { id: "cash", label: "Cash", icon: <ICash size={17} />, hint: tr("modal.drawerOpens") },
     { id: "card", label: "Card", icon: <ICard size={17} />, hint: tr("modal.terminal2") },
     { id: "insurance", label: "Insurance", icon: <IShield size={17} />, hint: tr("modal.claimAutoFiled") },
+    { id: "store_credit", label: "Store Credit", icon: <ICard size={17} />, hint: tr("modal.giftOrCredit") },
   ];
   const labelOf = (m: PayMethod) => methods.find((x) => x.id === m)?.label ?? m;
 
@@ -83,7 +90,9 @@ export function PaymentModal() {
     }
     const payments: PaymentLeg[] = split
       ? [{ method: leg1, amount: round2(l1) }, { method: leg2, amount: l2 }]
-      : [{ method: leg1, amount: t.total }];
+      : leg1 === "store_credit"
+        ? [{ method: "store_credit", amount: t.total, ref: creditMatch!.id }]
+        : [{ method: leg1, amount: t.total }];
     dispatch({
       type: "COMPLETE_SALE", payments, discountPct, taxExempt, idChecked,
       tendered: !split && leg1 === "cash" ? tenderedNum : undefined,
@@ -386,6 +395,22 @@ export function PaymentModal() {
           {!split && leg1 === "insurance" && (
             <div className="mt-4 px-3 py-3 rounded-lg bg-card border border-mist text-xs text-inksoft leading-relaxed">
               Claim will be filed to <span className="font-semibold text-ink">BlueCross PBM</span>. Patient co-pay is collected at pickup.
+            </div>
+          )}
+          {!split && leg1 === "store_credit" && (
+            <div className="mt-4 anim-fade-up space-y-2">
+              <label className="text-[11px] font-semibold uppercase tracking-[0.14em] text-inksoft">{tr("modal.creditCode")}</label>
+              <input value={creditCode} onChange={(e) => setCreditCode(e.target.value)} placeholder={tr("modal.scanOrEnterCode")}
+                className="w-full px-3 py-2.5 rounded-lg border-2 border-mist bg-card text-base font-semibold text-ink focus:border-pine-500 focus:outline-none transition" />
+              {creditCode.trim() && !creditMatch && (
+                <p className="text-xs text-brick-700 font-semibold">{tr("modal.creditNotFound")}</p>
+              )}
+              {creditMatch && (
+                <div className={cx("rounded-lg px-3 py-2 text-sm flex justify-between", creditBalance >= t.total ? "bg-pine-100 text-pine-800" : "bg-honey-100 text-honey-800")}>
+                  <span>{creditMatch.code ? `${tr("modal.giftCard")} ${creditMatch.code}` : tr("modal.storeCredit")}</span>
+                  <span className="num font-bold">{money(creditBalance)} {creditBalance < t.total && `· ${tr("modal.remainingDue")} ${money(t.total - creditBalance)}`}</span>
+                </div>
+              )}
             </div>
           )}
 

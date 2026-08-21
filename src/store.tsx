@@ -6,7 +6,7 @@ import {
   makeDeliveries, makeWebOrders, makeTimeEntries,
   TAX_RATE, CASHIER,
   stockOf, nearestExpiry, allocFEFO, fefoBatches, newBatchCode, daysUntil,
-  bulkPct, REDEEM_CHUNK_PTS, REDEEM_CHUNK_VALUE,
+  bulkPct, REDEEM_CHUNK_PTS, REDEEM_CHUNK_VALUE, can, tenderTypeOf, applyStoreCredit, pruneExpiredHolds,
   createShift, recordShiftTransaction, recordCashMovement, closeShift, generateXReport, generateZReport,
 } from "./data";
 import type {
@@ -15,7 +15,7 @@ import type {
   Snapshot, SnapshotMeta, RestrictedLogEntry, Prescriber, BackOrder, BackOrderStatus, RxTransfer,
   Supplier, PurchaseOrder, ApInvoice, ApPayMethod, Expense,
   Delivery, DeliveryStatus, WebOrder, WebOrderStatus, TimeEntry,
-  Shift, XReport, ZReport, CashMovement, ShiftTransaction, TxType, TenderType,
+  Shift, XReport, ZReport, CashMovement, ShiftTransaction, TxType, TenderType, StoreCredit,
 } from "./data";
 import { makeStaff, makeSettings, makeBackOrders, makeRxTransfers, SNAPS_KEY, hashPin, ROLE_LABEL } from "./data";
 import type { BackendData, LoadResult } from "./lib/sync";
@@ -56,6 +56,7 @@ interface State {
   currentShift: Shift | null;
   cart: { productId: string; qty: number; note?: string; priceOverride?: number; daw?: number; substitutedFrom?: string; uom?: string }[];
   held: HeldSale[];
+  storeCredits: StoreCredit[];
   customers: Customer[];
   audit: AuditEntry[];
   saleCustomerId: string | null;
@@ -108,9 +109,12 @@ type Action =
   | { type: "SET_QTY"; productId: string; qty: number; uom?: string }
   | { type: "REMOVE_LINE"; productId: string; uom?: string }
   | { type: "CLEAR_CART" }
-  | { type: "HOLD_SALE"; label: string }
+  | { type: "HOLD_SALE"; label: string; expiresAt?: number }
   | { type: "RECALL_HELD"; id: string }
   | { type: "DROP_HELD"; id: string }
+  | { type: "ISSUE_STORE_CREDIT"; credit: StoreCredit }
+  | { type: "REDEEM_STORE_CREDIT"; id: string; amount: number }
+  | { type: "EXPIRE_HELDS" }
   | { type: "OPEN_PAY"; open: boolean }
   | { type: "COMPLETE_SALE"; payments: PaymentLeg[]; tendered?: number; discountPct: number; taxExempt: boolean; idChecked: boolean; restricted?: { purchaser: string; idType: string; idLast4: string } }
   | { type: "OPEN_RECEIPT"; tx: Transaction | null }
@@ -154,7 +158,7 @@ type Action =
   | { type: "SHIFT_OPEN"; terminalId: string; openingBalance: number }
   | { type: "SHIFT_CLOSE"; countedCash: number; notes?: string }
   | { type: "SHIFT_CASH_MOVEMENT"; movementType: "paid_in" | "paid_out"; amount: number; reason: string; approvedBy?: string }
-  | { type: "VOID_TX"; txId: string; reason: string; approvedBy: string }
+  | { type: "VOID_TX"; txId: string; reason: string; approvedBy?: string }
   | { type: "GENERATE_X_REPORT"; shiftId: string }
   | { type: "GENERATE_Z_REPORT"; shiftId: string }
   | { type: "RESET" }
@@ -165,7 +169,7 @@ let toastSeq = 1;
 let heldSeq = 1;
 let auditSeq = 100;
 
-export const seed = (): Pick<State, "products" | "transactions" | "prescriptions" | "prescribers" | "customers" | "audit" | "transfers" | "backorders" | "rxTransfers" | "suppliers" | "purchaseOrders" | "apInvoices" | "expenses" | "deliveries" | "webOrders" | "timeEntries" | "staff" | "settings" | "shifts"> => {
+export const seed = (): Pick<State, "products" | "transactions" | "prescriptions" | "prescribers" | "customers" | "audit" | "transfers" | "backorders" | "rxTransfers" | "suppliers" | "purchaseOrders" | "apInvoices" | "expenses" | "deliveries" | "webOrders" | "timeEntries" | "staff" | "settings" | "shifts" | "storeCredits"> => {
   const now = Date.now();
   const products = makeProducts(now);
   const customers = makeCustomers(now);
@@ -189,6 +193,7 @@ export const seed = (): Pick<State, "products" | "transactions" | "prescriptions
     shifts: [],
     staff: makeStaff(now),
     settings: makeSettings(),
+    storeCredits: [],
     audit: [{ id: auditSeq++, at: now - 36 * 60_000, actor: "system", kind: "system", detail: "Ledger initialized — demo dataset v10" }],
   };
 };
@@ -201,6 +206,7 @@ function load(): State {
     cart: [], held: [], saleCustomerId: null, redeemPoints: 0, currentShift: null,
     view: "register", invPreset: "all",
     payOpen: false, receipt: null, toasts: [], flashId: null, flashKey: 0, snapshotVersion: 0,
+    storeCredits: [],
   };
   try {
     const raw = localStorage.getItem(LS_KEY);
@@ -227,10 +233,12 @@ function load(): State {
           restrictedLog: saved.restrictedLog ?? [],
           audit: saved.audit ?? [],
           shifts: saved.shifts ?? [],
+          storeCredits: saved.storeCredits ?? [],
         };
       }
     }
   } catch { /* corrupted storage — fall back to seed */ }
+  base.held = pruneExpiredHolds(base.held);
   return base;
 }
 
@@ -709,8 +717,26 @@ export function reducer(state: State, a: Action): State {
 
     case "HOLD_SALE": {
       if (state.cart.length === 0) return state;
-      const h: HeldSale = { id: `H-${heldSeq++}`, label: a.label || `Hold ${state.held.length + 1}`, at: Date.now(), items: state.cart };
+      const h: HeldSale = { id: `H-${heldSeq++}`, label: a.label || `Hold ${state.held.length + 1}`, at: Date.now(), expiresAt: a.expiresAt, items: state.cart };
       return withToast({ ...state, held: [...state.held, h], cart: [] }, "info", `Sale parked as “${h.label}”`);
+    }
+
+    case "EXPIRE_HELDS": {
+      const pruned = pruneExpiredHolds(state.held);
+      if (pruned.length === state.held.length) return state;
+      const dropped = state.held.length - pruned.length;
+      return withAudit({ ...state, held: pruned }, "shift", `${dropped} layaway/expired hold(s) auto-removed`);
+    }
+
+    case "ISSUE_STORE_CREDIT": {
+      if (!can(state.user?.role, "refund")) return withToast(state, "error", "Manager approval required to issue store credit");
+      return withToast(withAudit({ ...state, storeCredits: [...state.storeCredits, a.credit] }, "money", `Store credit ${a.credit.id} issued — ${money(a.credit.balance)}${a.credit.code ? ` (code ${a.credit.code})` : ""}`), "success", `Store credit issued — ${money(a.credit.balance)}`);
+    }
+
+    case "REDEEM_STORE_CREDIT": {
+      const exists = state.storeCredits.some((c) => c.id === a.id);
+      if (!exists) return withToast(state, "error", "Credit not found");
+      return { ...state, storeCredits: applyStoreCredit(state.storeCredits, a.id, a.amount) };
     }
 
     case "RECALL_HELD": {
@@ -817,14 +843,25 @@ export function reducer(state: State, a: Action): State {
       const tenderLabel = a.payments.length > 1
         ? `split ${a.payments.map((p) => p.method).join(" + ")}`
         : primary.method;
+      /* deduct any store_credit / gift-card tender legs from their balances (Phase A) */
+      const creditDeductions = a.payments.filter((p) => p.method === "store_credit" && p.ref);
+      const storeCredits = creditDeductions.reduce(
+        (acc, p) => (p.ref ? applyStoreCredit(acc, p.ref, p.amount) : acc),
+        state.storeCredits,
+      );
       const ptsLabel = customer ? ` · +${pointsEarned}${state.redeemPoints ? ` / −${state.redeemPoints} pts` : ""} pts` : "";
       let next: State = {
-        ...state, products, customers,
+        ...state, products, customers, storeCredits,
         transactions: [tx, ...state.transactions],
         cart: [], payOpen: false, receipt: tx,
         saleCustomerId: null, redeemPoints: 0,
       };
       next = withAudit(next, "sale", `${tx.id} · $${t.total.toFixed(2)} · ${tenderLabel}${customer ? ` · ${customer.name}` : ""}${a.taxExempt ? " · TAX EXEMPT" : ""}`);
+      /* record the sale on the open shift ledger so X/Z reports reflect it (Phase A) */
+      if (next.currentShift) {
+        const updated = recordShiftTransaction(next.currentShift, tx, "sale", tenderTypeOf(primary.method));
+        next = { ...next, shifts: next.shifts.map((s) => (s.id === updated.id ? updated : s)), currentShift: updated };
+      }
       if (controlledLines.length > 0 && customer) {
         next = withAudit(next, "rx", `⚠ Controlled sale ${tx.id} — ${controlledLines.map((l) => `${l.name} ×${l.qty}`).join(", ")} · ${customer.name} · ID verified ✓`);
       }
@@ -1108,8 +1145,13 @@ export function reducer(state: State, a: Action): State {
         method: orig.method, cashier: CASHIER, refundOf: orig.id, reason: a.reason,
       };
       const transactions = [refund, ...state.transactions.map((t) => (t.id === orig.id ? { ...t, refundedAt: Date.now() } : t))];
-      const next = withAudit({ ...state, products, transactions }, "money",
+      let next = withAudit({ ...state, products, transactions }, "money",
         `Refund ${refund.id} of ${orig.id} — ${money(-orig.total)} · ${a.reason}`);
+      /* record the refund on the open shift ledger (Phase A) */
+      if (next.currentShift) {
+        const updated = recordShiftTransaction(next.currentShift, refund, "refund", tenderTypeOf(orig.method));
+        next = { ...next, shifts: next.shifts.map((s) => (s.id === updated.id ? updated : s)), currentShift: updated };
+      }
       return withToast(next, "success", `${orig.id} refunded — ${money(-orig.total)} returned, stock restored to lots`);
     }
 
@@ -1384,6 +1426,7 @@ export function reducer(state: State, a: Action): State {
         restrictedLog: a.data.restrictedLog,
         audit: a.data.audit,
         shifts: a.data.shifts,
+        storeCredits: a.data.storeCredits,
       };
     }
 
@@ -1416,16 +1459,15 @@ export function reducer(state: State, a: Action): State {
     }
 
     case "VOID_TX": {
-      if (!state.user) return state;
-      const managerRoles: Role[] = ["manager", "pharmacy_admin", "super_admin"];
-      if (!managerRoles.includes(state.user.role)) return withToast(state, "error", "Manager approval required for voids");
-      
+      /* voids require the same approval as refunds (manager / pharmacy admin) (Phase A) */
+      if (!can(state.user?.role, "refund")) return withToast(state, "error", "Manager approval required for voids");
+
       const tx = state.transactions.find(t => t.id === a.txId);
       if (!tx) return state;
       
       // Mark transaction as voided in the transactions list
       const updatedTransactions = state.transactions.map(t => 
-        t.id === a.txId ? { ...t, refundedAt: Date.now(), reason: `VOID: ${a.reason}`, refundOf: t.id } : t
+        t.id === a.txId ? { ...t, voidedAt: Date.now(), voidReason: a.reason, voidedBy: a.approvedBy || state.user?.name } : t
       );
       
       // Record in shift if there's an open shift
@@ -1437,7 +1479,7 @@ export function reducer(state: State, a: Action): State {
         newState = { ...newState, shifts: updatedShifts, currentShift: updated };
       }
       
-      return withToast(withAudit(newState, "void", `Transaction ${a.txId} voided by ${state.user.name} — ${a.reason}`), "warn", "Transaction voided");
+      return withToast(withAudit(newState, "void", `Transaction ${a.txId} voided by ${state.user?.name ?? "unknown"} — ${a.reason}`), "warn", "Transaction voided");
     }
 
     case "GENERATE_X_REPORT": {
@@ -1497,6 +1539,7 @@ const backendDataFromState = (state: State): BackendData => ({
   restrictedLog: state.restrictedLog,
   audit: state.audit,
   shifts: state.shifts,
+  storeCredits: state.storeCredits,
   snapshots: listSnapshots(),
 });
 

@@ -17,6 +17,7 @@ import type {
   Shift,
   Snapshot,
   Staff,
+  StoreCredit,
   Supplier,
   TimeEntry,
   Transaction,
@@ -46,6 +47,7 @@ export interface BackendData {
   restrictedLog: RestrictedLogEntry[];
   audit: AuditEntry[];
   shifts: Shift[];
+  storeCredits: StoreCredit[];
   snapshots: Snapshot[];
 }
 
@@ -54,7 +56,7 @@ const TABLES = [
   "products", "transactions", "prescriptions", "prescribers", "customers", "transfers",
   "backorders", "rx_transfers", "suppliers", "purchase_orders", "ap_invoices", "expenses",
   "deliveries", "web_orders", "time_entries", "staff", "settings", "restricted_log",
-  "audit_log", "shifts", "snapshots",
+  "audit_log", "shifts", "store_credits", "snapshots",
 ] as const;
 
 type TableName = (typeof TABLES)[number];
@@ -270,6 +272,13 @@ function shiftFrom(row: Row): Shift {
   };
 }
 
+function storeCreditFrom(row: Row): StoreCredit {
+  return {
+    id: text(row, "id"), customerId: optionalText(row, "customer_id") ?? null, balance: numberValue(row, "balance"),
+    issuedAt: rowEpoch(row, "issued_at"), expiresAt: optionalNumber(row, "expires_at"), code: optionalText(row, "code"), note: optionalText(row, "note"),
+  };
+}
+
 function snapshotFrom(row: Row): Snapshot {
   return {
     meta: { id: text(row, "id"), at: rowEpoch(row, "at"), label: text(row, "label"), auto: booleanValue(row, "auto") },
@@ -320,6 +329,7 @@ function rowsFor(data: BackendData): Record<TableName, Row[]> {
     restricted_log: data.restrictedLog.map((r) => ({ id: r.id, at: r.at, product_id: nullable(r.productId), qty: r.qty, purchaser: r.purchaser, id_type: r.idType, id_last4: r.idLast4, cashier: r.cashier })),
     audit_log: data.audit.map((a) => ({ id: a.id, at: a.at, actor: a.actor, kind: a.kind, detail: a.detail })),
     shifts: data.shifts.map((s) => ({ id: s.id, terminal_id: s.terminalId, cashier_id: nullable(s.cashierId), cashier_name: s.cashierName, opened_at: s.openedAt, closed_at: nullable(s.closedAt), status: s.status, opening_balance: s.openingBalance, closing_balance: nullable(s.closingBalance), counted_cash: nullable(s.countedCash), transactions: s.transactions, cash_movements: s.cashMovements, sales_total: s.salesTotal, refunds_total: s.refundsTotal, card_total: s.cardTotal, insurance_total: s.insuranceTotal, store_credit_total: s.storeCreditTotal, paid_in_total: s.paidInTotal, paid_out_total: s.paidOutTotal, expected_cash: s.expectedCash, over_short: nullable(s.overShort), notes: nullable(s.notes) })),
+    store_credits: data.storeCredits.map((c) => ({ id: c.id, customer_id: nullable(c.customerId), balance: c.balance, issued_at: c.issuedAt, expires_at: nullable(c.expiresAt), code: nullable(c.code), note: nullable(c.note) })),
     snapshots: data.snapshots.map((s) => ({ id: s.meta.id, at: s.meta.at, label: s.meta.label, auto: s.meta.auto, data: s.data })),
   };
 }
@@ -363,7 +373,7 @@ export async function loadBackendData(seed: BackendData): Promise<LoadResult> {
         deliveries: byTable.deliveries.map(deliveryFrom), webOrders: byTable.web_orders.map(webOrderFrom),
         timeEntries: byTable.time_entries.map((row) => ({ id: numberValue(row, "id"), staffId: text(row, "staff_id"), inAt: rowEpoch(row, "in_at"), outAt: optionalNumber(row, "out_at") })),
         staff: byTable.staff.map(staffFrom), settings: settingsFrom(byTable.settings[0], seed.settings), restrictedLog: byTable.restricted_log.map(restrictedFrom),
-        audit: byTable.audit_log.map(auditFrom), shifts: byTable.shifts.map(shiftFrom), snapshots: byTable.snapshots.map(snapshotFrom),
+        audit: byTable.audit_log.map(auditFrom), shifts: byTable.shifts.map(shiftFrom), storeCredits: byTable.store_credits.map(storeCreditFrom), snapshots: byTable.snapshots.map(snapshotFrom),
       },
     };
   } catch (error) {

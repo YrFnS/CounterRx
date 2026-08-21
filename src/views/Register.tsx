@@ -8,6 +8,7 @@ import { cx, Badge, Empty } from "../ui";
 import {
   ISearch, IScan, IPlus, IMinus, ITrash, IPause, IRecall, IX, ICart, IPill, IChevD, ISpark, IEdit, ITag, IUsers, IAlert,
 } from "../icons";
+import ShiftBar from "./Till";
 
 /* Tiny WebAudio "scanner beep" — the signature sound of a POS, fired on a real barcode hit. */
 let audioCtx: AudioContext | null = null;
@@ -199,6 +200,8 @@ export default function Register() {
             </div>
           </div>
 
+          <ShiftBar />
+
           <div className="flex gap-1.5 overflow-x-auto scroll-slim pb-1 -mx-1 px-1">
             <CatChip active={cat === "all"} label={t("pos.allItems")} count={state.products.length}
               onClick={() => setCat("all")} dot="#5c6b66" />
@@ -296,6 +299,11 @@ export default function Register() {
                     className="flex items-center gap-1 hover:text-pine-700 transition" title={`Recall ${h.label} (${relTime(h.at)})`}>
                     <IRecall size={11} /> {h.label} · {h.items.reduce((s, i) => s + i.qty, 0)}
                   </button>
+                  {h.expiresAt != null && (
+                    <span className="num text-[10px] text-honey-700 ms-0.5" title={t("pos.layawayExpires")}>
+                      · {daysUntil(new Date(h.expiresAt).toISOString()) > 0 ? `${daysUntil(new Date(h.expiresAt).toISOString())}d` : t("pos.expired")}
+                    </span>
+                  )}
                   <button onClick={() => dispatch({ type: "DROP_HELD", id: h.id })}
                     className="p-0.5 rounded text-inksoft opacity-50 hover:opacity-100 hover:text-brick-700 transition" aria-label={`Drop ${h.label}`}>
                     <IX size={10} />

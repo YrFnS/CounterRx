@@ -157,14 +157,17 @@ export interface TxLine {
   uomFactor?: number;                       // base units per UOM, for stock deduction (§5)
   kitComponents?: string;                   // kit contents summary (§5)
 }
-export type PayMethod = "cash" | "card" | "insurance";
-export interface PaymentLeg { method: PayMethod; amount: number; }
+export type PayMethod = "cash" | "card" | "insurance" | "store_credit";
+export interface PaymentLeg { method: PayMethod; amount: number; ref?: string; }
 export interface Transaction {
   id: string; at: number; lines: TxLine[];
   subtotal: number; discount: number; tax: number; total: number;
   method: PayMethod; cashier: string; tendered?: number; change?: number;
   payments?: PaymentLeg[]; // split-tender legs (absent for legacy single-tender sales)
   refundedAt?: number;   // original sale was refunded
+  voidedAt?: number;     // original sale was voided
+  voidReason?: string;   // manager-approved void reason
+  voidedBy?: string;     // approving staff name
   refundOf?: string;     // this record is the refund of the given sale
   reason?: string;
   taxExempt?: boolean;
@@ -602,7 +605,41 @@ export const bulkPct = (qty: number) => BULK_TIERS.find((t) => qty >= t.min)?.pc
 export const REDEEM_CHUNK_PTS = 100;
 export const REDEEM_CHUNK_VALUE = 5;
 
-export interface HeldSale { id: string; label: string; at: number; items: { productId: string; qty: number; note?: string; priceOverride?: number; daw?: number; substitutedFrom?: string; uom?: string }[]; }
+export interface HeldSale { id: string; label: string; at: number; expiresAt?: number; items: { productId: string; qty: number; note?: string; priceOverride?: number; daw?: number; substitutedFrom?: string; uom?: string }[]; }
+
+/* Store credit / gift-card balance (Phase A till ops). A gift card is simply a
+   credit that carries a scannable `code`; both redeem as the store_credit tender. */
+export interface StoreCredit {
+  id: string;
+  customerId: string | null;   // null for anonymous gift cards
+  balance: number;
+  issuedAt: number;
+  expiresAt?: number;
+  code?: string;              // scannable gift-card / credit code
+  note?: string;
+}
+
+export const tenderTypeOf = (m: PayMethod): TenderType =>
+  m === "insurance" ? "insurance" : m === "card" ? "card" : m === "store_credit" ? "store_credit" : "cash";
+
+const round2 = (n: number) => Math.round(n * 100) / 100;
+
+/** Apply a store-credit (or gift-card) deduction, capped at the available balance. */
+export function applyStoreCredit(credits: StoreCredit[], id: string, amount: number): StoreCredit[] {
+  const amt = Math.min(amount, credits.find((c) => c.id === id)?.balance ?? 0);
+  return credits.map((c) => (c.id === id ? { ...c, balance: round2(c.balance - amt) } : c));
+}
+
+/** Resolve a scanned/entered code to a usable, non-expired credit. */
+export function creditByCode(credits: StoreCredit[], code: string): StoreCredit | undefined {
+  const c = credits.find((x) => x.code && x.code.toLowerCase() === code.trim().toLowerCase());
+  return c && (!c.expiresAt || c.expiresAt > Date.now()) ? c : undefined;
+}
+
+/** Drop layaways whose hold window has elapsed (Phase A auto-expire). */
+export function pruneExpiredHolds(holds: HeldSale[], now = Date.now()): HeldSale[] {
+  return holds.filter((h) => !h.expiresAt || h.expiresAt > now);
+}
 
 /* Inter-branch stock transfers (2.6) */
 export type TransferStatus = "requested" | "approved" | "shipped" | "received" | "rejected";

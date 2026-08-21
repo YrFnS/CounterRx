@@ -32,6 +32,7 @@ function makeTestState(overrides: Partial<State> = {}): State {
     flashKey: 0,
     snapshotVersion: 0,
     shifts: [],
+    storeCredits: [],
     ...overrides,
   };
 }
@@ -60,7 +61,8 @@ describe("reducer - HYDRATE_BACKEND", () => {
       restrictedLog: [],
       audit: [],
       shifts: [],
-      snapshots: [],
+      storeCredits: [],
+      snapshots: []
     };
 
     const action: Action = { type: "HYDRATE_BACKEND", data: backendData };
@@ -102,7 +104,8 @@ describe("reducer - HYDRATE_BACKEND", () => {
       restrictedLog: [],
       audit: [],
       shifts: [],
-      snapshots: [],
+      storeCredits: [],
+      snapshots: []
     };
 
     const action: Action = { type: "HYDRATE_BACKEND", data: backendData };
@@ -139,7 +142,8 @@ describe("reducer - HYDRATE_BACKEND", () => {
       restrictedLog: [],
       audit: [],
       shifts: [],
-      snapshots: [],
+      storeCredits: [],
+      snapshots: []
     };
 
     const action: Action = { type: "HYDRATE_BACKEND", data: backendData };

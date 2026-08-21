@@ -3,7 +3,7 @@ import { useTranslation } from "react-i18next";
 import i18n from "../i18n";
 import type { ReactNode } from "react";
 import { usePos, money, clockTime, relTime } from "../store";
-import { can } from "../data";
+import { can, hashPin } from "../data";
 import type { PayMethod, Transaction } from "../data";
 import { cx, Badge, Empty, Modal } from "../ui";
 import { IHistory, ISearch, ICash, ICard, IShield, IPill, IX, IRecall, ICalendar, IDownload, IReport, IAlert } from "../icons";
@@ -17,6 +17,7 @@ export default function History() {
   const [method, setMethod] = useState<PayMethod | "all">("all");
   const [q, setQ] = useState("");
   const [refunding, setRefunding] = useState<Transaction | null>(null);
+  const [voiding, setVoiding] = useState<Transaction | null>(null);
   const [shiftOpen, setShiftOpen] = useState(false);
   const [auditOpen, setAuditOpen] = useState(false);
   const [btcOpen, setBtcOpen] = useState(false);
@@ -139,12 +140,19 @@ export default function History() {
                   </td>
                   <td className="px-4 py-2.5">
                     <div className="flex justify-end items-center gap-1.5">
-                      {!t.refundOf && !t.refundedAt && canRefund && (
-                        <button
-                          onClick={(e) => { e.stopPropagation(); setRefunding(t); }}
-                          className="px-2 py-1 rounded-md border border-mist text-[10px] font-bold text-inksoft hover:border-brick-500 hover:text-brick-700 hover:bg-brick-100/60 transition active:scale-95 opacity-0 hover-cell">
-                          Refund
-                        </button>
+                      {!t.refundOf && !t.refundedAt && !t.voidedAt && canRefund && (
+                        <>
+                          <button
+                            onClick={(e) => { e.stopPropagation(); setRefunding(t); }}
+                            className="px-2 py-1 rounded-md border border-mist text-[10px] font-bold text-inksoft hover:border-brick-500 hover:text-brick-700 hover:bg-brick-100/60 transition active:scale-95 opacity-0 hover-cell">
+                            Refund
+                          </button>
+                          <button
+                            onClick={(e) => { e.stopPropagation(); setVoiding(t); }}
+                            className="px-2 py-1 rounded-md border border-mist text-[10px] font-bold text-inksoft hover:border-brick-500 hover:text-brick-700 hover:bg-brick-100/60 transition active:scale-95 opacity-0 hover-cell">
+                            Void
+                          </button>
+                        </>
                       )}
                       <span className="text-[11px] font-bold text-pine-700 opacity-0 hover-cell">view ↗</span>
                     </div>
@@ -160,6 +168,7 @@ export default function History() {
       </p>
 
       {refunding && <RefundModal tx={refunding} onClose={() => setRefunding(null)} />}
+      {voiding && <VoidModal tx={voiding} onClose={() => setVoiding(null)} />}
       {shiftOpen && <ShiftModal onClose={() => setShiftOpen(false)} />}
       {auditOpen && <AuditTrail onClose={() => setAuditOpen(false)} />}
       {btcOpen && <BtcLog onClose={() => setBtcOpen(false)} />}
@@ -353,6 +362,58 @@ function RefundModal({ tx, onClose }: { tx: Transaction; onClose: () => void }) 
           onClick={() => { dispatch({ type: "REFUND_TX", txId: tx.id, reason }); onClose(); }}
           className="w-full py-2.5 rounded-lg bg-brick-600 text-brick-50 font-display font-bold text-sm hover:bg-brick-700 transition active:scale-[0.98]">
           Confirm refund · −{money(tx.total)}
+        </button>
+      </div>
+    </Modal>
+  );
+}
+
+function VoidModal({ tx, onClose }: { tx: Transaction; onClose: () => void }) {
+  const { state, dispatch } = usePos();
+  const { t } = useTranslation();
+  const [reason, setReason] = useState("");
+  const [pin, setPin] = useState("");
+  const hasRefundPerm = can(state.user?.role, "refund");
+  // Non-managers must supply a manager's PIN before the void is approved.
+  const pinOk = hasRefundPerm || state.staff.some((s) => can(s.role, "refund") && s.pinHash === hashPin(pin));
+  const valid = reason.trim().length >= 3 && pinOk && !tx.voidedAt;
+  const submit = () => { if (!valid) return; dispatch({ type: "VOID_TX", txId: tx.id, reason: reason.trim(), approvedBy: pin || undefined }); onClose(); };
+  return (
+    <Modal onClose={onClose} width={440} labelledBy="void-title">
+      <div className="px-5 py-4 border-b border-mist flex items-start justify-between">
+        <div>
+          <h2 id="void-title" className="font-display font-bold text-ink flex items-center gap-2">
+            <IX size={16} className="text-brick-700" /> Void {tx.id}
+          </h2>
+          <p className="text-xs text-inksoft mt-0.5">Removes the sale from the X/Z ledger — manager approval required</p>
+        </div>
+        <button onClick={onClose} className="p-1.5 rounded-md hover:bg-mist/60 text-inksoft" aria-label="Close"><IX size={14} /></button>
+      </div>
+      <div className="p-5 space-y-4">
+        <div className="bg-paper border border-mist rounded-lg p-3 space-y-1">
+          {tx.lines.map((l) => (
+            <div key={l.productId} className="flex justify-between text-xs">
+              <span className="text-ink truncate">{l.qty}× {l.name}</span>
+              <span className="num text-inksoft shrink-0 ms-2">{money(l.price * l.qty)}</span>
+            </div>
+          ))}
+        </div>
+        <div>
+          <label className="text-[11px] font-semibold uppercase tracking-[0.14em] text-inksoft">Reason *</label>
+          <input value={reason} onChange={(e) => setReason(e.target.value)} placeholder={t("history.voidReason")}
+            className="w-full mt-1.5 px-3 py-2.5 rounded-lg border border-mist bg-card text-sm focus:border-pine-500 focus:outline-none" />
+        </div>
+        {!hasRefundPerm && (
+          <div>
+            <label className="text-[11px] font-semibold uppercase tracking-[0.14em] text-inksoft">{t("history.managerPin")} *</label>
+            <input value={pin} onChange={(e) => setPin(e.target.value.replace(/[^0-9]/g, "").slice(0, 6))} inputMode="numeric" placeholder="••••"
+              className="num w-full mt-1.5 px-3 py-2.5 rounded-lg border border-mist bg-card text-sm tracking-[0.3em] focus:border-pine-500 focus:outline-none" />
+            {pin.length > 0 && !pinOk && <p className="text-[11px] text-brick-700 font-semibold mt-1">PIN not recognized as a manager</p>}
+          </div>
+        )}
+        <button onClick={submit} disabled={!valid}
+          className={cx("w-full py-2.5 rounded-lg font-display font-bold text-sm transition active:scale-[0.98]", valid ? "bg-brick-600 text-brick-50 hover:bg-brick-700" : "bg-mist text-inksoft cursor-not-allowed")}>
+          Confirm void
         </button>
       </div>
     </Modal>

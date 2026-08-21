@@ -121,7 +121,9 @@
     "quickPay": "Quick pay",
     "quickPrice": "Quick price",
     "quickStock": "Quick stock",
-    "moreInfo": "More info"
+    "moreInfo": "More info",
+    "layawayExpires": "Layaway expires",
+    "expired": "expired"
   },
   "prescriptions": {
     "title": "الوصفات",
@@ -309,7 +311,22 @@
     "cogsValuation": "COGS & valuation",
     "builder": "Report builder",
     "byProduct": "By product",
-    "byCategory": "By category"
+    "byCategory": "By category",
+    "cashMovements": "Cash Movements",
+    "closedShifts": "Closed Shifts",
+    "confirmClose": "Confirm Close",
+    "countedCash": "Counted Cash",
+    "currentCash": "Current Cash",
+    "noClosedShifts": "No closed shifts yet",
+    "noOpenShift": "No open shift",
+    "openShiftNow": "Open shift now",
+    "overUnder": "Over / Short",
+    "till": "Till",
+    "tillOpen": "Till — Open",
+    "xReport": "X Report",
+    "zClose": "Z Close",
+    "zCloseHint": "Count the cash in the drawer to close this shift and lock the Z report.",
+    "zReport": "Z Report"
   },
   "settings": {
     "title": "الإعدادات",
@@ -384,7 +401,20 @@
     "totalVoids": "إجمالي الإلغاءات",
     "tenderTotals": "إجماليات طرق الدفع",
     "reconcile": "مطابقة",
-    "confirmClose": "تأكيد إغلاق الوردية"
+    "confirmClose": "تأكيد إغلاق الوردية",
+    "cashMovements": "Cash Movements",
+    "cashierName": "Cashier",
+    "closingBalance": "Closing Balance",
+    "countedCash": "Counted Cash",
+    "id": "Shift ID",
+    "notes": "Notes",
+    "openingBalance": "Opening Balance",
+    "paidInTotal": "Paid In Total",
+    "paidOutTotal": "Paid Out Total",
+    "refundsTotal": "Refunds Total",
+    "salesTotal": "Sales Total",
+    "status": "Status",
+    "transactions": "Transactions"
   },
   "auth": {
     "login": "تسجيل الدخول",
@@ -552,7 +582,14 @@
     "cashTendered": "Cash tendered",
     "payment2Remainder": "Payment 2 · remainder",
     "subtotal": "Subtotal",
-    "exact": "Exact"
+    "exact": "Exact",
+    "giftOrCredit": "Gift card / credit",
+    "creditCode": "Card / credit code",
+    "scanOrEnterCode": "Scan or enter code",
+    "creditNotFound": "No active card found for that code",
+    "giftCard": "Gift card",
+    "storeCredit": "Store credit",
+    "remainingDue": "remaining due"
   },
   "toast": {
     "signedIn": "Signed in — {{name}} ({{role}})",
@@ -574,6 +611,27 @@
     "damagedGoods": "Damaged goods",
     "pricingError": "Pricing error",
     "duplicateCharge": "Duplicate charge",
-    "all": "All"
+    "all": "All",
+    "voidReason": "Why is this being voided?",
+    "managerPin": "Manager PIN"
+  },
+  "till": {
+    "cashInOut": "Cash In / Out",
+    "issueCredit": "Issue Store Credit",
+    "viewReports": "Till & Reports",
+    "cashIn": "Cash In",
+    "cashOut": "Cash Out",
+    "amount": "Amount",
+    "reason": "Reason",
+    "creditAmount": "Credit amount",
+    "creditCode": "Card / credit code",
+    "giftCardCode": "Gift card / credit number",
+    "note": "Note",
+    "issue": "Issue credit",
+    "record": "Record movement",
+    "optional": "(optional)",
+    "needManager": "Manager role required",
+    "managerApproval": "Amount over 100 requires manager approval — record will be logged under your name.",
+    "noShift": "No shift open"
   }
 }
