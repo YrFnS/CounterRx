@@ -3,7 +3,7 @@
 -- Auth contract (implemented in src/lib/sync.ts signInStaff):
 --   email    = <staffid without dash>@counterrx.local   (e.g. s001@counterrx.local)
 --   password = CRx<staffid without dash><pin>           (e.g. CRxS0011111)
--- Demo PINs printed by the lock screen: cashier 1111 · pharmacist 2222 · manager 3333 · admin 4444 · super 5555.
+-- Demo PINs printed by the lock screen: S-001 3333 · S-002 2222 · S-003 1111 · S-004 4444 · S-005 5555.
 
 set search_path = public, extensions;
 
@@ -55,10 +55,10 @@ update auth.users set
   reauthentication_token      = coalesce(reauthentication_token,'');
 
 insert into public.profiles (id, staff_id, role) values
-  ('00000000-0000-0000-0000-000000000001','S-001','cashier'),
+  ('00000000-0000-0000-0000-000000000001','S-001','pharmacy_admin'),
   ('00000000-0000-0000-0000-000000000002','S-002','pharmacist'),
-  ('00000000-0000-0000-0000-000000000003','S-003','manager'),
-  ('00000000-0000-0000-0000-000000000004','S-004','pharmacy_admin'),
+  ('00000000-0000-0000-0000-000000000003','S-003','cashier'),
+  ('00000000-0000-0000-0000-000000000004','S-004','cashier'),
   ('00000000-0000-0000-0000-000000000005','S-005','super_admin')
   on conflict (id) do update set staff_id = excluded.staff_id, role = excluded.role;
 

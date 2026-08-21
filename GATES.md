@@ -24,10 +24,10 @@ Gates marked CHECK are runnable; EXPECT gives the pass condition. Evidence line 
 
 
 ## G4. Auth: every supported role can sign in
-- [x] Five Auth users sign in successfully; current roster has super_admin, pharmacy_admin, pharmacist, and two cashiers (no manager account).
+- [ ] All supported role categories have seeded users and can sign in.
 - CHECK: count auth users grouped by staff_role claim/profiles.role
-- EXPECT: all 5 roles present and reachable
-- EVIDENCE: Five seeded Auth users return HTTP 200 with deterministic demo credentials; current roster contains super_admin, pharmacy_admin, pharmacist, and two cashier accounts. No separate manager account is currently seeded.
+- EXPECT: super_admin, pharmacy_admin, manager, pharmacist, and cashier are all present and reachable
+- EVIDENCE: Five seeded Auth users sign in successfully, but the current roster contains super_admin, pharmacy_admin, pharmacist, and two cashier accounts; no separate manager account is seeded.
 
 
 ## G5. RLS active on all data tables
@@ -46,6 +46,7 @@ Gates marked CHECK are runnable; EXPECT gives the pass condition. Evidence line 
 - [x] `npm run build` exits 0 and emits dist/
 - CHECK: `npm run build 2>&1 | tail -3; echo exit:$?`
 - EXPECT: `✓ built` and exit:0
+- EVIDENCE: `npm run build` passed; Vite emitted `dist/` with the existing large-chunk warning.
 
 ## G8. App runs against the local backend
 - [x] `npm run dev` serves on :3000 with the remote Supabase project reachable.
@@ -56,6 +57,7 @@ Gates marked CHECK are runnable; EXPECT gives the pass condition. Evidence line 
 ## G9. Browser: every role + core features pass e2e
 - [ ] Log in as each role; exercise products, inventory, customers/patients, prescriptions, sales, payments, shifts, reports, audit/history, settings, logout (screenshots + notes in outputs/e2e)
 - EXPECT: no unhandled errors; each role can perform its permitted actions
+- EVIDENCE: Authentication and initial Register navigation are covered for the five seeded accounts. Full feature/action coverage, persistence, Realtime behavior, and all-role logout remain unverified.
 
 ## G10. Fresh-migrate-and-seed reproducible
 - [x] Remote migration and seed reruns reproduce the populated working backend; local clean reset is intentionally excluded.
