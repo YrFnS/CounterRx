@@ -1,4 +1,6 @@
 import { useMemo, useState } from "react";
+import { useTranslation } from "react-i18next";
+import i18n from "../i18n";
 import type { ReactNode } from "react";
 import { usePos, money, clockTime, relTime } from "../store";
 import { can } from "../data";
@@ -7,9 +9,10 @@ import { cx, Badge, Empty, Modal } from "../ui";
 import { IHistory, ISearch, ICash, ICard, IShield, IPill, IX, IRecall, ICalendar, IDownload, IReport, IAlert } from "../icons";
 import type { AuditKind } from "../data";
 
-const REFUND_REASONS = ["Customer return", "Wrong item dispensed", "Damaged goods", "Pricing error", "Duplicate charge"];
+const REFUND_REASONS = [i18n.t("history.customerReturn"), i18n.t("history.wrongItem"), i18n.t("history.damagedGoods"), i18n.t("history.pricingError"), i18n.t("history.duplicateCharge")];
 
 export default function History() {
+  const { t } = useTranslation();
   const { state, dispatch, todayStats } = usePos();
   const [method, setMethod] = useState<PayMethod | "all">("all");
   const [q, setQ] = useState("");
@@ -35,7 +38,7 @@ export default function History() {
   const dayStart = new Date(); dayStart.setHours(0, 0, 0, 0);
 
   const chips: { id: PayMethod | "all"; label: string; icon?: ReactNode }[] = [
-    { id: "all", label: "All" },
+    { id: "all", label: i18n.t("history.all") },
     { id: "cash", label: "Cash", icon: <ICash size={12} /> },
     { id: "card", label: "Card", icon: <ICard size={12} /> },
     { id: "insurance", label: "Insurance", icon: <IShield size={12} /> },
@@ -55,9 +58,9 @@ export default function History() {
         </div>
         <div className="flex items-center gap-2">
           <div className="relative w-44 sm:w-64">
-            <ISearch size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-inksoft" />
+            <ISearch size={14} className="absolute start-3 top-1/2 -translate-y-1/2 text-inksoft" />
             <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Receipt # or product…"
-              className="w-full pl-9 pr-3 py-2 rounded-lg bg-card border border-mist text-sm focus:border-pine-500 focus:outline-none focus:ring-2 focus:ring-pine-200 transition" />
+              className="w-full ps-9 pe-3 py-2 rounded-lg bg-card border border-mist text-sm focus:border-pine-500 focus:outline-none focus:ring-2 focus:ring-pine-200 transition" />
           </div>
           <button onClick={() => setShiftOpen(true)}
             className="flex items-center gap-1.5 px-3.5 py-2 rounded-lg bg-ink text-paper text-xs font-bold hover:bg-pine-900 transition active:scale-95 shadow-lift">
@@ -90,13 +93,13 @@ export default function History() {
         ) : (
           <table className="w-full text-sm border-collapse min-w-[820px]">
             <thead className="sticky top-0 z-10">
-              <tr className="bg-pine-900 text-pine-100 text-left text-[10px] uppercase tracking-[0.14em]">
+              <tr className="bg-pine-900 text-pine-100 text-start text-[10px] uppercase tracking-[0.14em]">
                 <th className="px-4 py-2.5 font-bold">Receipt</th>
                 <th className="px-3 py-2.5 font-bold">When</th>
                 <th className="px-3 py-2.5 font-bold">Items</th>
                 <th className="px-3 py-2.5 font-bold">Method</th>
-                <th className="px-3 py-2.5 font-bold text-right">Total</th>
-                <th className="px-4 py-2.5 font-bold text-right">Actions</th>
+                <th className="px-3 py-2.5 font-bold text-end">Total</th>
+                <th className="px-4 py-2.5 font-bold text-end">Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -131,8 +134,8 @@ export default function History() {
                       {t.method}
                     </Badge>
                   </td>
-                  <td className={cx("px-3 py-2.5 text-right num font-bold", t.total < 0 ? "text-brick-700" : "text-pine-800")}>
-                    {t.total < 0 && <span className="mr-0.5">−</span>}{money(Math.abs(t.total))}
+                  <td className={cx("px-3 py-2.5 text-end num font-bold", t.total < 0 ? "text-brick-700" : "text-pine-800")}>
+                    {t.total < 0 && <span className="me-0.5">−</span>}{money(Math.abs(t.total))}
                   </td>
                   <td className="px-4 py-2.5">
                     <div className="flex justify-end items-center gap-1.5">
@@ -330,7 +333,7 @@ function RefundModal({ tx, onClose }: { tx: Transaction; onClose: () => void }) 
           {tx.lines.map((l) => (
             <div key={l.productId} className="flex justify-between text-xs">
               <span className="text-ink truncate">{l.qty}× {l.name}</span>
-              <span className="num text-inksoft shrink-0 ml-2">{money(l.price * l.qty)}</span>
+              <span className="num text-inksoft shrink-0 ms-2">{money(l.price * l.qty)}</span>
             </div>
           ))}
           <div className="flex justify-between text-sm font-bold text-brick-700 pt-1.5 border-t border-dashed border-mist">
@@ -399,7 +402,7 @@ function BtcLog({ onClose }: { onClose: () => void }) {
         <div className="max-h-[380px] overflow-auto scroll-slim rounded-lg border border-mist">
           <table className="w-full text-xs border-collapse min-w-[560px]">
             <thead className="sticky top-0">
-              <tr className="bg-pine-900 text-pine-100 text-left text-[9px] uppercase tracking-[0.14em]">
+              <tr className="bg-pine-900 text-pine-100 text-start text-[9px] uppercase tracking-[0.14em]">
                 <th className="px-3 py-2 font-bold">When</th>
                 <th className="px-2 py-2 font-bold">Product</th>
                 <th className="px-2 py-2 font-bold text-center">Qty</th>
@@ -479,9 +482,9 @@ function AuditTrail({ onClose }: { onClose: () => void }) {
             </button>
           ))}
           <div className="relative flex-1 min-w-[160px]">
-            <ISearch size={12} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-inksoft" />
+            <ISearch size={12} className="absolute start-2.5 top-1/2 -translate-y-1/2 text-inksoft" />
             <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search events…"
-              className="w-full pl-7 pr-2 py-1.5 rounded-md border border-mist text-xs focus:border-pine-500 focus:outline-none transition" />
+              className="w-full ps-7 pe-2 py-1.5 rounded-md border border-mist text-xs focus:border-pine-500 focus:outline-none transition" />
           </div>
         </div>
 

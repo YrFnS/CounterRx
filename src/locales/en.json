@@ -275,7 +275,10 @@
     "grossProfit": "Gross Profit",
     "netProfit": "Net Profit",
     "agingReport": "Aging Report",
-    "supplierBalance": "Supplier Balance"
+    "supplierBalance": "Supplier Balance",
+    "newPo": "Create a purchase order",
+    "requiresManager": "Requires manager or admin",
+    "chooseSupplier": "Choose a supplier"
   },
   "reports": {
     "title": "Reports",
@@ -298,7 +301,15 @@
     "saveView": "Save View",
     "filterBy": "Filter By",
     "groupBy": "Group By",
-    "sortBy": "Sort By"
+    "sortBy": "Sort By",
+    "today": "Today",
+    "thisMonth": "This month",
+    "allTime": "All time",
+    "margin": "Margin",
+    "cogsValuation": "COGS & valuation",
+    "builder": "Report builder",
+    "byProduct": "By product",
+    "byCategory": "By category"
   },
   "settings": {
     "title": "Settings",
@@ -505,7 +516,14 @@
     "deliveredAt": "Delivered At",
     "deliveryNotes": "Delivery Notes",
     "curbsidePickup": "Curbside Pickup",
-    "homeDelivery": "Home Delivery"
+    "homeDelivery": "Home Delivery",
+    "queued": "Queued",
+    "assigned": "Assigned",
+    "outForDelivery": "Out for delivery",
+    "delivered": "Delivered",
+    "walkIn": "Walk-in",
+    "assign": "Assign",
+    "dispatch": "Dispatch"
   },
   "modal": {
     "confirmTitle": "Are you sure?",
@@ -549,5 +567,13 @@
     "paApproved": "{{id}} prior auth APPROVED — safe to fill",
     "paRejected": "{{id}} prior auth REJECTED — {{note}}",
     "dupeBackorder": "{{patient}} already has an open back-order for {{name}}"
+  },
+  "history": {
+    "customerReturn": "Customer return",
+    "wrongItem": "Wrong item dispensed",
+    "damagedGoods": "Damaged goods",
+    "pricingError": "Pricing error",
+    "duplicateCharge": "Duplicate charge",
+    "all": "All"
   }
 }

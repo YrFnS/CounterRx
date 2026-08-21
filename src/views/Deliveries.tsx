@@ -1,4 +1,6 @@
 import { useMemo, useState } from "react";
+import { useTranslation } from "react-i18next";
+import i18n from "../i18n";
 import { usePos, money, relTime } from "../store";
 import { DRIVERS } from "../data";
 import type { Delivery, DeliveryStatus, WebOrder } from "../data";
@@ -6,10 +8,10 @@ import { cx, Badge, Empty, Modal } from "../ui";
 import { ITruck, IMapPin, IWeb, IX, ICheck, IChevD, ICash, IAlert } from "../icons";
 
 const STAGES: { id: DeliveryStatus; label: string; bar: string }[] = [
-  { id: "queued", label: "Queued", bar: "#5c6b66" },
-  { id: "assigned", label: "Assigned", bar: "#e0a63c" },
-  { id: "out", label: "Out for delivery", bar: "#3b8668" },
-  { id: "delivered", label: "Delivered", bar: "#0f4437" },
+  { id: "queued", label: i18n.t("deliveries.queued"), bar: "#5c6b66" },
+  { id: "assigned", label: i18n.t("deliveries.assigned"), bar: "#e0a63c" },
+  { id: "out", label: i18n.t("deliveries.outForDelivery"), bar: "#3b8668" },
+  { id: "delivered", label: i18n.t("deliveries.delivered"), bar: "#0f4437" },
 ];
 
 const WEB_TONE: Record<WebOrder["status"], string> = {
@@ -20,11 +22,12 @@ const WEB_TONE: Record<WebOrder["status"], string> = {
 };
 
 export default function Deliveries() {
+  const { t } = useTranslation();
   const { state, dispatch } = usePos();
   const [podFor, setPodFor] = useState<Delivery | null>(null);
   const [podText, setPodText] = useState("");
 
-  const custName = (id: string) => state.customers.find((c) => c.id === id)?.name ?? "Walk-in";
+  const custName = (id: string) => state.customers.find((c) => c.id === id)?.name ?? i18n.t("deliveries.walkIn");
   const lineLabel = (l: { productId: string; qty: number }) =>
     `${l.qty}× ${state.products.find((p) => p.id === l.productId)?.name ?? l.productId}`;
 
@@ -144,7 +147,7 @@ export default function Deliveries() {
                         )}
                         <button onClick={() => advance(d)}
                           className="flex-1 py-1.5 rounded-md bg-pine-700 text-pine-50 text-[11px] font-bold hover:bg-pine-600 transition active:scale-[0.97]">
-                          {d.status === "queued" ? "Assign" : d.status === "assigned" ? "Dispatch" : "Confirm POD"}
+                          {d.status === "queued" ? i18n.t("deliveries.assign") : d.status === "assigned" ? i18n.t("deliveries.dispatch") : "Confirm POD"}
                         </button>
                       </div>
                     )}
@@ -174,7 +177,7 @@ export default function Deliveries() {
               className="mt-1 w-full px-3 py-2 rounded-lg border border-mist bg-card text-sm focus:border-pine-500 focus:outline-none transition resize-none" />
             <div className="mt-3 flex gap-2">
               <button onClick={() => setPodFor(null)} className="flex-1 py-2 rounded-lg border border-mist text-xs font-semibold text-inksoft hover:text-ink transition">Cancel</button>
-              <button onClick={() => { dispatch({ type: "DELIVERY_STATUS", id: podFor.id, to: "delivered", proof: podText.trim() || "Delivered" }); setPodFor(null); }}
+              <button onClick={() => { dispatch({ type: "DELIVERY_STATUS", id: podFor.id, to: "delivered", proof: podText.trim() || i18n.t("deliveries.delivered") }); setPodFor(null); }}
                 className="flex-1 py-2 rounded-lg bg-pine-700 text-pine-50 text-xs font-bold hover:bg-pine-600 transition active:scale-[0.98] shadow-lift">
                 Mark delivered
               </button>

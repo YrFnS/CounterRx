@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { usePos, money } from "../store";
 import { can, invoiceBalance, invoicePaid, EXPENSE_CATEGORIES } from "../data";
 import type { PurchaseOrder, ApInvoice, ApPayMethod } from "../data";
@@ -14,6 +15,7 @@ const toISODate = (ts: number) => new Date(ts - new Date(ts).getTimezoneOffset()
 type Tab = "po" | "ap" | "exp" | "pnl";
 
 export default function Finance() {
+  const { t } = useTranslation();
   const { state } = usePos();
   const [tab, setTab] = useState<Tab>("po");
 
@@ -28,9 +30,9 @@ export default function Finance() {
   const netRevenue = mtd.reduce((s, t) => s + t.total, 0);
 
   const tabs: { id: Tab; label: string; badge?: number }[] = [
-    { id: "po", label: "Purchase orders", badge: openPos },
-    { id: "ap", label: "Accounts payable", badge: openAp.length },
-    { id: "exp", label: "Expenses" },
+    { id: "po", label: t("finance.purchaseOrders"), badge: openPos },
+    { id: "ap", label: t("finance.accountsPayable"), badge: openAp.length },
+    { id: "exp", label: t("finance.expenses") },
     { id: "pnl", label: "P&L" },
   ];
 
@@ -70,6 +72,7 @@ export default function Finance() {
 
 /* ---------------------------- Purchase Orders ---------------------------- */
 function PoTab() {
+  const { t } = useTranslation();
   const { state, dispatch, product, supplier } = usePos();
   const [receiving, setReceiving] = useState<PurchaseOrder | null>(null);
   const [creating, setCreating] = useState(false);
@@ -87,7 +90,7 @@ function PoTab() {
       <div className="flex items-center justify-between mb-3">
         <h2 className="font-display font-bold text-ink text-[15px]">Purchase orders</h2>
         <button onClick={() => setCreating(true)} disabled={!mayCreate}
-          title={mayCreate ? "Create a purchase order" : "Requires manager or admin"}
+          title={mayCreate ? t("finance.newPo") : t("finance.requiresManager")}
           className={cx("flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-xs font-bold transition active:scale-95",
             mayCreate ? "bg-pine-700 text-pine-50 hover:bg-pine-600 shadow-lift" : "bg-mist text-inksoft/50 cursor-not-allowed")}>
           <IPlus size={14} /> New PO
@@ -97,14 +100,14 @@ function PoTab() {
       <div className="overflow-auto scroll-slim rounded-xl border border-mist bg-card shadow-lift">
         <table className="w-full text-sm border-collapse min-w-[820px]">
           <thead className="sticky top-0 z-10">
-            <tr className="bg-pine-900 text-pine-100 text-left text-[10px] uppercase tracking-[0.14em]">
+            <tr className="bg-pine-900 text-pine-100 text-start text-[10px] uppercase tracking-[0.14em]">
               <th className="px-4 py-2.5 font-bold">PO</th>
               <th className="px-3 py-2.5 font-bold">Supplier</th>
               <th className="px-3 py-2.5 font-bold">Status</th>
-              <th className="px-3 py-2.5 font-bold text-right">Value</th>
+              <th className="px-3 py-2.5 font-bold text-end">Value</th>
               <th className="px-3 py-2.5 font-bold">Ordered</th>
               <th className="px-3 py-2.5 font-bold">Expected</th>
-              <th className="px-4 py-2.5 font-bold text-right">Actions</th>
+              <th className="px-4 py-2.5 font-bold text-end">Actions</th>
             </tr>
           </thead>
           <tbody>
@@ -115,13 +118,13 @@ function PoTab() {
                   <td className="px-4 py-2.5 num font-bold text-ink">{po.id}</td>
                   <td className="px-3 py-2.5 text-ink">{supplier(po.supplierId)?.name ?? po.supplierId}</td>
                   <td className="px-3 py-2.5"><span className={cx("px-2 py-0.5 rounded text-[10px] font-bold uppercase", statusTone(po.status))}>{po.status}</span></td>
-                  <td className="px-3 py-2.5 text-right num font-semibold text-ink">{money(poTotal(po))}</td>
+                  <td className="px-3 py-2.5 text-end num font-semibold text-ink">{money(poTotal(po))}</td>
                   <td className="px-3 py-2.5 text-inksoft num">{fmtDate(po.createdAt)}</td>
                   <td className="px-3 py-2.5 num">
                     <span className={cx(overdue && "text-brick-700 font-bold")}>{fmtDate(po.expectedAt)}</span>
-                    {overdue && <span className="ml-1.5 text-[9px] font-bold text-brick-700 uppercase">late</span>}
+                    {overdue && <span className="ms-1.5 text-[9px] font-bold text-brick-700 uppercase">late</span>}
                   </td>
-                  <td className="px-4 py-2.5 text-right">
+                  <td className="px-4 py-2.5 text-end">
                     <div className="inline-flex gap-1.5">
                       {(po.status === "ordered" || po.status === "partial") && mayReceive && (
                         <button onClick={() => setReceiving(po)}
@@ -210,6 +213,7 @@ function ReceiveModal({ po, onClose }: { po: PurchaseOrder; onClose: () => void 
 }
 
 function NewPoModal({ onClose }: { onClose: () => void }) {
+  const { t } = useTranslation();
   const { state, dispatch, product } = usePos();
   const [supplierId, setSupplierId] = useState(state.suppliers[0]?.id ?? "");
   const [note, setNote] = useState("");
@@ -235,7 +239,7 @@ function NewPoModal({ onClose }: { onClose: () => void }) {
       <div className="px-5 py-4 border-b border-mist flex items-start justify-between">
         <div>
           <h2 id="npo-title" className="font-display font-bold text-ink">New purchase order</h2>
-          <p className="text-xs text-inksoft mt-0.5">{sup ? `${sup.name} · net-${sup.terms} · ~${sup.leadDays}d lead` : "Choose a supplier"}</p>
+          <p className="text-xs text-inksoft mt-0.5">{sup ? `${sup.name} · net-${sup.terms} · ~${sup.leadDays}d lead` : t("finance.chooseSupplier")}</p>
         </div>
         <button onClick={onClose} className="p-1.5 rounded-md hover:bg-mist/60 text-inksoft" aria-label="Close"><IX size={14} /></button>
       </div>
@@ -352,14 +356,14 @@ function ApTab() {
       <div className="overflow-auto scroll-slim rounded-xl border border-mist bg-card shadow-lift">
         <table className="w-full text-sm border-collapse min-w-[860px]">
           <thead className="sticky top-0 z-10">
-            <tr className="bg-pine-900 text-pine-100 text-left text-[10px] uppercase tracking-[0.14em]">
+            <tr className="bg-pine-900 text-pine-100 text-start text-[10px] uppercase tracking-[0.14em]">
               <th className="px-4 py-2.5 font-bold">Invoice</th>
               <th className="px-3 py-2.5 font-bold">Supplier</th>
               <th className="px-3 py-2.5 font-bold">Due</th>
-              <th className="px-3 py-2.5 font-bold text-right">Total</th>
-              <th className="px-3 py-2.5 font-bold text-right">Paid</th>
-              <th className="px-3 py-2.5 font-bold text-right">Balance</th>
-              <th className="px-4 py-2.5 font-bold text-right">Actions</th>
+              <th className="px-3 py-2.5 font-bold text-end">Total</th>
+              <th className="px-3 py-2.5 font-bold text-end">Paid</th>
+              <th className="px-3 py-2.5 font-bold text-end">Balance</th>
+              <th className="px-4 py-2.5 font-bold text-end">Actions</th>
             </tr>
           </thead>
           <tbody>
@@ -376,15 +380,15 @@ function ApTab() {
                   <td className="px-3 py-2.5 num">
                     <span className={cx(over && "text-brick-700 font-bold")}>{fmtDate(dueTs(inv))}</span>
                     {bal > 0 && (
-                      <span className={cx("ml-1.5 text-[9px] font-bold uppercase", over ? "text-brick-700" : "text-inksoft")}>
+                      <span className={cx("ms-1.5 text-[9px] font-bold uppercase", over ? "text-brick-700" : "text-inksoft")}>
                         {over ? `${daysOver(inv)}d late` : `in ${-daysOver(inv)}d`}
                       </span>
                     )}
                   </td>
-                  <td className="px-3 py-2.5 text-right num text-ink">{money(inv.total)}</td>
-                  <td className="px-3 py-2.5 text-right num text-pine-700">{money(invoicePaid(inv))}</td>
-                  <td className={cx("px-3 py-2.5 text-right num font-bold", bal > 0 ? "text-brick-700" : "text-inksoft")}>{money(bal)}</td>
-                  <td className="px-4 py-2.5 text-right">
+                  <td className="px-3 py-2.5 text-end num text-ink">{money(inv.total)}</td>
+                  <td className="px-3 py-2.5 text-end num text-pine-700">{money(invoicePaid(inv))}</td>
+                  <td className={cx("px-3 py-2.5 text-end num font-bold", bal > 0 ? "text-brick-700" : "text-inksoft")}>{money(bal)}</td>
+                  <td className="px-4 py-2.5 text-end">
                     {bal > 0 && (
                       <div className="inline-flex gap-1.5">
                         {mayPay && <button onClick={() => setPaying(inv)} className="px-2.5 py-1 rounded-md bg-pine-700 text-pine-50 text-[10px] font-bold hover:bg-pine-600 transition active:scale-95">Pay</button>}
@@ -599,11 +603,11 @@ function ExpTab() {
         <div className="overflow-auto scroll-slim rounded-xl border border-mist bg-card shadow-lift">
           <table className="w-full text-sm border-collapse min-w-[640px]">
             <thead className="sticky top-0 z-10">
-              <tr className="bg-pine-900 text-pine-100 text-left text-[10px] uppercase tracking-[0.14em]">
+              <tr className="bg-pine-900 text-pine-100 text-start text-[10px] uppercase tracking-[0.14em]">
                 <th className="px-4 py-2.5 font-bold">Date</th>
                 <th className="px-3 py-2.5 font-bold">Category</th>
                 <th className="px-3 py-2.5 font-bold">Payee</th>
-                <th className="px-3 py-2.5 font-bold text-right">Amount</th>
+                <th className="px-3 py-2.5 font-bold text-end">Amount</th>
                 <th className="px-4 py-2.5 font-bold" />
               </tr>
             </thead>
@@ -618,8 +622,8 @@ function ExpTab() {
                     </span>
                   </td>
                   <td className="px-3 py-2.5 text-ink">{e.payee}{e.note && <span className="text-inksoft text-xs"> · {e.note}</span>}</td>
-                  <td className="px-3 py-2.5 text-right num font-bold text-brick-700">{money(e.amount)}</td>
-                  <td className="px-4 py-2.5 text-right">
+                  <td className="px-3 py-2.5 text-end num font-bold text-brick-700">{money(e.amount)}</td>
+                  <td className="px-4 py-2.5 text-end">
                     {mayAdd && (
                       <button onClick={() => dispatch({ type: "EXPENSE_DELETE", id: e.id })}
                         className="p-1.5 rounded text-inksoft hover:text-brick-700 hover:bg-brick-100 transition" aria-label={`Delete ${e.id}`}>

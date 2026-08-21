@@ -1,4 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
+import { useTranslation } from "react-i18next";
+import i18n from "../i18n";
 import type { ReactNode } from "react";
 import { usePos, money } from "../store";
 import { CATEGORIES, fefoBatches } from "../data";
@@ -32,13 +34,14 @@ function rangeFor(preset: Preset): { from: number; to: number } {
   }
 }
 const PRESETS: { id: Preset; label: string }[] = [
-  { id: "today", label: "Today" }, { id: "7d", label: "7 days" },
-  { id: "30d", label: "30 days" }, { id: "month", label: "This month" }, { id: "all", label: "All time" },
+  { id: "today", label: i18n.t("reports.today") }, { id: "7d", label: "7 days" },
+  { id: "30d", label: "30 days" }, { id: "month", label: i18n.t("reports.thisMonth") }, { id: "all", label: i18n.t("reports.allTime") },
 ];
 
 /* ================= MAIN VIEW ================= */
 type Tab = "margin" | "valuation" | "pnl" | "builder";
 export default function Reports() {
+  const { t } = useTranslation();
   const { state } = usePos();
   const [tab, setTab] = useState<Tab>("margin");
   const [preset, setPreset] = useState<Preset>("30d");
@@ -52,10 +55,10 @@ export default function Reports() {
   }, [state.transactions, from, to]);
 
   const TABS: { id: Tab; label: string; icon: ReactNode }[] = [
-    { id: "margin", label: "Margin", icon: <ITrendUp size={14} /> },
-    { id: "valuation", label: "COGS & valuation", icon: <IBox size={14} /> },
+    { id: "margin", label: i18n.t("reports.margin"), icon: <ITrendUp size={14} /> },
+    { id: "valuation", label: i18n.t("reports.cogsValuation"), icon: <IBox size={14} /> },
     { id: "pnl", label: "P&L", icon: <ICash size={14} /> },
-    { id: "builder", label: "Report builder", icon: <ISearch size={14} /> },
+    { id: "builder", label: i18n.t("reports.builder"), icon: <ISearch size={14} /> },
   ];
 
   return (
@@ -104,6 +107,7 @@ export default function Reports() {
 
 /* ================= MARGIN TAB ================= */
 function MarginTab({ ledger }: { ledger: { sales: Transaction[]; refunds: Transaction[] } }) {
+  const { t } = useTranslation();
   const { state } = usePos();
   const [groupBy, setGroupBy] = useState<"product" | "category">("product");
 
@@ -135,7 +139,7 @@ function MarginTab({ ledger }: { ledger: { sales: Transaction[]; refunds: Transa
   return (
     <div>
       <div className="flex items-center gap-2 mb-3">
-        <Seg value={groupBy} onChange={setGroupBy} options={[{ id: "product", label: "By product" }, { id: "category", label: "By category" }]} />
+        <Seg value={groupBy} onChange={setGroupBy} options={[{ id: "product", label: i18n.t("reports.byProduct") }, { id: "category", label: i18n.t("reports.byCategory") }]} />
         <div className="flex-1" />
         <ExportCsv name={`margin-${groupBy}`} head={["name", "units", "revenue", "cogs", "margin", "margin_pct"]}
           rows={rows.map((r) => [r.label, r.units, r.revenue.toFixed(2), r.cogs.toFixed(2), r.margin.toFixed(2), r.pct.toFixed(1)])} />
@@ -151,13 +155,13 @@ function MarginTab({ ledger }: { ledger: { sales: Transaction[]; refunds: Transa
       <div className="mt-4 rounded-xl border border-mist bg-card shadow-lift overflow-auto scroll-slim">
         <table className="w-full text-sm border-collapse min-w-[680px]">
           <thead className="sticky top-0 z-10">
-            <tr className="bg-pine-900 text-pine-100 text-left text-[10px] uppercase tracking-[0.14em]">
+            <tr className="bg-pine-900 text-pine-100 text-start text-[10px] uppercase tracking-[0.14em]">
               <th className="px-4 py-2.5 font-bold">{groupBy === "product" ? "Product" : "Category"}</th>
               <th className="px-3 py-2.5 font-bold text-center">Units</th>
-              <th className="px-3 py-2.5 font-bold text-right">Revenue</th>
-              <th className="px-3 py-2.5 font-bold text-right">COGS</th>
-              <th className="px-3 py-2.5 font-bold text-right">Margin</th>
-              <th className="px-4 py-2.5 font-bold text-right w-44">Margin %</th>
+              <th className="px-3 py-2.5 font-bold text-end">Revenue</th>
+              <th className="px-3 py-2.5 font-bold text-end">COGS</th>
+              <th className="px-3 py-2.5 font-bold text-end">Margin</th>
+              <th className="px-4 py-2.5 font-bold text-end w-44">Margin %</th>
             </tr>
           </thead>
           <tbody>
@@ -165,12 +169,12 @@ function MarginTab({ ledger }: { ledger: { sales: Transaction[]; refunds: Transa
               <tr key={r.label} className={cx("border-t border-mist/70 transition-colors hover:bg-pine-50/60", i % 2 === 1 && "bg-paper/50")}>
                 <td className="px-4 py-2 font-semibold text-ink">{r.label}</td>
                 <td className="px-3 py-2 text-center num text-inksoft">{r.units}</td>
-                <td className="px-3 py-2 text-right num text-ink">{money(r.revenue)}</td>
-                <td className="px-3 py-2 text-right num text-inksoft">{money(r.cogs)}</td>
-                <td className={cx("px-3 py-2 text-right num font-bold", r.margin >= 0 ? "text-pine-800" : "text-brick-700")}>{money(r.margin)}</td>
+                <td className="px-3 py-2 text-end num text-ink">{money(r.revenue)}</td>
+                <td className="px-3 py-2 text-end num text-inksoft">{money(r.cogs)}</td>
+                <td className={cx("px-3 py-2 text-end num font-bold", r.margin >= 0 ? "text-pine-800" : "text-brick-700")}>{money(r.margin)}</td>
                 <td className="px-4 py-2">
                   <div className="flex items-center justify-end gap-2">
-                    <span className={cx("num text-xs font-bold w-12 text-right", r.pct >= 0 ? "text-pine-800" : "text-brick-700")}>{r.pct.toFixed(1)}%</span>
+                    <span className={cx("num text-xs font-bold w-12 text-end", r.pct >= 0 ? "text-pine-800" : "text-brick-700")}>{r.pct.toFixed(1)}%</span>
                     <div className="h-1.5 w-24 rounded-full bg-mist/70 overflow-hidden">
                       <div className={cx("anim-grow-w h-full rounded-full", r.pct >= 0 ? "bg-pine-600" : "bg-brick-500")}
                         style={{ width: `${Math.min(100, Math.abs(r.pct))}%`, animationDelay: `${i * 40}ms` }} />
@@ -228,12 +232,12 @@ function ValuationTab({ ledger }: { ledger: { sales: Transaction[]; refunds: Tra
       <div className="mt-2 rounded-xl border border-mist bg-card shadow-lift overflow-auto scroll-slim">
         <table className="w-full text-sm border-collapse min-w-[640px]">
           <thead className="sticky top-0 z-10">
-            <tr className="bg-pine-900 text-pine-100 text-left text-[10px] uppercase tracking-[0.14em]">
+            <tr className="bg-pine-900 text-pine-100 text-start text-[10px] uppercase tracking-[0.14em]">
               <th className="px-4 py-2.5 font-bold">Product · lot</th>
               <th className="px-3 py-2.5 font-bold">Expiry</th>
               <th className="px-3 py-2.5 font-bold text-center">Qty</th>
-              <th className="px-3 py-2.5 font-bold text-right">Unit cost</th>
-              <th className="px-4 py-2.5 font-bold text-right">Value at cost</th>
+              <th className="px-3 py-2.5 font-bold text-end">Unit cost</th>
+              <th className="px-4 py-2.5 font-bold text-end">Value at cost</th>
             </tr>
           </thead>
           <tbody>
@@ -242,8 +246,8 @@ function ValuationTab({ ledger }: { ledger: { sales: Transaction[]; refunds: Tra
                 <td className="px-4 py-2"><span className="font-semibold text-ink">{r.name}</span> <span className="num text-[10px] text-inksoft">· {r.batch}</span></td>
                 <td className="px-3 py-2 num text-inksoft">{r.expiry}</td>
                 <td className="px-3 py-2 text-center num font-bold text-ink">{r.qty}</td>
-                <td className="px-3 py-2 text-right num text-inksoft">{money(r.cost)}</td>
-                <td className="px-4 py-2 text-right num font-bold text-pine-800">{money(r.value)}</td>
+                <td className="px-3 py-2 text-end num text-inksoft">{money(r.cost)}</td>
+                <td className="px-4 py-2 text-end num font-bold text-pine-800">{money(r.value)}</td>
               </tr>
             ))}
             {valuation.rows.length === 0 && <tr><td colSpan={5}><Empty icon={<IBox size={20} />} title="No stock" hint="Receive a purchase order to value inventory." /></td></tr>}
@@ -341,6 +345,7 @@ const DEFAULT_CONFIG: BuilderConfig = { groupBy: "category", kind: "all", method
 const VIEWS_KEY = "counterrx:reportviews";
 
 function BuilderTab({ from, to, preset }: { from: number; to: number; preset: Preset }) {
+  const { t } = useTranslation();
   const { state } = usePos();
   const [cfg, setCfg] = useState<BuilderConfig>(DEFAULT_CONFIG);
   const [views, setViews] = useState<{ name: string; cfg: BuilderConfig }[]>(() => {
@@ -409,7 +414,7 @@ function BuilderTab({ from, to, preset }: { from: number; to: number; preset: Pr
             options={[{ id: "all", label: "All" }, { id: "cash", label: "Cash" }, { id: "card", label: "Card" }, { id: "insurance", label: "Insurance" }]} vertical />
         </Field>
         <div className="mt-3 space-y-1.5">
-          {([["showUnits", "Units"], ["showCogs", "COGS"], ["showMargin", "Margin"]] as const).map(([k, label]) => (
+          {([["showUnits", "Units"], ["showCogs", "COGS"], ["showMargin", t("reports.margin")]] as const).map(([k, label]) => (
             <label key={k} className="flex items-center gap-2 text-xs font-semibold text-ink cursor-pointer">
               <input type="checkbox" checked={cfg[k]} onChange={(e) => setCfg({ ...cfg, [k]: e.target.checked })}
                 className="w-3.5 h-3.5 accent-pine-700" />
@@ -430,7 +435,7 @@ function BuilderTab({ from, to, preset }: { from: number; to: number; preset: Pr
             {views.map((v, i) => (
               <div key={`${v.name}-${i}`} className="flex items-center gap-1.5 group">
                 <button onClick={() => setCfg(v.cfg)}
-                  className="flex-1 text-left text-xs font-semibold text-ink hover:text-pine-700 truncate transition-colors">{v.name}</button>
+                  className="flex-1 text-start text-xs font-semibold text-ink hover:text-pine-700 truncate transition-colors">{v.name}</button>
                 <button onClick={() => setViews((vs) => vs.filter((_, j) => j !== i))}
                   className="p-0.5 rounded text-inksoft opacity-0 group-hover:opacity-100 hover:text-brick-700 transition" aria-label={`Delete ${v.name}`}><IX size={11} /></button>
               </div>
@@ -449,13 +454,13 @@ function BuilderTab({ from, to, preset }: { from: number; to: number; preset: Pr
         <div className="rounded-xl border border-mist bg-card shadow-lift overflow-auto scroll-slim">
           <table className="w-full text-sm border-collapse min-w-[560px]">
             <thead className="sticky top-0 z-10">
-              <tr className="bg-pine-900 text-pine-100 text-left text-[10px] uppercase tracking-[0.14em]">
+              <tr className="bg-pine-900 text-pine-100 text-start text-[10px] uppercase tracking-[0.14em]">
                 <th className="px-4 py-2.5 font-bold">Group</th>
                 <th className="px-3 py-2.5 font-bold text-center">Lines</th>
                 {cfg.showUnits && <th className="px-3 py-2.5 font-bold text-center">Units</th>}
-                <th className="px-3 py-2.5 font-bold text-right">Revenue</th>
-                {cfg.showCogs && <th className="px-3 py-2.5 font-bold text-right">COGS</th>}
-                {cfg.showMargin && <th className="px-4 py-2.5 font-bold text-right">Margin</th>}
+                <th className="px-3 py-2.5 font-bold text-end">Revenue</th>
+                {cfg.showCogs && <th className="px-3 py-2.5 font-bold text-end">COGS</th>}
+                {cfg.showMargin && <th className="px-4 py-2.5 font-bold text-end">Margin</th>}
               </tr>
             </thead>
             <tbody>
@@ -464,9 +469,9 @@ function BuilderTab({ from, to, preset }: { from: number; to: number; preset: Pr
                   <td className="px-4 py-2 font-semibold text-ink">{r.label}</td>
                   <td className="px-3 py-2 text-center num text-inksoft">{r.count}</td>
                   {cfg.showUnits && <td className="px-3 py-2 text-center num text-inksoft">{r.units}</td>}
-                  <td className="px-3 py-2 text-right num text-ink">{money(r.revenue)}</td>
-                  {cfg.showCogs && <td className="px-3 py-2 text-right num text-inksoft">{money(r.cogs)}</td>}
-                  {cfg.showMargin && <td className={cx("px-4 py-2 text-right num font-bold", r.margin >= 0 ? "text-pine-800" : "text-brick-700")}>{money(r.margin)}</td>}
+                  <td className="px-3 py-2 text-end num text-ink">{money(r.revenue)}</td>
+                  {cfg.showCogs && <td className="px-3 py-2 text-end num text-inksoft">{money(r.cogs)}</td>}
+                  {cfg.showMargin && <td className={cx("px-4 py-2 text-end num font-bold", r.margin >= 0 ? "text-pine-800" : "text-brick-700")}>{money(r.margin)}</td>}
                 </tr>
               ))}
               {rows.length === 0 && <tr><td colSpan={6}><Empty icon={<ISearch size={20} />} title="Nothing matches" hint="Loosen the filters to see results." /></td></tr>}

@@ -275,7 +275,10 @@
     "grossProfit": "إجمالي الربح",
     "netProfit": "صافي الربح",
     "agingReport": "تقرير الأعمار",
-    "supplierBalance": "رصيد المورد"
+    "supplierBalance": "رصيد المورد",
+    "newPo": "Create a purchase order",
+    "requiresManager": "Requires manager or admin",
+    "chooseSupplier": "Choose a supplier"
   },
   "reports": {
     "title": "التقارير",
@@ -298,7 +301,15 @@
     "saveView": "حفظ العرض",
     "filterBy": "تصفية حسب",
     "groupBy": "تجميع حسب",
-    "sortBy": "ترتيب حسب"
+    "sortBy": "ترتيب حسب",
+    "today": "Today",
+    "thisMonth": "This month",
+    "allTime": "All time",
+    "margin": "Margin",
+    "cogsValuation": "COGS & valuation",
+    "builder": "Report builder",
+    "byProduct": "By product",
+    "byCategory": "By category"
   },
   "settings": {
     "title": "الإعدادات",
@@ -505,7 +516,14 @@
     "deliveredAt": "تم التوصيل في",
     "deliveryNotes": "ملاحظات التوصيل",
     "curbsidePickup": "استلام من curb",
-    "homeDelivery": "توصيل منزلي"
+    "homeDelivery": "توصيل منزلي",
+    "queued": "Queued",
+    "assigned": "Assigned",
+    "outForDelivery": "Out for delivery",
+    "delivered": "Delivered",
+    "walkIn": "Walk-in",
+    "assign": "Assign",
+    "dispatch": "Dispatch"
   },
   "modal": {
     "confirmTitle": "هل أنت متأكد؟",
@@ -549,5 +567,13 @@
     "paApproved": "{{id}} prior auth APPROVED — safe to fill",
     "paRejected": "{{id}} prior auth REJECTED — {{note}}",
     "dupeBackorder": "{{patient}} already has an open back-order for {{name}}"
+  },
+  "history": {
+    "customerReturn": "Customer return",
+    "wrongItem": "Wrong item dispensed",
+    "damagedGoods": "Damaged goods",
+    "pricingError": "Pricing error",
+    "duplicateCharge": "Duplicate charge",
+    "all": "All"
   }
 }
