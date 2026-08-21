@@ -1,5 +1,6 @@
 import { useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
+import { useTranslation } from "react-i18next";
 import { usePos, money, relTime, unitPrice, cartTotals } from "../store";
 import { CATEGORIES, TAX_RATE, daysUntil, stockOf, nearestExpiry, bulkPct, fefoBatches, findInteractions, allergyConflicts } from "../data";
 import type { CategoryId, Product } from "../data";
@@ -54,6 +55,7 @@ function fuzzy(query: string, target: string): { idx: number[]; score: number } 
 
 export default function Register() {
   const { state, dispatch, product } = usePos();
+  const { t } = useTranslation();
   const [q, setQ] = useState("");
   const [cat, setCat] = useState<CategoryId | "all">("all");
   const [sort, setSort] = useState<SortKey>("name");
@@ -175,12 +177,12 @@ export default function Register() {
         <div className="px-3 sm:px-5 pt-4 pb-3 space-y-3">
           <div className="flex gap-2.5 items-center">
             <div key={scanMiss} className={cx("relative flex-1", scanMiss > 0 && "anim-shake")}>
-              <ISearch size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-inksoft" />
+              <ISearch size={16} className="absolute start-3 top-1/2 -translate-y-1/2 text-inksoft" />
               <input
                 id="pos-search" ref={searchRef} value={q}
                 onChange={(e) => setQ(e.target.value)} onKeyDown={onSearchKey}
-                placeholder="Search name, generic, brand… or scan a barcode"
-                className="w-full pl-9 pr-20 py-2.5 rounded-lg bg-card border border-mist text-sm text-ink placeholder:text-inksoft/70 focus:border-pine-500 focus:outline-none focus:ring-2 focus:ring-pine-200 transition"
+                placeholder={t("pos.searchFuzzyHint")}
+                className="w-full ps-9 pe-20 py-2.5 rounded-lg bg-card border border-mist text-sm text-ink placeholder:text-inksoft/70 focus:border-pine-500 focus:outline-none focus:ring-2 focus:ring-pine-200 transition"
               />
               <span className="scan-chip absolute right-2 top-1/2 -translate-y-1/2 hidden sm:flex items-center gap-1.5 px-2 py-1 rounded-md bg-pine-800 text-pine-100 text-[10px] font-semibold tracking-wide">
                 <IScan size={12} /> SCANNER LIVE
@@ -188,7 +190,7 @@ export default function Register() {
             </div>
             <div className="relative">
               <select value={sort} onChange={(e) => setSort(e.target.value as SortKey)}
-                className="appearance-none pl-3 pr-8 py-2.5 rounded-lg bg-card border border-mist text-xs font-semibold text-ink focus:border-pine-500 focus:outline-none cursor-pointer">
+                className="appearance-none ps-3 pe-8 py-2.5 rounded-lg bg-card border border-mist text-xs font-semibold text-ink focus:border-pine-500 focus:outline-none cursor-pointer">
                 <option value="name">Sort · Name</option>
                 <option value="price">Sort · Price</option>
                 <option value="stock">Sort · Stock</option>
@@ -198,7 +200,7 @@ export default function Register() {
           </div>
 
           <div className="flex gap-1.5 overflow-x-auto scroll-slim pb-1 -mx-1 px-1">
-            <CatChip active={cat === "all"} label="All items" count={state.products.length}
+            <CatChip active={cat === "all"} label={t("pos.allItems")} count={state.products.length}
               onClick={() => setCat("all")} dot="#5c6b66" />
             {CATEGORIES.map((c) => (
               <CatChip key={c.id} active={cat === c.id} label={c.label} dot={c.dot}
@@ -213,7 +215,7 @@ export default function Register() {
             <QuickPicks items={topSellers} onAdd={(id) => { const p = state.products.find((x) => x.id === id); if (p) tryAdd(p); }} />
           )}
           {list.length === 0 ? (
-            <Empty icon={<IPill size={22} />} title="No products match"
+            <Empty icon={<IPill size={22} />} title={t("pos.noProductsMatch")}
               hint={`Nothing found for “${q}”. Try a fuzzy match like “para 500”, a generic name, or scan the barcode.`} />
           ) : (
             <div className="grid grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4 gap-3">
@@ -257,7 +259,7 @@ export default function Register() {
                 <p className="text-[12px] font-bold text-ink truncate">{subPrompt.gen.name} <span className="text-pine-700">({subPrompt.gen.brand})</span></p>
                 <p className="num text-[11px] text-pine-800 font-semibold">
                   {money(subPrompt.gen.price)} <span className="text-inksoft line-through font-normal">{money(subPrompt.brand.price)}</span>
-                  <span className="ml-1.5 text-[10px] font-bold text-pine-700">save {money(subPrompt.brand.price - subPrompt.gen.price)}/unit</span>
+                  <span className="ms-1.5 text-[10px] font-bold text-pine-700">save {money(subPrompt.brand.price - subPrompt.gen.price)}/unit</span>
                 </p>
               </div>
               <button onClick={() => setSubPrompt(null)} className="p-1 rounded text-inksoft hover:text-brick-700 transition shrink-0" aria-label="Dismiss">
@@ -289,7 +291,7 @@ export default function Register() {
             <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-honey-700 mb-1.5">Parked sales · {state.held.length}</p>
             <div className="flex flex-wrap gap-1.5">
               {state.held.map((h) => (
-                <span key={h.id} className="group inline-flex items-center gap-1 bg-card border border-honey-300/70 rounded-md pl-2 pr-1 py-1 text-[11px] font-semibold text-ink">
+                <span key={h.id} className="group inline-flex items-center gap-1 bg-card border border-honey-300/70 rounded-md ps-2 pe-1 py-1 text-[11px] font-semibold text-ink">
                   <button onClick={() => dispatch({ type: "RECALL_HELD", id: h.id })}
                     className="flex items-center gap-1 hover:text-pine-700 transition" title={`Recall ${h.label} (${relTime(h.at)})`}>
                     <IRecall size={11} /> {h.label} · {h.items.reduce((s, i) => s + i.qty, 0)}
@@ -306,8 +308,8 @@ export default function Register() {
 
         <div className="max-h-[320px] lg:max-h-none lg:flex-1 overflow-y-auto scroll-slim px-4 py-3 space-y-2">
           {cartLines.length === 0 && (
-            <Empty icon={<ICart size={22} />} title="Cart is empty"
-              hint="Tap a product or scan its barcode. Press F2 to jump to search, F8 to take payment." />
+            <Empty icon={<ICart size={22} />} title={t("pos.cartEmpty")}
+              hint={t("pos.cartHint")} />
           )}
           {cartLines.map(({ line, p }) => (
             <div key={`${p.id}-${line.qty}`} className="anim-fade-up group bg-paper border border-mist rounded-lg p-2.5 hover:border-pine-300 transition-colors">
@@ -322,7 +324,7 @@ export default function Register() {
                 <span className="num text-[13px] font-bold text-ink shrink-0 flex items-center gap-1.5">
                   {interactingIds.has(p.id) && (
                     <span className="num text-[9px] font-bold px-1.5 py-0.5 rounded bg-brick-100 border border-brick-300/60 text-brick-700 flex items-center gap-0.5"
-                      title="Major drug interaction in this basket — pharmacist review required at checkout">
+                      title={t("pos.interactionWarning")}>
                       <IAlert size={9} /> interact
                     </span>
                   )}
@@ -336,9 +338,9 @@ export default function Register() {
               </div>
               <div className="flex items-center justify-between mt-2">
                 <div className="flex items-center gap-1">
-                  <QtyBtn onClick={() => dispatch({ type: "SET_QTY", productId: p.id, qty: line.qty - 1 })} label="Decrease"><IMinus size={12} /></QtyBtn>
+                  <QtyBtn onClick={() => dispatch({ type: "SET_QTY", productId: p.id, qty: line.qty - 1 })} label={t("pos.decrease")}><IMinus size={12} /></QtyBtn>
                   <span className="num w-8 text-center text-sm font-bold text-ink">{line.qty}</span>
-                  <QtyBtn onClick={() => dispatch({ type: "ADD_CART", productId: p.id })} label="Increase" disabled={line.qty >= stockOf(p)}><IPlus size={12} /></QtyBtn>
+                  <QtyBtn onClick={() => dispatch({ type: "ADD_CART", productId: p.id })} label={t("pos.increase")} disabled={line.qty >= stockOf(p)}><IPlus size={12} /></QtyBtn>
                   {line.qty >= stockOf(p) && <Badge tone="honey">max</Badge>}
                   {p.rx && <Badge tone="brick">℞</Badge>}
                   {p.controlled && <span className="px-1.5 py-0.5 rounded bg-ink text-paper text-[9px] font-bold tracking-wide">{p.controlled}</span>}
@@ -420,7 +422,7 @@ export default function Register() {
               <div className="flex justify-between text-pine-700 font-semibold anim-fade-up"><span>Points · {state.redeemPoints} pts</span><span className="num">−{money(totals.loyaltyDeduct)}</span></div>
             )}
             <div className="flex justify-between text-inksoft">
-              <span>Tax {TAX_RATE * 100}%{attachedCustomer?.taxExempt ? <span className="ml-1.5 px-1 py-px rounded bg-pine-700 text-pine-50 text-[9px] font-bold align-middle">EXEMPT</span> : null}</span>
+              <span>Tax {TAX_RATE * 100}%{attachedCustomer?.taxExempt ? <span className="ms-1.5 px-1 py-px rounded bg-pine-700 text-pine-50 text-[9px] font-bold align-middle">EXEMPT</span> : null}</span>
               <span className={cx("num", attachedCustomer?.taxExempt && "line-through text-inksoft/50")}>{money(tax)}</span>
             </div>
             <div className="flex justify-between items-baseline pt-1.5 border-t border-dashed border-mist">
@@ -474,7 +476,7 @@ function QuickPicks({ items, onAdd }: { items: { p: Product; sold: number }[]; o
       <div className="flex gap-2 overflow-x-auto scroll-slim pb-1">
         {items.map(({ p, sold }) => (
           <button key={p.id} onClick={() => onAdd(p.id)}
-            className="group shrink-0 w-[172px] text-left bg-pine-50/60 border border-pine-200/70 rounded-xl p-2.5 hover:border-pine-400 hover:-translate-y-0.5 hover:shadow-lift active:scale-[0.97] transition-all duration-200">
+            className="group shrink-0 w-[172px] text-start bg-pine-50/60 border border-pine-200/70 rounded-xl p-2.5 hover:border-pine-400 hover:-translate-y-0.5 hover:shadow-lift active:scale-[0.97] transition-all duration-200">
             <div className="flex items-center justify-between gap-1">
               <span className="w-2 h-2 rounded-full" style={{ background: CATEGORIES.find((c) => c.id === p.category)?.dot }} />
               <span className="num text-[9px] font-bold text-pine-700 bg-pine-100 rounded px-1 py-0.5">{sold} sold</span>
@@ -495,6 +497,7 @@ function QuickPicks({ items, onAdd }: { items: { p: Product; sold: number }[]; o
 
 /* Customer attach — walk-in by default, searchable book + inline quick-add */
 function CustomerAttach() {
+  const { t } = useTranslation();
   const { state, dispatch, product } = usePos();
   const [open, setOpen] = useState(false);
   const [q, setQ] = useState("");
@@ -523,9 +526,9 @@ function CustomerAttach() {
         <span className={cx("grid place-items-center w-6 h-6 rounded-md shrink-0", customer ? "bg-honey-500 text-pine-950" : "bg-mist text-inksoft")}>
           <IUsers size={12} />
         </span>
-        <span className="flex-1 text-left min-w-0">
+        <span className="flex-1 text-start min-w-0">
           <span className={cx("block text-xs font-bold truncate", customer ? "text-honey-800" : "text-inksoft")}>
-            {customer ? customer.name : "Walk-in customer"}
+            {customer ? customer.name : t("pos.walkIn")}
           </span>
           <span className="block text-[9px] font-semibold uppercase tracking-[0.12em] text-inksoft">
             {customer ? `${customer.points} pts · tap to change` : "tap to attach · earn pts"}
@@ -564,16 +567,16 @@ function CustomerAttach() {
       {open && !customer && (
         <div className="anim-pop absolute left-4 right-4 top-full mt-1.5 z-30 bg-card border border-mist rounded-xl shadow-pop p-2.5">
           <div className="relative">
-            <ISearch size={12} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-inksoft" />
-            <input autoFocus value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search name or phone…"
-              className="w-full pl-7.5 pl-8 pr-2 py-1.5 rounded-md border border-mist text-xs focus:border-pine-500 focus:outline-none transition" />
+            <ISearch size={12} className="absolute start-2.5 top-1/2 -translate-y-1/2 text-inksoft" />
+            <input autoFocus value={q} onChange={(e) => setQ(e.target.value)} placeholder={t("pos.searchCustomer")}
+              className="w-full ps-7.5 ps-8 pe-2 py-1.5 rounded-md border border-mist text-xs focus:border-pine-500 focus:outline-none transition" />
           </div>
           <div className="mt-1.5 space-y-1 max-h-40 overflow-y-auto scroll-slim">
             {matches.map((c) => (
               <button key={c.id} onClick={() => attach(c.id)}
-                className="w-full flex items-center justify-between px-2 py-1.5 rounded-md hover:bg-pine-50 transition text-left">
+                className="w-full flex items-center justify-between px-2 py-1.5 rounded-md hover:bg-pine-50 transition text-start">
                 <span className="text-xs font-semibold text-ink truncate">{c.name}</span>
-                <span className="num text-[10px] text-inksoft shrink-0 ml-2">{c.phone} · {c.points} pts</span>
+                <span className="num text-[10px] text-inksoft shrink-0 ms-2">{c.phone} · {c.points} pts</span>
               </button>
             ))}
             {matches.length === 0 && <p className="px-2 py-2 text-[11px] text-inksoft">No match in the book.</p>}
@@ -586,9 +589,9 @@ function CustomerAttach() {
               </button>
             ) : (
               <div className="anim-fade-up space-y-1.5">
-                <input autoFocus value={name} onChange={(e) => setName(e.target.value)} placeholder="Full name *"
+                <input autoFocus value={name} onChange={(e) => setName(e.target.value)} placeholder={t("pos.customerName")}
                   className="w-full px-2 py-1.5 rounded-md border border-mist text-xs focus:border-pine-500 focus:outline-none transition" />
-                <input value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="Phone *"
+                <input value={phone} onChange={(e) => setPhone(e.target.value)} placeholder={t("pos.phone")}
                   className="num w-full px-2 py-1.5 rounded-md border border-mist text-xs focus:border-pine-500 focus:outline-none transition" />
                 <button disabled={name.trim().length < 2 || phone.replace(/\D/g, "").length < 7}
                   onClick={() => { dispatch({ type: "ADD_CUSTOMER", name, phone }); setOpen(false); setName(""); setPhone(""); }}
@@ -637,6 +640,7 @@ function CatChip({ active, label, count, dot, onClick }: {
 function ProductCard({ p, hl = [], flashing, flashKey, onAdd }: {
   p: Product; hl?: number[]; flashing: boolean; flashKey: number; onAdd: () => void;
 }) {
+  const { t } = useTranslation();
   const near = nearestExpiry(p);
   const d = near ? daysUntil(near) : 9999;
   const avail = stockOf(p);
@@ -645,7 +649,7 @@ function ProductCard({ p, hl = [], flashing, flashKey, onAdd }: {
   return (
     <button onClick={onAdd} disabled={out}
       className={cx(
-        "group relative text-left bg-card border border-mist rounded-xl p-3.5 transition-all duration-200 overflow-hidden",
+        "group relative text-start bg-card border border-mist rounded-xl p-3.5 transition-all duration-200 overflow-hidden",
         out ? "opacity-45 cursor-not-allowed" : "hover:border-pine-400 hover:-translate-y-0.5 hover:shadow-lift active:scale-[0.98]",
       )}>
       {flashing && <span key={flashKey} className="anim-pop absolute inset-0 rounded-xl ring-2 ring-pine-500 pointer-events-none" />}
@@ -675,8 +679,8 @@ function ProductCard({ p, hl = [], flashing, flashKey, onAdd }: {
             return lotPriced ? (
               <p className="leading-none">
                 <span className="num text-[16px] font-bold text-brick-700">{money(lot!.price!)}</span>
-                <span className="num text-[11px] text-inksoft line-through ml-1.5">{money(p.price)}</span>
-                <span className="ml-1.5 align-middle px-1 py-0.5 rounded bg-brick-100 border border-brick-300/50 text-[8px] font-bold tracking-wide text-brick-700">LOT SALE</span>
+                <span className="num text-[11px] text-inksoft line-through ms-1.5">{money(p.price)}</span>
+                <span className="ms-1.5 align-middle px-1 py-0.5 rounded bg-brick-100 border border-brick-300/50 text-[8px] font-bold tracking-wide text-brick-700">LOT SALE</span>
               </p>
             ) : (
               <p className="num text-[16px] font-bold text-ink leading-none">{money(p.price)}</p>
@@ -686,7 +690,7 @@ function ProductCard({ p, hl = [], flashing, flashKey, onAdd }: {
             out ? "text-brick-700" : low ? "text-honey-700" : "text-pine-600")}>
             <span className={cx("w-1.5 h-1.5 rounded-full", (low || out) && "anim-pulse-dot")}
               style={{ background: out ? "#c24a2e" : low ? "#e0a63c" : "#3b8668" }} />
-            {out ? "Out of stock" : `${avail} in stock`}
+            {out ? t("pos.outOfStock") : t("pos.available", { count: avail })}
           </p>
         </div>
         <span className={cx("grid place-items-center w-8 h-8 rounded-lg border transition-all duration-200",
