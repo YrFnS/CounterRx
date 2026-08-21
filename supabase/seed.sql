@@ -15,7 +15,8 @@ insert into public.staff (id, name, role, pin_hash, initials, active) values
   ('S-002','R. Mensah, RPh','pharmacist','d728a67cd4b5e867e946cb9a59ccf9358d47c9ed2ee538d445d40aac839a94d3','RM',true),
   ('S-003','A. Okafor','cashier','ab26c63aac250675f176b35d43aaf5ca45f0ee87f0c313eac2542365d562b0ad','AO',true),
   ('S-004','J. Boateng','cashier','dbc1bfc7422e1dccbbdfd81d01c2793f8f949d849b788886d1839402cfc76d8c','JB',true),
-  ('S-005','T. Okoye','super_admin','09301567db8a90eed12393c9f0f70ca51a68511f42c076c09612aea63da79f2d','TO',true) on conflict (id) do nothing;
+  ('S-005','T. Okoye','super_admin','09301567db8a90eed12393c9f0f70ca51a68511f42c076c09612aea63da79f2d','TO',true)
+  on conflict (id) do update set name = excluded.name, role = excluded.role, pin_hash = excluded.pin_hash, initials = excluded.initials, active = excluded.active, updated_at = now();
 
 /* ------------------------------------------------------------------ */
 /* Supabase Auth users + identities + profiles                          */
@@ -29,7 +30,8 @@ values
   ('00000000-0000-0000-0000-000000000000','00000000-0000-0000-0000-000000000002','authenticated','authenticated','s002@counterrx.local',crypt('CRxS0022222',gen_salt('bf')),now(),'{"provider":"email","providers":["email"]}','{}',now(),now(),now(),false,false),
   ('00000000-0000-0000-0000-000000000000','00000000-0000-0000-0000-000000000003','authenticated','authenticated','s003@counterrx.local',crypt('CRxS0031111',gen_salt('bf')),now(),'{"provider":"email","providers":["email"]}','{}',now(),now(),now(),false,false),
   ('00000000-0000-0000-0000-000000000000','00000000-0000-0000-0000-000000000004','authenticated','authenticated','s004@counterrx.local',crypt('CRxS0044444',gen_salt('bf')),now(),'{"provider":"email","providers":["email"]}','{}',now(),now(),now(),false,false),
-  ('00000000-0000-0000-0000-000000000000','00000000-0000-0000-0000-000000000005','authenticated','authenticated','s005@counterrx.local',crypt('CRxS0055555',gen_salt('bf')),now(),'{"provider":"email","providers":["email"]}','{}',now(),now(),now(),false,false) on conflict (id) do nothing;
+  ('00000000-0000-0000-0000-000000000000','00000000-0000-0000-0000-000000000005','authenticated','authenticated','s005@counterrx.local',crypt('CRxS0055555',gen_salt('bf')),now(),'{"provider":"email","providers":["email"]}','{}',now(),now(),now(),false,false)
+  on conflict (id) do update set email = excluded.email, encrypted_password = excluded.encrypted_password, email_confirmed_at = excluded.email_confirmed_at, raw_app_meta_data = excluded.raw_app_meta_data, raw_user_meta_data = excluded.raw_user_meta_data, updated_at = now(), is_sso_user = excluded.is_sso_user, is_anonymous = excluded.is_anonymous;
 
 insert into auth.identities (provider_id, user_id, identity_data, provider, last_sign_in_at, created_at, updated_at, id)
 values
@@ -37,7 +39,8 @@ values
   ('00000000-0000-0000-0000-000000000002','00000000-0000-0000-0000-000000000002','{"sub":"00000000-0000-0000-0000-000000000002","email":"s002@counterrx.local","email_verified":true,"phone_verified":false}','email',now(),now(),now(),'00000000-0000-0000-0000-000000000002'),
   ('00000000-0000-0000-0000-000000000003','00000000-0000-0000-0000-000000000003','{"sub":"00000000-0000-0000-0000-000000000003","email":"s003@counterrx.local","email_verified":true,"phone_verified":false}','email',now(),now(),now(),'00000000-0000-0000-0000-000000000003'),
   ('00000000-0000-0000-0000-000000000004','00000000-0000-0000-0000-000000000004','{"sub":"00000000-0000-0000-0000-000000000004","email":"s004@counterrx.local","email_verified":true,"phone_verified":false}','email',now(),now(),now(),'00000000-0000-0000-0000-000000000004'),
-  ('00000000-0000-0000-0000-000000000005','00000000-0000-0000-0000-000000000005','{"sub":"00000000-0000-0000-0000-000000000005","email":"s005@counterrx.local","email_verified":true,"phone_verified":false}','email',now(),now(),now(),'00000000-0000-0000-0000-000000000005') on conflict (id) do nothing;
+  ('00000000-0000-0000-0000-000000000005','00000000-0000-0000-0000-000000000005','{"sub":"00000000-0000-0000-0000-000000000005","email":"s005@counterrx.local","email_verified":true,"phone_verified":false}','email',now(),now(),now(),'00000000-0000-0000-0000-000000000005')
+  on conflict (id) do update set user_id = excluded.user_id, identity_data = excluded.identity_data, provider = excluded.provider, updated_at = now();
 
 -- GoTrue v2 returns `500 Database error querying schema` when these string
 -- columns are NULL instead of '' — normalize for freshly-seeded AND existing rows.
@@ -56,7 +59,8 @@ insert into public.profiles (id, staff_id, role) values
   ('00000000-0000-0000-0000-000000000002','S-002','pharmacist'),
   ('00000000-0000-0000-0000-000000000003','S-003','manager'),
   ('00000000-0000-0000-0000-000000000004','S-004','pharmacy_admin'),
-  ('00000000-0000-0000-0000-000000000005','S-005','super_admin') on conflict (id) do nothing;
+  ('00000000-0000-0000-0000-000000000005','S-005','super_admin')
+  on conflict (id) do update set staff_id = excluded.staff_id, role = excluded.role;
 
 /* ------------------------------------------------------------------ */
 /* Org settings (single row)                                            */
