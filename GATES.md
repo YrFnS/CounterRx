@@ -66,4 +66,14 @@ Gates marked CHECK are runnable; EXPECT gives the pass condition. Evidence line 
 - EVIDENCE: Local clean reset intentionally not run. Remote migration ledger contains `20260821000001 init` and `20260821000002 schema_contract`; `supabase db push --dry-run` returned `upToDate: true`; remote seed rerun is idempotent.
 
 
+## Leaf gates (audit remediation)
+
+- [x] sync-integrity — [`gates/sync-integrity.md`](gates/sync-integrity.md) (F1, F2)
+- [x] multi-tenancy — [`gates/multi-tenancy.md`](gates/multi-tenancy.md) (F8)
+- [x] audit-actor — [`gates/audit-actor.md`](gates/audit-actor.md) (F9)
+- [x] tests-lint-ci — [`gates/tests-lint-ci.md`](gates/tests-lint-ci.md) (F10)
+- [x] i18n-rtl — [`gates/i18n-rtl.md`](gates/i18n-rtl.md) (F3–F6; browser item pending under G9)
+- [x] route-guards — [`gates/route-guards.md`](gates/route-guards.md) (F7; browser item pending under G9)
+- [x] offline-outbox — [`gates/offline-outbox.md`](gates/offline-outbox.md) (F11)
+
 ABANDON: (none)
