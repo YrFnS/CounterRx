@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import type { ReactNode } from "react";
 import { usePos, listSnapshots, money } from "../store";
+import i18n from "../i18n";
 import { CURRENCIES, ROLE_LABEL, can, randomPin } from "../data";
 import type { OrgSettings, Role, Staff, Snapshot } from "../data";
 import { cx, Modal, Badge } from "../ui";
@@ -8,7 +9,7 @@ import {
   IGear, IPrint, IStar, IUsers, IDownload, IUpload, IPlus, IX, ICheck, ICopy, ITrash, IRecall, IAlert, IScan, IChevD, IClockIn,
 } from "../icons";
 
-type Tab = "profile" | "receipt" | "loyalty" | "team" | "clock" | "data";
+type Tab = "profile" | "receipt" | "loyalty" | "team" | "clock" | "data" | "language";
 
 const TABS: { id: Tab; label: string; icon: ReactNode }[] = [
   { id: "profile", label: "Store profile", icon: <IGear size={14} /> },
@@ -17,6 +18,7 @@ const TABS: { id: Tab; label: string; icon: ReactNode }[] = [
   { id: "team", label: "Team", icon: <IUsers size={14} /> },
   { id: "clock", label: "Time clock", icon: <IClockIn size={14} /> },
   { id: "data", label: "Data & backups", icon: <IDownload size={14} /> },
+  { id: "language", label: "Language", icon: <IX size={14} /> },
 ];
 
 export default function Settings() {
@@ -55,7 +57,33 @@ export default function Settings() {
         {tab === "team" && teamAdmin && <TeamTab />}
         {tab === "clock" && <TimeTab />}
         {tab === "data" && <DataTab />}
+        {tab === "language" && <LanguageTab />}
       </div>
+    </div>
+  );
+}
+
+/* language picker (F4): switches i18n locale; the detector caches to localStorage */
+function LanguageTab() {
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center justify-between gap-3 rounded-lg border border-mist bg-card px-3 py-2.5">
+        <span className="text-xs font-bold text-ink">Interface language</span>
+        <div className="flex gap-1.5">
+          {(["en", "ar"] as const).map((lng) => (
+            <button key={lng} onClick={() => void i18n.changeLanguage(lng)}
+              className={cx("px-3 py-1.5 rounded-lg text-xs font-bold transition",
+                i18n.language === lng || i18n.language.startsWith(lng)
+                  ? "bg-pine-600 text-paper shadow"
+                  : "bg-paper border border-mist text-inksoft hover:border-pine-300")}>
+              {lng === "en" ? "English" : "العربية"}
+            </button>
+          ))}
+        </div>
+      </div>
+      <p className="text-[10px] text-inksoft px-1">
+        Arabic flips the layout to right-to-left automatically.
+      </p>
     </div>
   );
 }
@@ -204,12 +232,12 @@ function TeamTab() {
       <div className="rounded-xl border border-mist bg-card shadow-lift overflow-auto scroll-slim">
         <table className="w-full text-sm border-collapse min-w-[720px]">
           <thead className="sticky top-0 z-10">
-            <tr className="bg-pine-900 text-pine-100 text-left text-[10px] uppercase tracking-[0.14em]">
+            <tr className="bg-pine-900 text-pine-100 text-start text-[10px] uppercase tracking-[0.14em]">
               <th className="px-4 py-2.5 font-bold">Staff</th>
               <th className="px-3 py-2.5 font-bold">Role</th>
               <th className="px-3 py-2.5 font-bold">Status</th>
               <th className="px-3 py-2.5 font-bold">Since</th>
-              <th className="px-4 py-2.5 font-bold text-right">Actions</th>
+              <th className="px-4 py-2.5 font-bold text-end">Actions</th>
             </tr>
           </thead>
           <tbody>
@@ -221,7 +249,7 @@ function TeamTab() {
                     <div className="flex items-center gap-2.5">
                       <span className="grid place-items-center w-8 h-8 rounded-lg bg-pine-800 text-pine-100 font-display font-bold text-[11px] shrink-0">{s.initials}</span>
                       <div>
-                        <p className="font-bold text-ink">{s.name}{self && <span className="ml-1.5 text-[9px] font-bold uppercase text-pine-700 bg-pine-100 px-1.5 py-0.5 rounded">you</span>}</p>
+                        <p className="font-bold text-ink">{s.name}{self && <span className="ms-1.5 text-[9px] font-bold uppercase text-pine-700 bg-pine-100 px-1.5 py-0.5 rounded">you</span>}</p>
                         <p className="text-[10px] text-inksoft num">{s.id}</p>
                       </div>
                     </div>
@@ -467,7 +495,7 @@ function ToggleRow({ on, onChange, label, hint, icon, disabled }: {
 }) {
   return (
     <button onClick={() => !disabled && onChange(!on)}
-      className={cx("mt-3 w-full flex items-center gap-3 rounded-lg border px-3 py-2.5 text-left transition-all",
+      className={cx("mt-3 w-full flex items-center gap-3 rounded-lg border px-3 py-2.5 text-start transition-all",
         on ? "border-pine-300 bg-pine-50" : "border-mist bg-paper", disabled && "opacity-60 cursor-not-allowed")}>
       {icon && <span className={cx("shrink-0", on ? "text-pine-700" : "text-inksoft")}>{icon}</span>}
       <span className="flex-1 min-w-0">
@@ -475,7 +503,7 @@ function ToggleRow({ on, onChange, label, hint, icon, disabled }: {
         {hint && <span className="block text-[10px] text-inksoft truncate">{hint}</span>}
       </span>
       <span className={cx("relative w-9 h-5 rounded-full transition-colors shrink-0", on ? "bg-pine-600" : "bg-mist")}>
-        <span className={cx("absolute top-0.5 w-4 h-4 rounded-full bg-white shadow transition-all duration-200", on ? "left-[18px]" : "left-0.5")} />
+        <span className={cx("absolute top-0.5 w-4 h-4 rounded-full bg-white shadow transition-all duration-200", on ? "start-[18px]" : "start-0.5")} />
       </span>
     </button>
   );
@@ -528,7 +556,7 @@ function TimeTab() {
               <div className="flex-1 min-w-0">
                 <div className="flex justify-between text-xs mb-0.5">
                   <span className="font-semibold text-ink truncate">{s.name}</span>
-                  <span className="num text-pine-800 font-bold shrink-0 ml-2">{hrs(total)}h · {shifts} shift{shifts === 1 ? "" : "s"}</span>
+                  <span className="num text-pine-800 font-bold shrink-0 ms-2">{hrs(total)}h · {shifts} shift{shifts === 1 ? "" : "s"}</span>
                 </div>
                 <div className="h-1.5 rounded-full bg-mist/60 overflow-hidden">
                   <div className="anim-grow-w h-full rounded-full bg-pine-600" style={{ width: `${Math.min(100, (total / (40 * 3_600_000)) * 100)}%` }} />

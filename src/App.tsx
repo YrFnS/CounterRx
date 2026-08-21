@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { ReactNode, ChangeEvent } from "react";
 import { useTranslation } from "react-i18next";
+import i18n from "./i18n";
 import { PosProvider, usePos } from "./store";
 import { signInStaff } from "./lib/sync";
 import type { View } from "./store";
@@ -143,7 +144,7 @@ function LockScreen() {
               {roster.map((u, i) => (
                 <button key={u.id} onClick={() => { setSelected(u); setPin(""); setError(false); }}
                   style={{ animationDelay: `${i * 60}ms` }}
-                  className="anim-fade-up w-full flex items-center gap-3 p-2.5 rounded-xl border-2 border-mist bg-paper hover:border-pine-400 hover:bg-pine-50 hover:-translate-y-0.5 transition-all duration-200 text-left">
+                  className="anim-fade-up w-full flex items-center gap-3 p-2.5 rounded-xl border-2 border-mist bg-paper hover:border-pine-400 hover:bg-pine-50 hover:-translate-y-0.5 transition-all duration-200 text-start">
                   <span className="grid place-items-center w-9 h-9 rounded-full bg-pine-900 text-pine-100 font-display font-bold text-xs shrink-0">
                     {u.initials}
                   </span>
@@ -245,10 +246,15 @@ function LockScreen() {
 
 function Shell() {
   const { state, dispatch, lowStock, expiring, newRx } = usePos();
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const [apiOpen, setApiOpen] = useState(false);
   const [navOpen, setNavOpen] = useState(false);
   const go = (view: View) => { dispatch({ type: "GO", view }); setNavOpen(false); };
+
+  /* reflect the active language in <html dir> (F5: RTL activation) */
+  useEffect(() => {
+    document.documentElement.dir = i18n.language === "ar" ? "rtl" : "ltr";
+  }, [i18n.language]);
 
   /* close the mobile nav drawer with Escape */
   useEffect(() => {
@@ -344,8 +350,8 @@ function Shell() {
 
       {/* ---------- sidebar (off-canvas below lg) ---------- */}
       <aside className={cx(
-        "fixed lg:static inset-y-0 left-0 z-50 w-[218px] shrink-0 bg-pine-950 text-pine-100 flex flex-col overflow-hidden transition-transform duration-300 ease-out",
-        navOpen ? "translate-x-0 shadow-pop" : "-translate-x-full lg:translate-x-0")}>
+        "fixed lg:static inset-y-0 start-0 z-50 w-[218px] shrink-0 bg-pine-950 text-pine-100 flex flex-col overflow-hidden transition-transform duration-300 ease-out",
+        navOpen ? "translate-x-0 shadow-pop" : "-translate-x-full lg:translate-x-0 drawer-closed")}>
         <div className="absolute inset-0 pointer-events-none opacity-[0.05]"
           style={{ backgroundImage: "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='26' height='26' viewBox='0 0 26 26'%3E%3Cpath d='M11 7h4v4h4v4h-4v4h-4v-4H7v-4h4z' fill='%238fbfa9'/%3E%3C/svg%3E\")" }} />
         <div className="relative px-5 pt-5 pb-4">
@@ -375,7 +381,7 @@ function Shell() {
                 className={cx("w-full flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-[13px] font-semibold transition-all duration-200 group",
                   active ? "bg-pine-700 text-paper shadow-lift translate-x-0.5" : "text-pine-200 hover:bg-pine-900 hover:text-paper hover:translate-x-0.5")}>
                 <span className={cx("transition-transform duration-200", !active && "group-hover:scale-110")}>{n.icon}</span>
-                <span className="flex-1 text-left">{t(n.label)}</span>
+                <span className="flex-1 text-start">{t(n.label)}</span>
                 {badge > 0 && (
                   <span className={cx("num text-[10px] font-bold px-1.5 py-0.5 rounded-md",
                     n.id === "inventory" ? "bg-honey-500 text-pine-950" : "bg-brick-500 text-brick-100")}>
@@ -549,7 +555,7 @@ function TopBar({ onMenu }: { onMenu: () => void }) {
       </div>
 
       {/* live clock */}
-      <div className="hidden md:flex flex-col items-end pl-3 border-l border-mist">
+      <div className="hidden md:flex flex-col items-end ps-3 border-l border-mist">
         <span className="num text-[15px] font-bold text-ink leading-none">
           {now.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}
         </span>
@@ -573,7 +579,7 @@ function AlertRow({ tone, icon, text, onClick }: {
   };
   return (
     <button onClick={onClick}
-      className="w-full flex items-center gap-2.5 px-2.5 py-2 rounded-lg hover:bg-paper text-left transition group">
+      className="w-full flex items-center gap-2.5 px-2.5 py-2 rounded-lg hover:bg-paper text-start transition group">
       <span className={cx("grid place-items-center w-7 h-7 rounded-md shrink-0", tones[tone])}>{icon}</span>
       <span className="text-xs text-ink leading-snug flex-1">{text}</span>
       <IChevD size={12} className="-rotate-90 text-inksoft opacity-0 group-hover:opacity-100 transition" />

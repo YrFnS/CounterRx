@@ -11,6 +11,16 @@
   unicode-bidi: embed;
 }
 
+/* RTL: the off-canvas sidebar slides in from the right (F6) */
+[dir="rtl"] .drawer-closed {
+  transform: translateX(100%);
+}
+@media (min-width: 64rem) {
+  [dir="rtl"] .drawer-closed {
+    transform: none;
+  }
+}
+
 @theme {
   --font-display: "Space Grotesk", "IBM Plex Sans", sans-serif;
   --font-body: "IBM Plex Sans", system-ui, sans-serif;
