@@ -3,11 +3,12 @@ import type { ReactNode, Dispatch } from "react";
 import {
   makeProducts, makePrescriptions, makeTransactions, makeCustomers, makeTransfers, makePrescribers,
   makeSuppliers, makePurchaseOrders, makeApInvoices, makeExpenses, invoiceBalance,
-  makeDeliveries, makeWebOrders, makeTimeEntries,
+  makeDeliveries, makeWebOrders, makeTimeEntries, makeColdChainLogs,
   TAX_RATE, CASHIER,
   stockOf, nearestExpiry, allocFEFO, fefoBatches, newBatchCode, daysUntil,
   bulkPct, REDEEM_CHUNK_PTS, REDEEM_CHUNK_VALUE, can, tenderTypeOf, applyStoreCredit, pruneExpiredHolds,
   createShift, recordShiftTransaction, recordCashMovement, closeShift, generateXReport, generateZReport,
+  deductFromLot, tempInRange,
 } from "./data";
 import type {
   Product, Transaction, Prescription, Customer, AuditEntry, AuditKind, Staff, Role, OrgSettings,
@@ -16,7 +17,7 @@ import type {
   Supplier, PurchaseOrder, ApInvoice, ApPayMethod, Expense,
   Delivery, DeliveryStatus, WebOrder, WebOrderStatus, TimeEntry,
   Shift, XReport, ZReport, CashMovement, ShiftTransaction, TxType, TenderType, StoreCredit,
-  InteractionPair,
+  InteractionPair, ColdChainLog,
 } from "./data";
 import { makeStaff, makeSettings, makeBackOrders, makeRxTransfers, SNAPS_KEY, hashPin, ROLE_LABEL } from "./data";
 import type { BackendData, LoadResult } from "./lib/sync";
@@ -56,6 +57,7 @@ interface State {
   timeEntries: TimeEntry[];
   shifts: Shift[];
   interactionPairs: InteractionPair[];
+  coldChainLog: ColdChainLog[];
   currentShift: Shift | null;
   cart: { productId: string; qty: number; note?: string; priceOverride?: number; daw?: number; substitutedFrom?: string; uom?: string }[];
   held: HeldSale[];
@@ -83,6 +85,9 @@ type Action =
   | { type: "SET_STAFF_PIN"; id: string; pin: string }
   | { type: "ADD_PRESCRIBER"; prescriber: Omit<Prescriber, "id"> }
   | { type: "FLAG_RECALL"; productId: string; batch: string; flagged: boolean }
+  | { type: "RTV"; productId: string; batch: string; qty: number; reason: string }
+  | { type: "WRITE_OFF"; productId: string; batch: string; reason: string; approvedBy?: string }
+  | { type: "COLD_CHAIN_LOG"; productId: string; tempC: number; note?: string }
   | { type: "TOGGLE_RESTRICTED"; productId: string; restricted: { limitPerSale: number } | undefined }
   | { type: "UPDATE_SETTINGS"; patch: Partial<Omit<OrgSettings, "loyalty">> & { loyalty?: Partial<OrgSettings["loyalty"]> } }
   | { type: "SNAPSHOT_SAVE"; label: string; auto: boolean }
@@ -92,6 +97,7 @@ type Action =
   | { type: "ADD_CART"; productId: string; daw?: number; substitutedFrom?: string; uom?: string }
   | { type: "NOTIFY_RX"; id: string }
   | { type: "SAVE_UOMS"; productId: string; uoms: import("./data").Uom[] }
+  | { type: "SET_LINE_UOM"; productId: string; uom?: string }
   | { type: "ADD_VARIANT"; parentId: string; name: string; price: number; cost: number; stock: number }
   | { type: "SAVE_KIT"; productId: string; name: string; price: number; components: { productId: string; qty: number }[] }
   | { type: "PA_SUBMIT"; id: string }
@@ -123,7 +129,7 @@ type Action =
   | { type: "COMPLETE_SALE"; payments: PaymentLeg[]; tendered?: number; discountPct: number; taxExempt: boolean; idChecked: boolean; restricted?: { purchaser: string; idType: string; idLast4: string } }
   | { type: "OPEN_RECEIPT"; tx: Transaction | null }
   | { type: "ADJUST_BATCH"; productId: string; batch: string; newQty: number; reason: string }
-  | { type: "RESTOCK"; productId: string; amount: number; batch: string; expiry: string }
+  | { type: "RESTOCK"; productId: string; amount: number; batch: string; expiry: string; cost?: number }
   | { type: "SET_NOTE"; productId: string; note: string }
   | { type: "SET_PRICE"; productId: string; price: number | null }
   | { type: "SET_BATCH_PRICE"; productId: string; batch: string; price: number | null }
@@ -173,7 +179,7 @@ let toastSeq = 1;
 let heldSeq = 1;
 let auditSeq = 100;
 
-export const seed = (): Pick<State, "products" | "transactions" | "prescriptions" | "prescribers" | "customers" | "audit" | "transfers" | "backorders" | "rxTransfers" | "suppliers" | "purchaseOrders" | "apInvoices" | "expenses" | "deliveries" | "webOrders" | "timeEntries" | "staff" | "settings" | "shifts" | "storeCredits" | "interactionPairs"> => {
+export const seed = (): Pick<State, "products" | "transactions" | "prescriptions" | "prescribers" | "customers" | "audit" | "transfers" | "backorders" | "rxTransfers" | "suppliers" | "purchaseOrders" | "apInvoices" | "expenses" | "deliveries" | "webOrders" | "timeEntries" | "staff" | "settings" | "shifts" | "storeCredits" | "interactionPairs" | "coldChainLog"> => {
   const now = Date.now();
   const products = makeProducts(now);
   const customers = makeCustomers(now);
@@ -194,6 +200,7 @@ export const seed = (): Pick<State, "products" | "transactions" | "prescriptions
     deliveries: makeDeliveries(now),
     webOrders: makeWebOrders(now),
     timeEntries: makeTimeEntries(now),
+    coldChainLog: makeColdChainLogs(now),
     shifts: [],
     interactionPairs: [],
     staff: makeStaff(now),
@@ -240,6 +247,7 @@ function load(): State {
           shifts: saved.shifts ?? [],
           storeCredits: saved.storeCredits ?? [],
           interactionPairs: saved.interactionPairs ?? [],
+          coldChainLog: saved.coldChainLog ?? [],
         };
       }
     }
@@ -424,6 +432,83 @@ export function reducer(state: State, a: Action): State {
       return withAudit({ ...state, products }, "system",
         a.restricted ? `Restricted OTC flag set on ${state.products.find((p) => p.id === a.productId)?.name ?? a.productId} (limit ${a.restricted.limitPerSale}/sale)`
           : `Restricted OTC flag cleared`);
+    }
+
+    /* -------- supply chain depth (§5) -------- */
+
+    case "SAVE_UOMS": {
+      const p = state.products.find((x) => x.id === a.productId);
+      if (!p) return state;
+      const products = state.products.map((x) => (x.id === p.id ? { ...x, uoms: a.uoms } : x));
+      const label = a.uoms.length
+        ? a.uoms.map((u) => `${u.label} (×${u.factor} @ ${money(u.price)})`).join(" · ")
+        : "none — base unit only";
+      return withToast(
+        withAudit({ ...state, products }, "stock", `UOM packs updated — ${p.name}: ${label}`),
+        "success", `${p.name} — ${a.uoms.length} unit${a.uoms.length === 1 ? "" : "s"} of measure saved`);
+    }
+
+    /* Return-to-vendor: pull units off a lot, book an AP credit against the supplier (§5) */
+    case "RTV": {
+      const p = state.products.find((x) => x.id === a.productId);
+      if (!p) return state;
+      const lot = p.batches.find((b) => b.batch === a.batch);
+      if (!lot || a.qty <= 0 || a.qty > lot.qty) return state;
+      const reason = a.reason.trim();
+      if (reason.length < 3) return state;
+      const products = state.products.map((x) =>
+        x.id === p.id ? { ...x, batches: deductFromLot(x.batches, a.batch, a.qty) } : x);
+      const value = round2(a.qty * (lot.cost ?? p.cost));
+      const sup = state.suppliers.find((s) => s.name === p.supplier);
+      let apInvoices = state.apInvoices;
+      let creditLabel = `${p.supplier} (no open invoice — logged for next invoice)`;
+      if (sup) {
+        const open = state.apInvoices.find((inv) => inv.supplierId === sup.id && invoiceBalance(inv) > 0);
+        if (open) {
+          apInvoices = state.apInvoices.map((inv) =>
+            inv.id === open.id
+              ? { ...inv, credits: [...inv.credits, { at: Date.now(), amount: value, note: `RTV ${a.qty}× ${p.name} (lot ${a.batch}) — ${reason}` }] }
+              : inv);
+          creditLabel = `credit ${money(value)} on ${open.number}`;
+        }
+      }
+      const next = withAudit({ ...state, products, apInvoices }, "stock",
+        `RTV — ${a.qty}× ${p.name} lot ${a.batch} returned to ${p.supplier} · ${creditLabel} · ${reason}`);
+      return withToast(next, "success", `RTV booked — ${money(value)} credit against ${p.supplier}`);
+    }
+
+    /* Expiry / damaged write-off — manager approval + mandatory reason (mirrors Phase A voids) */
+    case "WRITE_OFF": {
+      if (!can(state.user?.role, "apply_count")) {
+        return withToast(state, "error", "Write-offs require a manager or admin approval");
+      }
+      const p = state.products.find((x) => x.id === a.productId);
+      if (!p) return state;
+      const lot = p.batches.find((b) => b.batch === a.batch);
+      if (!lot || lot.qty <= 0) return state;
+      const reason = a.reason.trim();
+      if (reason.length < 3) return state;
+      const products = state.products.map((x) =>
+        x.id === p.id ? { ...x, batches: x.batches.filter((b) => b.batch !== a.batch) } : x);
+      const value = round2(lot.qty * (lot.cost ?? p.cost));
+      const next = withAudit({ ...state, products }, "stock",
+        `⚠ WRITE-OFF — ${p.name} · lot ${a.batch} ×${lot.qty} (${money(value)} at cost) · ${reason}${a.approvedBy ? ` · approved by ${a.approvedBy}` : ` · ${state.user?.name ?? ""}`}`);
+      return withToast(next, "warn", `Wrote off ${lot.qty} × ${p.name} — lot ${a.batch} removed from shelf`);
+    }
+
+    /* Cold-chain temperature reading — appended to the compliance log (§5) */
+    case "COLD_CHAIN_LOG": {
+      const p = state.products.find((x) => x.id === a.productId);
+      if (!p || !Number.isFinite(a.tempC)) return state;
+      const entry: ColdChainLog = {
+        id: `CCL-${Date.now().toString(36)}`, productId: p.id, tempC: round2(a.tempC),
+        inRange: tempInRange(a.tempC), staff: state.user?.name ?? CASHIER, note: a.note?.trim() || undefined,
+        at: Date.now(),
+      };
+      const next = withAudit({ ...state, coldChainLog: [entry, ...state.coldChainLog] }, "stock",
+        `Cold-chain temp ${entry.tempC}°C ${entry.inRange ? "✓" : "⚠ OUT OF RANGE"} — ${p.name}${entry.note ? ` · ${entry.note}` : ""}`);
+      return withToast(next, entry.inRange ? "success" : "warn",
+        `${p.name} logged at ${entry.tempC}°C — ${entry.inRange ? "in range (2–8°C)" : "OUT OF RANGE — quarantine & re-verify"}`);
     }
 
     case "UPDATE_SETTINGS": {
@@ -722,6 +807,19 @@ export function reducer(state: State, a: Action): State {
       return { ...state, cart: state.cart.map((c) => (same(c) ? { ...c, qty } : c)) };
     }
 
+    /* Switch the unit of measure on an existing cart line (§5) — qty clamps to the UOM's sellable max */
+    case "SET_LINE_UOM": {
+      const p = state.products.find((x) => x.id === a.productId);
+      if (!p) return state;
+      const factor = uomFactor(state, p.id, a.uom);
+      const maxUom = Math.max(1, Math.floor(stockOf(p, state.products) / factor));
+      const cart = state.cart.map((c) =>
+        c.productId === a.productId
+          ? { ...c, uom: a.uom || undefined, qty: Math.min(Math.max(1, c.qty), maxUom) }
+          : c);
+      return { ...state, cart };
+    }
+
     case "REMOVE_LINE":
       return { ...state, cart: state.cart.filter((c) => !(c.productId === a.productId && (c.uom ?? "") === (a.uom ?? ""))) };
 
@@ -921,7 +1019,8 @@ export function reducer(state: State, a: Action): State {
     case "RESTOCK": {
       const p = state.products.find((x) => x.id === a.productId);
       if (!p) return state;
-      const lot: Batch = { batch: a.batch, expiry: a.expiry, qty: a.amount };
+      /* §5 lot costing — the cost entered at receive rides on the Batch; FIFO margin uses it */
+      const lot: Batch = { batch: a.batch, expiry: a.expiry, qty: a.amount, cost: a.cost !== undefined ? round2(a.cost) : p.cost };
       const products = state.products.map((x) => (x.id === a.productId ? { ...x, batches: [...x.batches, lot] } : x));
       /* receiving stock flips any matching open back-orders to "arrived" (§3) */
       const matched = state.backorders.filter((b) => b.productId === a.productId && b.status === "ordered");
@@ -929,8 +1028,9 @@ export function reducer(state: State, a: Action): State {
         ? state.backorders.map((b) => (b.productId === a.productId && b.status === "ordered" ? { ...b, status: "arrived" as const, arrivedAt: Date.now() } : b))
         : state.backorders;
       const suffix = matched.length > 0 ? ` — ${matched.length} back-order${matched.length === 1 ? "" : "s"} now in` : "";
-      const next = withAudit({ ...state, products, backorders }, "stock", `Received +${a.amount} × ${p.name} → lot ${a.batch} (exp ${a.expiry})${suffix}`);
-      return withToast(next, "success", `Received +${a.amount} × ${p.name} → lot ${a.batch}${suffix}`);
+      const costLabel = ` @ ${money(lot.cost!)}/unit`;
+      const next = withAudit({ ...state, products, backorders }, "stock", `Received +${a.amount} × ${p.name} → lot ${a.batch} (exp ${a.expiry})${costLabel}${suffix}`);
+      return withToast(next, "success", `Received +${a.amount} × ${p.name} → lot ${a.batch}${costLabel}${suffix}`);
     }
 
     case "SET_NOTE": {
@@ -1443,6 +1543,7 @@ export function reducer(state: State, a: Action): State {
         shifts: a.data.shifts,
         storeCredits: a.data.storeCredits,
         interactionPairs: a.data.interactionPairs ?? [],
+        coldChainLog: a.data.coldChainLog ?? [],
       };
     }
 
@@ -1558,6 +1659,7 @@ const backendDataFromState = (state: State): BackendData => ({
   storeCredits: state.storeCredits,
   snapshots: listSnapshots(),
   interactionPairs: state.interactionPairs ?? [],
+  coldChainLog: state.coldChainLog ?? [],
 });
 
 export function PosProvider({ children }: { children: ReactNode }) {
@@ -1647,7 +1749,7 @@ export function PosProvider({ children }: { children: ReactNode }) {
   }, [state.backendAuthenticated, state.products, state.transactions, state.prescriptions, state.prescribers, state.customers,
     state.transfers, state.backorders, state.rxTransfers, state.suppliers, state.purchaseOrders,
     state.apInvoices, state.expenses, state.deliveries, state.webOrders, state.timeEntries,
-    state.staff, state.settings, state.restrictedLog, state.audit, state.shifts, state.snapshotVersion]);
+    state.staff, state.settings, state.restrictedLog, state.audit, state.shifts, state.snapshotVersion, state.coldChainLog]);
 
   /* track connectivity so the UI can show offline state (6.5); retry persist on reconnect (F11) */
   useEffect(() => {
@@ -1689,10 +1791,10 @@ export function PosProvider({ children }: { children: ReactNode }) {
         suppliers: state.suppliers, purchaseOrders: state.purchaseOrders,
         apInvoices: state.apInvoices, expenses: state.expenses,
         deliveries: state.deliveries, webOrders: state.webOrders, timeEntries: state.timeEntries,
-        shifts: state.shifts,
+        shifts: state.shifts, coldChainLog: state.coldChainLog,
       }));
     } catch { /* storage full — ignore */ }
-  }, [state.products, state.transactions, state.prescriptions, state.prescribers, state.customers, state.transfers, state.audit, state.staff, state.settings, state.restrictedLog, state.backorders, state.rxTransfers, state.suppliers, state.purchaseOrders, state.apInvoices, state.expenses, state.shifts]);
+  }, [state.products, state.transactions, state.prescriptions, state.prescribers, state.customers, state.transfers, state.audit, state.staff, state.settings, state.restrictedLog, state.backorders, state.rxTransfers, state.suppliers, state.purchaseOrders, state.apInvoices, state.expenses, state.shifts, state.coldChainLog]);
 
   const value = useMemo<Ctx>(() => {
     const product = (id: string) => state.products.find((p) => p.id === id);

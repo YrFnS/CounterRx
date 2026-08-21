@@ -128,6 +128,9 @@ values
   ('oxy30','SKU-OXY30','890OXY30567890','Oxycodone 30mg','Oxycodone HCl','Roxicodone','cns','Tablet · strip of 10',18.50,12.80,12,true,'MediSource Ltd','[{"batch":"OXY-25G22","expiry":"2027-04-12","qty":24}]','[]','[{"key":"Storage","value":"Locked schedule cabinet"},{"key":"Hazard class","value":"C-II · count sheet"}]','[]',NULL,NULL,'C-II',NULL,NULL,NULL,false),
   ('mor15','SKU-MOR15','890MOR15567890','Morphine 15mg','Morphine sulfate','MS Contin','cns','Tablet · strip of 10',15.90,11.00,10,true,'MediSource Ltd','[{"batch":"MOR-25F08","expiry":"2027-05-22","qty":16}]','[]','[]','[]',NULL,NULL,NULL,NULL,NULL,NULL,false) on conflict (id) do nothing;
 
+/* cold-chain products (§5) — flag drives the temperature log UI */
+update public.products set cold_chain = true where sku in ('SKU-INSG','SKU-SALB') and cold_chain is distinct from true;
+
 /* ------------------------------------------------------------------ */
 /* Prescribers                                                          */
 /* ------------------------------------------------------------------ */

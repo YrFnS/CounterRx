@@ -1,12 +1,12 @@
 import { useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
-import { usePos, money, relTime, unitPrice, cartTotals } from "../store";
+import { usePos, money, relTime, unitPrice, cartTotals, uomFactor } from "../store";
 import { CATEGORIES, TAX_RATE, daysUntil, stockOf, nearestExpiry, bulkPct, fefoBatches, findInteractions, allergyConflicts } from "../data";
 import type { CategoryId, Product } from "../data";
 import { cx, Badge, Empty } from "../ui";
 import {
-  ISearch, IScan, IPlus, IMinus, ITrash, IPause, IRecall, IX, ICart, IPill, IChevD, ISpark as ISparkIcon, IEdit, ITag, IUsers, IAlert, IPrint,
+  ISearch, IScan, IPlus, IMinus, ITrash, IPause, IRecall, IX, ICart, IPill, IChevD, ISpark as ISparkIcon, IEdit, ITag, IUsers, IAlert, IPrint, ICold,
 } from "../icons";
 import ShiftBar from "./Till";
 import { printReceipt, HardwareError } from "../lib/hardware";
@@ -70,7 +70,7 @@ export default function Register() {
   /* generic substitution gate (§3 DAW) — offer the cheaper equivalent before a brand goes on the ticket */
   const [subPrompt, setSubPrompt] = useState<{ brand: Product; gen: Product } | null>(null);
   const [dawChoice, setDawChoice] = useState(1);
-  const tryAdd = (p: Product) => {
+  const tryAdd = (p: Product, uom?: string) => {
     const gen = state.products.find((x) => x.genericOf === p.id);
     const alreadyOnTicket = state.cart.some((c) => c.productId === p.id);
     if (gen && !p.genericOf && !alreadyOnTicket && stockOf(gen) > 0) {
@@ -78,7 +78,7 @@ export default function Register() {
       setDawChoice(1);
       return;
     }
-    dispatch({ type: "ADD_CART", productId: p.id });
+    dispatch({ type: "ADD_CART", productId: p.id, uom });
   };
   const acceptGeneric = () => {
     if (!subPrompt) return;
@@ -147,6 +147,16 @@ export default function Register() {
       || (p.gtin && p.gtin === needle.replace(/\D/g, "")));
     if (hit) {
       tryAdd(hit);
+      if (state.settings.scanBeep) playScanBeep();
+      setQ("");
+      return;
+    }
+    /* per-UOM pack barcode (§5) — sell straight into the pack UOM */
+    const uomHit = state.products
+      .map((p) => ({ p, uom: p.uoms?.find((u) => u.barcode && u.barcode === needle) }))
+      .find((x): x is { p: Product; uom: NonNullable<Product["uoms"]>[number] } => !!x.uom);
+    if (uomHit) {
+      tryAdd(uomHit.p, uomHit.uom.code);
       if (state.settings.scanBeep) playScanBeep();
       setQ("");
       return;
@@ -349,13 +359,17 @@ export default function Register() {
               hint={t("pos.cartHint")} />
           )}
           {cartLines.map(({ line, p }) => (
-            <div key={`${p.id}-${line.qty}`} className="anim-fade-up group bg-paper border border-mist rounded-lg p-2.5 hover:border-pine-300 transition-colors">
+            <div key={`${p.id}-${line.uom ?? ""}-${line.qty}`} className="anim-fade-up group bg-paper border border-mist rounded-lg p-2.5 hover:border-pine-300 transition-colors">
               <div className="flex items-start justify-between gap-2">
                 <div className="min-w-0">
                   <p className="text-[13px] font-semibold text-ink leading-tight truncate">{p.name}</p>
                   <p className="text-[11px] text-inksoft truncate">
                     {p.form} ·{" "}
-                    {(() => { const up = unitPrice(state, p.id); return up !== p.price ? (<><span className="num text-brick-700 font-semibold">{money(up)}</span> <span className="num line-through">{money(p.price)}</span> ea</>) : (<>{money(p.price)} ea</>); })()}
+                    {(() => {
+                      const up = unitPrice(state, p.id, line.uom);
+                      const uomLabel = p.uoms?.find((u) => u.code === line.uom)?.label;
+                      return up !== p.price ? (<><span className="num text-brick-700 font-semibold">{money(up)}</span> <span className="num line-through">{money(p.price)}</span>{uomLabel ? ` / ${uomLabel}` : " ea"}</>) : (<>{money(p.price)}{uomLabel ? ` / ${uomLabel}` : " ea"}</>);
+                    })()}
                   </p>
                 </div>
                 <span className="num text-[13px] font-bold text-ink shrink-0 flex items-center gap-1.5">
@@ -370,22 +384,34 @@ export default function Register() {
                       bulk −{bulkPct(line.qty)}%
                     </span>
                   )}
-                  {money((line.priceOverride ?? unitPrice(state, p.id)) * line.qty)}
+                  {money((line.priceOverride ?? unitPrice(state, p.id, line.uom)) * line.qty)}
                 </span>
               </div>
               <div className="flex items-center justify-between mt-2">
                 <div className="flex items-center gap-1">
-                  <QtyBtn onClick={() => dispatch({ type: "SET_QTY", productId: p.id, qty: line.qty - 1 })} label={t("pos.decrease")}><IMinus size={12} /></QtyBtn>
+                  <QtyBtn onClick={() => dispatch({ type: "SET_QTY", productId: p.id, qty: line.qty - 1, uom: line.uom })} label={t("pos.decrease")}><IMinus size={12} /></QtyBtn>
                   <span className="num w-8 text-center text-sm font-bold text-ink">{line.qty}</span>
-                  <QtyBtn onClick={() => dispatch({ type: "ADD_CART", productId: p.id })} label={t("pos.increase")} disabled={line.qty >= stockOf(p)}><IPlus size={12} /></QtyBtn>
-                  {line.qty >= stockOf(p) && <Badge tone="honey">max</Badge>}
+                  <QtyBtn onClick={() => dispatch({ type: "ADD_CART", productId: p.id, uom: line.uom })} label={t("pos.increase")} disabled={line.qty >= Math.max(1, Math.floor(stockOf(p) / uomFactor(state, p.id, line.uom)))}><IPlus size={12} /></QtyBtn>
+                  {line.qty >= Math.max(1, Math.floor(stockOf(p) / uomFactor(state, p.id, line.uom))) && <Badge tone="honey">max</Badge>}
                   {p.rx && <Badge tone="brick">℞</Badge>}
                   {p.controlled && <span className="px-1.5 py-0.5 rounded bg-ink text-paper text-[9px] font-bold tracking-wide">{p.controlled}</span>}
                   {p.restricted && <span className="px-1.5 py-0.5 rounded bg-honey-500 text-pine-950 text-[9px] font-bold tracking-wide">BTC</span>}
                   {line.daw && <span className="px-1.5 py-0.5 rounded bg-brick-100 border border-brick-300/60 text-brick-700 text-[9px] font-bold">DAW-{line.daw}</span>}
                   {line.substitutedFrom && <span className="px-1.5 py-0.5 rounded bg-pine-100 border border-pine-300/60 text-pine-700 text-[9px] font-bold" title={`Generic substitution for ${state.products.find((x) => x.id === line.substitutedFrom)?.brand ?? ""}`}>↪ gen</span>}
+                  {p.coldChain && <span className="px-1.5 py-0.5 rounded bg-sky-100 border border-sky-300/60 text-sky-800 text-[9px] font-bold tracking-wide" title="Cold chain — 2–8 °C"><ICold size={9} /> ❄</span>}
+                  {p.uoms && p.uoms.length > 0 && (
+                    <select value={line.uom ?? ""} onChange={(e) => dispatch({ type: "SET_LINE_UOM", productId: p.id, uom: e.target.value || undefined })}
+                      className="px-1.5 py-0.5 rounded-md border border-mist bg-card text-[10px] font-bold text-ink focus:border-pine-500 focus:outline-none cursor-pointer"
+                      title="Sell in a pack — stock converts to base units"
+                      aria-label={`Unit of measure for ${p.name}`}>
+                      <option value="">{t("supply.uomBaseUnit")}</option>
+                      {p.uoms.map((u) => (
+                        <option key={u.code} value={u.code}>{u.label} · ×{u.factor}</option>
+                      ))}
+                    </select>
+                  )}
                 </div>
-                <button onClick={() => dispatch({ type: "REMOVE_LINE", productId: p.id })}
+                <button onClick={() => dispatch({ type: "REMOVE_LINE", productId: p.id, uom: line.uom })}
                   className="p-1.5 rounded-md text-inksoft opacity-40 group-hover:opacity-100 hover:text-brick-700 hover:bg-brick-100 transition" aria-label={`Remove ${p.name}`}>
                   <ITrash size={13} />
                 </button>

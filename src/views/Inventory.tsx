@@ -1,10 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { usePos, money, relTime, clockTime } from "../store";
-import { CATEGORIES, daysUntil, fefoBatches, stockOf, nearestExpiry, newBatchCode, FIELD_SUGGESTIONS, BRANCHES, can, ndcLookup } from "../data";
-import type { CategoryId, Product, Batch, TransferStatus, Transaction } from "../data";
+import { CATEGORIES, daysUntil, fefoBatches, stockOf, nearestExpiry, newBatchCode, FIELD_SUGGESTIONS, BRANCHES, can, ndcLookup, hashPin, tempInRange, patientsForLot } from "../data";
+import type { CategoryId, Product, Batch, TransferStatus, Uom } from "../data";
 import { cx, Badge, Modal, StockBar, Empty, CustomFieldsBlock } from "../ui";
-import { ISearch, IPlus, IBox, IAlert, IDownload, IEdit, IX, ICheck, IReport, ICalendar, IClipboard, ITag, ISwap, IScan, IUsers, IFlask } from "../icons";
+import { ISearch, IPlus, IBox, IAlert, IDownload, IEdit, IX, ICheck, IReport, ICalendar, IClipboard, ITag, ISwap, IScan, IUsers, IFlask, ICold } from "../icons";
 
 type Filter = "all" | "low" | "expiring" | "rx" | "controlled";
 
@@ -24,6 +24,8 @@ export default function Inventory() {
   const mayCompound = can(state.user?.role, "verify_rx"); /* pharmacists + admins compound */
   const [report, setReport] = useState<"low" | "expiry" | null>(null);
   const [transfersOpen, setTransfersOpen] = useState(false);
+  const [uomFor, setUomFor] = useState<Product | null>(null);
+  const [coldFor, setColdFor] = useState<Product | null>(null);
 
   /* respond to alert-bell navigation presets even when already mounted */
   useEffect(() => {
@@ -219,6 +221,7 @@ export default function Inventory() {
                           <p className="font-semibold text-ink leading-tight truncate max-w-[260px]">
                             {p.name} {p.rx && <span className="text-brick-700 font-bold">℞</span>}
                             {p.controlled && <span className="ms-1 px-1.5 py-0.5 rounded bg-ink text-paper text-[9px] font-bold tracking-wide align-middle">{p.controlled}</span>}
+                            {p.coldChain && <span className="ms-1 inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-sky-100 border border-sky-300/60 text-sky-800 text-[9px] font-bold tracking-wide align-middle" title={t("supply.ccBadge")}><ICold size={9} /> 2–8°C</span>}
                           </p>
                           <p className="num text-[10px] text-inksoft">{p.sku} · {p.barcode} · {p.supplier}</p>
                           {p.ndc && <p className="num text-[10px] text-pine-700 font-semibold">NDC {p.ndc}{p.gtin && <span className="text-inksoft font-normal"> · GTIN {p.gtin}</span>}</p>}
@@ -251,6 +254,20 @@ export default function Inventory() {
                           className="px-2 py-1.5 rounded-md border border-pine-200 bg-pine-50 text-pine-700 text-[11px] font-bold hover:bg-pine-700 hover:text-pine-50 transition active:scale-95">
                           Receive
                         </button>
+                        <button onClick={() => setUomFor(p)}
+                          title="Packs / units of measure — per-UOM price, cost, factor & barcode"
+                          className="grid place-items-center w-7 h-7 rounded-md border border-mist text-inksoft hover:border-pine-400 hover:text-pine-700 transition active:scale-90"
+                          aria-label={`UOM packs for ${p.name}`}>
+                          <IBox size={13} />
+                        </button>
+                        {p.coldChain && (
+                          <button onClick={() => setColdFor(p)}
+                            title="Cold-chain temperature log"
+                            className="grid place-items-center w-7 h-7 rounded-md border border-sky-300/70 bg-sky-100/60 text-sky-800 hover:bg-sky-700 hover:text-sky-50 transition active:scale-90"
+                            aria-label={`Temp log for ${p.name}`}>
+                            <ICold size={13} />
+                          </button>
+                        )}
                         <button onClick={() => setAdjusting(p)} disabled={!mayAdjust}
                           title={mayAdjust ? `Adjust stock for ${p.name}` : "Stock adjustments require pharmacist, manager or admin"}
                           className={cx("grid place-items-center w-7 h-7 rounded-md border transition active:scale-90",
@@ -277,6 +294,8 @@ export default function Inventory() {
       {report && <ReportModal mode={report} onClose={() => setReport(null)} />}
       {counting && <CountModal onClose={() => setCounting(false)} />}
       {transfersOpen && <TransferModal onClose={() => setTransfersOpen(false)} />}
+      {uomFor && <UomModal p={uomFor} onClose={() => setUomFor(null)} />}
+      {coldFor && <ColdChainModal p={coldFor} onClose={() => setColdFor(null)} />}
     </div>
   );
 }
@@ -414,12 +433,17 @@ function HeatCell({ label, units, lots, max, active, danger, onClick }: {
 }
 
 function LotRow({ b, first, p }: { b: Batch; first: boolean; p: Product }) {
-  const { dispatch } = usePos();
+  const { t } = useTranslation();
+  const { state, dispatch } = usePos();
   const d = daysUntil(b.expiry);
   const [editing, setEditing] = useState(false);
   const [val, setVal] = useState("");
   const [tracing, setTracing] = useState(false);
+  const [rtv, setRtv] = useState(false);
+  const [wo, setWo] = useState(false);
   const priced = b.price !== undefined;
+  const mayAdjust = can(state.user?.role, "adjust_stock");
+  const mayWriteOff = can(state.user?.role, "apply_count");
 
   const save = () => {
     const n = parseFloat(val);
@@ -443,6 +467,13 @@ function LotRow({ b, first, p }: { b: Batch; first: boolean; p: Product }) {
         {d < 0 ? "EXPIRED" : `${d}d`}
       </span>
       <span className="num text-[10px] text-inksoft">{b.expiry}</span>
+
+      {/* lot cost — recorded at receive (§5) */}
+      {b.cost !== undefined && b.cost !== p.cost && (
+        <span className="num text-[10px] font-semibold text-pine-700 bg-pine-100/70 border border-pine-200/60 rounded px-1.5 py-0.5" title="Lot-level cost at receive">
+          {t("supply.lotCost")} {money(b.cost)}
+        </span>
+      )}
 
       {/* lot-level pricing (1.4) */}
       {editing ? (
@@ -487,10 +518,30 @@ function LotRow({ b, first, p }: { b: Batch; first: boolean; p: Product }) {
         <IAlert size={10} />
       </button>
 
+      {/* RTV — return to vendor (§5) */}
+      {mayAdjust && (
+        <button onClick={() => setRtv(true)}
+          className="opacity-0 group-hover:opacity-100 flex items-center gap-1 px-1.5 py-0.5 rounded border border-dashed border-mist text-[9px] font-bold text-inksoft hover:text-pine-700 hover:border-pine-400 transition-all"
+          title="Return to vendor — creates AP credit note">
+          <ISwap size={9} /> {t("supply.lotRtv")}
+        </button>
+      )}
+
+      {/* write-off — expired / damaged (§5 manager approval) */}
+      {mayWriteOff && (
+        <button onClick={() => setWo(true)}
+          className="opacity-0 group-hover:opacity-100 flex items-center gap-1 px-1.5 py-0.5 rounded border border-dashed border-mist text-[9px] font-bold text-inksoft hover:text-brick-700 hover:border-brick-400 transition-all"
+          title="Write off — remove this lot from shelf (manager approval)">
+          <IX size={9} /> {t("supply.lotWriteOff")}
+        </button>
+      )}
+
       <span className="num text-xs font-bold text-ink ml-auto pe-1">×{b.qty}</span>
       {first && <Badge tone="pine">FEFO</Badge>}
 
       {tracing && <LotTraceModal p={p} batch={b.batch} onClose={() => setTracing(false)} />}
+      {rtv && <RtvModal p={p} lot={b} onClose={() => setRtv(false)} />}
+      {wo && <WriteOffModal p={p} lot={b} onClose={() => setWo(false)} />}
     </div>
   );
 }
@@ -500,22 +551,11 @@ function LotTraceModal({ p, batch, onClose }: { p: Product; batch: string; onClo
   const { state } = usePos();
   const lot = p.batches.find((b) => b.batch === batch);
 
-  /* walk every sale line's FEFO allocation trail for this lot */
-  const hits = useMemo(() => {
-    const out: { tx: Transaction; qty: number }[] = [];
-    for (const tx of state.transactions) {
-      if (tx.refundOf) continue;
-      for (const l of tx.lines) {
-        if (l.productId !== p.id || !l.alloc) continue;
-        const hit = l.alloc.find((a) => a.batch === batch);
-        if (hit) out.push({ tx, qty: hit.qty });
-      }
-    }
-    return out.sort((a, b) => b.tx.at - a.tx.at);
-  }, [state.transactions, p.id, batch]);
+  /* walk every sale line's FEFO allocation trail for this lot (§5 patientsForLot) */
+  const hits = useMemo(() => patientsForLot(state.transactions, p.id, batch), [state.transactions, p.id, batch]);
 
   const totalDispensed = hits.reduce((s, h) => s + h.qty, 0);
-  const patientIds = [...new Set(hits.map((h) => h.tx.customerId).filter(Boolean))] as string[];
+  const patientIds = [...new Set(hits.map((h) => h.customerId).filter(Boolean))] as string[];
   const customerName = (id?: string) => state.customers.find((c) => c.id === id)?.name;
 
   return (
@@ -561,14 +601,14 @@ function LotTraceModal({ p, batch, onClose }: { p: Product; batch: string; onClo
               </thead>
               <tbody>
                 {hits.map((h, i) => (
-                  <tr key={h.tx.id} className={cx("border-t border-mist/70", i % 2 === 1 && "bg-paper/60")}>
-                    <td className="px-3 py-2 num font-bold text-ink">{h.tx.id}</td>
+                  <tr key={h.txId} className={cx("border-t border-mist/70", i % 2 === 1 && "bg-paper/60")}>
+                    <td className="px-3 py-2 num font-bold text-ink">{h.txId}</td>
                     <td className="px-2 py-2 num text-inksoft whitespace-nowrap">
-                      {new Date(h.tx.at).toLocaleDateString("en-US", { month: "short", day: "numeric" })} · {clockTime(h.tx.at)}
+                      {new Date(h.at).toLocaleDateString("en-US", { month: "short", day: "numeric" })} · {clockTime(h.at)}
                     </td>
                     <td className="px-2 py-2">
-                      {h.tx.customerId
-                        ? <span className="font-semibold text-ink">{customerName(h.tx.customerId)}</span>
+                      {h.customerId
+                        ? <span className="font-semibold text-ink">{customerName(h.customerId)}</span>
                         : <span className="text-inksoft italic">walk-in</span>}
                     </td>
                     <td className="px-3 py-2 text-end num font-bold text-pine-800">×{h.qty}</td>
@@ -764,7 +804,7 @@ function ReceiveModal({ p, onClose }: { p: Product; onClose: () => void }) {
 
   const submit = () => {
     if (!valid) return;
-    dispatch({ type: "RESTOCK", productId: p.id, amount: qtyNum, batch: batch.trim(), expiry });
+    dispatch({ type: "RESTOCK", productId: p.id, amount: qtyNum, batch: batch.trim(), expiry, cost: parseFloat(cost) || undefined });
     onClose();
   };
 
@@ -1295,6 +1335,272 @@ function AddProductModal({ onClose }: { onClose: () => void }) {
             valid ? "bg-pine-700 text-pine-50 hover:bg-pine-600" : "bg-mist text-inksoft/60 cursor-not-allowed")}>
           Add to catalog
         </button>
+      </div>
+    </Modal>
+  );
+}
+
+/* Per-UOM pricing editor (§5) — each pack gets its own price / cost / factor / barcode.
+   Stock is tracked in the base unit; factor converts pack qty to base units at the till. */
+function UomModal({ p, onClose }: { p: Product; onClose: () => void }) {
+  const { t } = useTranslation();
+  const { dispatch } = usePos();
+  const [uoms, setUoms] = useState<Uom[]>(p.uoms ?? []);
+  const update = (i: number, patch: Partial<Uom>) =>
+    setUoms(uoms.map((u, j) => (j === i ? { ...u, ...patch } : u)));
+  const addRow = () =>
+    setUoms([...uoms, { code: "", label: "", factor: 1, price: p.price, cost: p.cost }]);
+  const valid = uoms.every((u) => u.code.trim() && u.label.trim() && u.factor >= 1)
+    && new Set(uoms.map((u) => u.code.trim())).size === uoms.length;
+  const save = () => {
+    if (!valid) return;
+    dispatch({
+      type: "SAVE_UOMS", productId: p.id,
+      uoms: uoms.map((u) => ({ ...u, code: u.code.trim(), label: u.label.trim(), barcode: u.barcode?.trim() || undefined })),
+    });
+    onClose();
+  };
+  return (
+    <Modal onClose={onClose} width={720} labelledBy="uom-title">
+      <div className="px-5 py-4 border-b border-mist flex items-start justify-between">
+        <div>
+          <h2 id="uom-title" className="font-display font-bold text-ink flex items-center gap-2">
+            <IBox size={17} className="text-pine-700" /> {t("supply.uomTitle")} · <span className="num">{p.name}</span>
+          </h2>
+          <p className="text-xs text-inksoft mt-0.5">{t("supply.uomSub")}</p>
+        </div>
+        <button onClick={onClose} className="p-1.5 rounded-md hover:bg-mist/60 text-inksoft" aria-label="Close"><IX size={14} /></button>
+      </div>
+      <div className="p-5">
+        <div className="overflow-auto scroll-slim rounded-lg border border-mist">
+          <table className="w-full text-xs border-collapse min-w-[640px]">
+            <thead className="sticky top-0">
+              <tr className="bg-pine-900 text-pine-100 text-start text-[9px] uppercase tracking-[0.14em]">
+                <th className="px-3 py-2 font-bold">{t("supply.uomCode")}</th>
+                <th className="px-2 py-2 font-bold">{t("supply.uomLabel")}</th>
+                <th className="px-2 py-2 font-bold text-center">{t("supply.uomFactor")}</th>
+                <th className="px-2 py-2 font-bold text-end">{t("supply.uomPrice")}</th>
+                <th className="px-2 py-2 font-bold text-end">{t("supply.uomCost")}</th>
+                <th className="px-2 py-2 font-bold">{t("supply.uomBarcode")}</th>
+                <th className="px-3 py-2 font-bold" />
+              </tr>
+            </thead>
+            <tbody>
+              {uoms.map((u, i) => (
+                <tr key={i} className="border-t border-mist/70">
+                  <td className="px-3 py-1.5">
+                    <input value={u.code} onChange={(e) => update(i, { code: e.target.value })}
+                      placeholder="box" className="w-16 px-1.5 py-1 rounded border border-mist bg-card text-xs font-bold focus:border-pine-500 focus:outline-none" />
+                  </td>
+                  <td className="px-2 py-1.5">
+                    <input value={u.label} onChange={(e) => update(i, { label: e.target.value })}
+                      placeholder="Box of 10 strips" className="w-40 px-1.5 py-1 rounded border border-mist bg-card text-xs focus:border-pine-500 focus:outline-none" />
+                  </td>
+                  <td className="px-2 py-1.5 text-center">
+                    <input value={u.factor} onChange={(e) => update(i, { factor: Math.max(1, parseInt(e.target.value.replace(/\D/g, "")) || 1) })}
+                      inputMode="numeric" className="num w-14 px-1.5 py-1 rounded border border-mist bg-card text-xs font-bold text-center focus:border-pine-500 focus:outline-none" />
+                  </td>
+                  <td className="px-2 py-1.5 text-end">
+                    <input value={u.price} onChange={(e) => update(i, { price: parseFloat(e.target.value.replace(/[^\d.]/g, "")) || 0 })}
+                      inputMode="decimal" className="num w-16 px-1.5 py-1 rounded border border-mist bg-card text-xs font-bold text-end focus:border-pine-500 focus:outline-none" />
+                  </td>
+                  <td className="px-2 py-1.5 text-end">
+                    <input value={u.cost} onChange={(e) => update(i, { cost: parseFloat(e.target.value.replace(/[^\d.]/g, "")) || 0 })}
+                      inputMode="decimal" className="num w-16 px-1.5 py-1 rounded border border-mist bg-card text-xs font-bold text-end focus:border-pine-500 focus:outline-none" />
+                  </td>
+                  <td className="px-2 py-1.5">
+                    <input value={u.barcode ?? ""} onChange={(e) => update(i, { barcode: e.target.value })}
+                      placeholder="scan code" className="num w-28 px-1.5 py-1 rounded border border-mist bg-card text-xs focus:border-pine-500 focus:outline-none" />
+                  </td>
+                  <td className="px-3 py-1.5 text-end">
+                    <button onClick={() => setUoms(uoms.filter((_, j) => j !== i))}
+                      className="p-1 rounded text-inksoft hover:text-brick-700 hover:bg-brick-100 transition" aria-label="Remove UOM"><IX size={11} /></button>
+                  </td>
+                </tr>
+              ))}
+              {uoms.length === 0 && (
+                <tr><td colSpan={7} className="px-3 py-8 text-center text-inksoft">{t("supply.uomEmpty")}</td></tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+        <button onClick={addRow}
+          className="mt-2.5 flex items-center gap-1.5 px-3 py-1.5 rounded-md border border-dashed border-pine-300 text-[11px] font-bold text-pine-700 hover:bg-pine-50 transition">
+          <IPlus size={11} /> {t("supply.uomAdd")}
+        </button>
+        {!valid && uoms.length > 0 && (
+          <p className="text-[10px] font-bold text-brick-700 mt-2">{t("supply.uomInvalid")}</p>
+        )}
+        <button onClick={save} disabled={!valid}
+          className={cx("mt-3 w-full py-2.5 rounded-lg font-display font-bold text-sm transition active:scale-[0.98] flex items-center justify-center gap-2",
+            valid ? "bg-pine-700 text-pine-50 hover:bg-pine-600" : "bg-mist text-inksoft/60 cursor-not-allowed")}>
+          <ICheck size={15} /> {t("supply.uomSave")}
+        </button>
+      </div>
+    </Modal>
+  );
+}
+
+/* Return to vendor (§5) — pull units off the lot, book an AP credit against the supplier */
+function RtvModal({ p, lot, onClose }: { p: Product; lot: Batch; onClose: () => void }) {
+  const { t } = useTranslation();
+  const { dispatch } = usePos();
+  const [qty, setQty] = useState(String(lot.qty));
+  const [reason, setReason] = useState("");
+  const n = Math.max(0, parseInt(qty) || 0);
+  const valid = n > 0 && n <= lot.qty && reason.trim().length >= 3;
+  const value = n * (lot.cost ?? p.cost);
+  return (
+    <Modal onClose={onClose} width={440} labelledBy="rtv-title">
+      <div className="px-5 py-4 border-b border-mist flex items-start justify-between">
+        <div>
+          <h2 id="rtv-title" className="font-display font-bold text-ink flex items-center gap-2">
+            <ISwap size={16} className="text-pine-700" /> {t("supply.rtvTitle")}
+          </h2>
+          <p className="text-xs text-inksoft mt-0.5">{p.name} · lot <span className="num">{lot.batch}</span> · {p.supplier}</p>
+        </div>
+        <button onClick={onClose} className="p-1.5 rounded-md hover:bg-mist/60 text-inksoft" aria-label="Close"><IX size={14} /></button>
+      </div>
+      <div className="p-5 space-y-4">
+        <div className="grid grid-cols-2 gap-3">
+          <label className="block">
+            <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-inksoft">{t("supply.rtvUnits")}</span>
+            <input value={qty} onChange={(e) => setQty(e.target.value.replace(/\D/g, ""))} inputMode="numeric"
+              className="num w-full mt-1 px-2.5 py-2 rounded-lg border-2 border-mist bg-card text-base font-bold focus:border-pine-500 focus:outline-none" />
+            <span className="text-[10px] text-inksoft num mt-0.5 block">{t("supply.rtvOnLot")} {lot.qty}</span>
+          </label>
+          <div className="rounded-lg bg-paper border border-mist px-3 py-2 self-end">
+            <p className="text-[9px] font-bold uppercase tracking-[0.14em] text-inksoft">{t("supply.rtvCreditValue")}</p>
+            <p className="num text-lg font-bold text-pine-800">{money(value)}</p>
+          </div>
+        </div>
+        <label className="block">
+          <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-inksoft">{t("supply.rtvReason")}</span>
+          <input value={reason} onChange={(e) => setReason(e.target.value)} placeholder="e.g. Damaged on arrival — dented cartons"
+            className="w-full mt-1 px-2.5 py-2 rounded-lg border border-mist bg-card text-sm focus:border-pine-500 focus:outline-none" />
+        </label>
+        <p className="text-[10px] text-inksoft leading-snug">
+          {t("supply.rtvBody")}
+        </p>
+        <button onClick={() => { dispatch({ type: "RTV", productId: p.id, batch: lot.batch, qty: n, reason: reason.trim() }); onClose(); }}
+          disabled={!valid}
+          className={cx("w-full py-2.5 rounded-lg font-display font-bold text-sm transition active:scale-[0.98] flex items-center justify-center gap-2",
+            valid ? "bg-pine-700 text-pine-50 hover:bg-pine-600" : "bg-mist text-inksoft/60 cursor-not-allowed")}>
+          <ISwap size={15} /> {t("supply.rtvBook")} · {money(value)}
+        </button>
+      </div>
+    </Modal>
+  );
+}
+
+/* Expiry / damaged write-off — manager approval (PIN gate, mirrors Phase A voids) */
+function WriteOffModal({ p, lot, onClose }: { p: Product; lot: Batch; onClose: () => void }) {
+  const { t } = useTranslation();
+  const { state, dispatch } = usePos();
+  const [reason, setReason] = useState("");
+  const [pin, setPin] = useState("");
+  const hasPerm = can(state.user?.role, "apply_count");
+  const pinOk = hasPerm || state.staff.some((s) => can(s.role, "apply_count") && s.pinHash === hashPin(pin));
+  const valid = reason.trim().length >= 3 && pinOk;
+  const value = lot.qty * (lot.cost ?? p.cost);
+  return (
+    <Modal onClose={onClose} width={440} labelledBy="wo-title">
+      <div className="px-5 py-4 border-b border-mist flex items-start justify-between">
+        <div>
+          <h2 id="wo-title" className="font-display font-bold text-ink flex items-center gap-2">
+            <IX size={16} className="text-brick-700" /> {t("supply.woTitle")}
+          </h2>
+          <p className="text-xs text-inksoft mt-0.5">{p.name} · lot <span className="num">{lot.batch}</span> · {lot.qty} units · {money(value)} at cost</p>
+        </div>
+        <button onClick={onClose} className="p-1.5 rounded-md hover:bg-mist/60 text-inksoft" aria-label="Close"><IX size={14} /></button>
+      </div>
+      <div className="p-5 space-y-4">
+        <div>
+          <label className="text-[11px] font-semibold uppercase tracking-[0.14em] text-inksoft">{t("supply.woReason")}</label>
+          <input value={reason} onChange={(e) => setReason(e.target.value)} placeholder="e.g. Expired — removed from shelf 2026-08-21"
+            className="w-full mt-1.5 px-3 py-2.5 rounded-lg border border-mist bg-card text-sm focus:border-pine-500 focus:outline-none" />
+        </div>
+        {!hasPerm && (
+          <div>
+            <label className="text-[11px] font-semibold uppercase tracking-[0.14em] text-inksoft">{t("supply.woManagerPin")}</label>
+            <input value={pin} onChange={(e) => setPin(e.target.value.replace(/[^0-9]/g, "").slice(0, 6))} inputMode="numeric" placeholder="••••"
+              className="num w-full mt-1.5 px-3 py-2.5 rounded-lg border border-mist bg-card text-sm tracking-[0.3em] focus:border-pine-500 focus:outline-none" />
+            {pin.length > 0 && !pinOk && <p className="text-[11px] text-brick-700 font-semibold mt-1">{t("supply.woPinBad")}</p>}
+          </div>
+        )}
+        <p className="text-[10px] text-inksoft leading-snug">
+          {t("supply.woBody")}
+        </p>
+        <button onClick={() => { dispatch({ type: "WRITE_OFF", productId: p.id, batch: lot.batch, reason: reason.trim(), approvedBy: pin || undefined }); onClose(); }}
+          disabled={!valid}
+          className={cx("w-full py-2.5 rounded-lg font-display font-bold text-sm transition active:scale-[0.98]",
+            valid ? "bg-brick-600 text-brick-50 hover:bg-brick-700" : "bg-mist text-inksoft cursor-not-allowed")}>
+          {t("supply.woConfirm")}
+        </button>
+      </div>
+    </Modal>
+  );
+}
+
+/* Cold-chain temperature log (§5) — record readings for refrigerated products */
+function ColdChainModal({ p, onClose }: { p: Product; onClose: () => void }) {
+  const { t } = useTranslation();
+  const { state, dispatch } = usePos();
+  const [temp, setTemp] = useState("");
+  const [note, setNote] = useState("");
+  const logs = state.coldChainLog.filter((l) => l.productId === p.id).sort((a, b) => b.at - a.at);
+  const tempNum = parseFloat(temp);
+  const valid = Number.isFinite(tempNum);
+  const outOfRange = valid && !tempInRange(tempNum);
+  return (
+    <Modal onClose={onClose} width={520} labelledBy="cc-title">
+      <div className="px-5 py-4 border-b border-mist flex items-start justify-between">
+        <div>
+          <h2 id="cc-title" className="font-display font-bold text-ink flex items-center gap-2">
+            <ICold size={17} className="text-sky-700" /> {t("supply.ccTitle")} · <span className="num">{p.name}</span>
+          </h2>
+          <p className="text-xs text-inksoft mt-0.5">{t("supply.ccSub")}</p>
+        </div>
+        <button onClick={onClose} className="p-1.5 rounded-md hover:bg-mist/60 text-inksoft" aria-label="Close"><IX size={14} /></button>
+      </div>
+      <div className="p-5 space-y-4">
+        <div className="grid grid-cols-[1fr_auto] gap-2">
+          <div>
+            <label className="text-[10px] font-bold uppercase tracking-[0.14em] text-inksoft">{t("supply.ccTemp")}</label>
+            <input value={temp} onChange={(e) => setTemp(e.target.value.replace(/[^\d.-]/g, ""))} inputMode="decimal" placeholder="3.8"
+              className="num w-full mt-1 px-2.5 py-2 rounded-lg border-2 border-mist bg-card text-base font-bold focus:border-pine-500 focus:outline-none" />
+          </div>
+          <div className={cx("self-end rounded-lg px-3 py-2 text-xs font-bold", outOfRange ? "bg-brick-100 text-brick-700" : valid ? "bg-pine-100 text-pine-800" : "bg-mist/60 text-inksoft")}>
+          {outOfRange ? `⚠ ${t("supply.ccAlert")}` : valid ? `✓ ${t("supply.ccInRange")}` : "—"}
+          </div>
+        </div>
+        <input value={note} onChange={(e) => setNote(e.target.value)} placeholder={t("supply.ccNote")}
+          className="w-full px-2.5 py-2 rounded-lg border border-mist bg-card text-sm focus:border-pine-500 focus:outline-none" />
+        <button onClick={() => { dispatch({ type: "COLD_CHAIN_LOG", productId: p.id, tempC: tempNum, note }); setTemp(""); setNote(""); }}
+          disabled={!valid}
+          className={cx("w-full py-2.5 rounded-lg font-display font-bold text-sm transition active:scale-[0.98] flex items-center justify-center gap-2",
+            valid ? "bg-sky-700 text-sky-50 hover:bg-sky-600" : "bg-mist text-inksoft/60 cursor-not-allowed")}>
+          <ICold size={15} /> {t("supply.ccLog")}
+        </button>
+
+        <div>
+          <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-inksoft mb-2">{t("supply.ccRecent")}</p>
+          <div className="space-y-1.5 max-h-56 overflow-y-auto scroll-slim">
+            {logs.length === 0 && <p className="text-xs text-inksoft text-center py-4">{t("supply.ccEmpty")}</p>}
+            {logs.map((l) => (
+              <div key={l.id} className="flex items-center gap-2 rounded-lg border border-mist bg-card px-3 py-2">
+                <span className={cx("num text-sm font-bold", l.inRange ? "text-pine-700" : "text-brick-700")}>{l.tempC}°C</span>
+                <span className={cx("px-1.5 py-0.5 rounded text-[9px] font-bold uppercase tracking-wide", l.inRange ? "bg-pine-100 text-pine-700" : "bg-brick-100 text-brick-700")}>
+                  {l.inRange ? t("supply.ccInRange") : t("supply.ccAlert")}
+                </span>
+                <div className="min-w-0 flex-1">
+                  <p className="text-[11px] text-ink truncate">{l.note ?? "—"}</p>
+                  <p className="text-[9px] text-inksoft num">{l.staff ?? ""} · {clockTime(l.at)} · {new Date(l.at).toLocaleDateString("en-US", { month: "short", day: "numeric" })}</p>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
       </div>
     </Modal>
   );

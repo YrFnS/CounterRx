@@ -22,6 +22,13 @@ export const IDash = (p: P) => (
 export const IBox = (p: P) => (
   <Base {...p}><path d="M12 3 3.5 7.2v9.6L12 21l8.5-4.2V7.2z" /><path d="M3.5 7.2 12 11.4l8.5-4.2M12 11.4V21" /></Base>
 );
+/* snowflake — cold-chain products & temperature logs (§5) */
+export const ICold = (p: P) => (
+  <Base {...p}>
+    <path d="M12 2v20M4 6.5l16 11M20 6.5l-16 11" />
+    <path d="M12 2l-2 2.5M12 2l2 2.5M12 22l-2-2.5M12 22l2-2.5M4 6.5l2.8-.9M4 6.5l1 2.8M20 17.5l-2.8.9M20 17.5l-1-2.8M20 6.5l-2.8.9M20 6.5l-1 2.8M4 17.5l2.8-.9M4 17.5l1-2.8" />
+  </Base>
+);
 export const IRx = (p: P) => (
   <Base {...p}><path d="M6 3h9.5A2.5 2.5 0 0 1 18 5.5V21H8a2 2 0 0 1-2-2z" /><path d="M9.5 8h3a1.75 1.75 0 0 1 0 3.5h-3V8v6.5M12.5 11.5 15 15" /><path d="M15 3v2.5" /></Base>
 );

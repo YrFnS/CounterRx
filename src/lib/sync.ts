@@ -4,6 +4,7 @@ import type {
   ApInvoice,
   AuditEntry,
   BackOrder,
+  ColdChainLog,
   Customer,
   Delivery,
   Expense,
@@ -51,6 +52,7 @@ export interface BackendData {
   storeCredits: StoreCredit[];
   snapshots: Snapshot[];
   interactionPairs: InteractionPair[];
+  coldChainLog: ColdChainLog[];
 }
 
 type Row = Record<string, unknown>;
@@ -58,7 +60,7 @@ const TABLES = [
   "products", "transactions", "prescriptions", "prescribers", "customers", "transfers",
   "backorders", "rx_transfers", "suppliers", "purchase_orders", "ap_invoices", "expenses",
   "deliveries", "web_orders", "time_entries", "staff", "settings", "restricted_log",
-  "audit_log", "shifts", "store_credits", "snapshots", "interaction_pairs",
+  "audit_log", "shifts", "store_credits", "snapshots", "interaction_pairs", "cold_chain_log",
 ] as const;
 
 type TableName = (typeof TABLES)[number];
@@ -110,7 +112,7 @@ function productFrom(row: Row): Product {
     kit: jsonValue(row, "kit", []), ndc: optionalText(row, "ndc"), gtin: optionalText(row, "gtin"),
     controlled: optionalText(row, "controlled") as Product["controlled"],
     restricted: jsonValue(row, "restricted", undefined), genericOf: optionalText(row, "generic_of"),
-    variantOf: optionalText(row, "variant_of"), compound: booleanValue(row, "compound"),
+    variantOf: optionalText(row, "variant_of"), compound: booleanValue(row, "compound"), coldChain: booleanValue(row, "cold_chain"),
   };
 }
 
@@ -297,13 +299,21 @@ function snapshotFrom(row: Row): Snapshot {
   };
 }
 
+function coldChainLogFrom(row: Row): ColdChainLog {
+  return {
+    id: text(row, "id"), productId: text(row, "product_id"), tempC: numberValue(row, "temp_c"),
+    inRange: booleanValue(row, "in_range", true), staff: optionalText(row, "staff"), note: optionalText(row, "note"),
+    at: rowEpoch(row, "created_at"),
+  };
+}
+
 function rowsFor(data: BackendData): Record<TableName, Row[]> {
   return {
     products: data.products.map((p) => ({
       id: p.id, sku: p.sku, barcode: p.barcode, name: p.name, generic: p.generic, brand: p.brand, category: p.category, form: p.form,
       price: p.price, cost: p.cost, reorder_level: p.reorderLevel, rx: p.rx, supplier: p.supplier, batches: p.batches, uoms: p.uoms ?? [],
       fields: p.fields ?? [], kit: p.kit ?? [], ndc: nullable(p.ndc), gtin: nullable(p.gtin), controlled: nullable(p.controlled), restricted: nullable(p.restricted),
-      generic_of: nullable(p.genericOf), variant_of: nullable(p.variantOf), compound: p.compound ?? false,
+      generic_of: nullable(p.genericOf), variant_of: nullable(p.variantOf), compound: p.compound ?? false, cold_chain: p.coldChain ?? false,
     })),
     transactions: data.transactions.map((t) => ({
       id: t.id, at: t.at, lines: t.lines, subtotal: t.subtotal, discount: t.discount, tax: t.tax, total: t.total, method: t.method, cashier: t.cashier,
@@ -343,6 +353,7 @@ function rowsFor(data: BackendData): Record<TableName, Row[]> {
     store_credits: data.storeCredits.map((c) => ({ id: c.id, customer_id: nullable(c.customerId), balance: c.balance, issued_at: c.issuedAt, expires_at: nullable(c.expiresAt), code: nullable(c.code), note: nullable(c.note) })),
     snapshots: data.snapshots.map((s) => ({ id: s.meta.id, at: s.meta.at, label: s.meta.label, auto: s.meta.auto, data: s.data })),
     interaction_pairs: data.interactionPairs.map((i) => ({ a: i.a, b: i.b, severity: i.severity, effect: i.effect, action: i.action })),
+    cold_chain_log: data.coldChainLog.map((c) => ({ id: c.id, product_id: c.productId, temp_c: c.tempC, in_range: c.inRange, staff: nullable(c.staff), note: nullable(c.note), created_at: timestamp(c.at) })),
   };
 }
 
@@ -386,7 +397,7 @@ export async function loadBackendData(seed: BackendData): Promise<LoadResult> {
         timeEntries: byTable.time_entries.map((row) => ({ id: numberValue(row, "id"), staffId: text(row, "staff_id"), inAt: rowEpoch(row, "in_at"), outAt: optionalNumber(row, "out_at") })),
         staff: byTable.staff.map(staffFrom), settings: settingsFrom(byTable.settings[0], seed.settings), restrictedLog: byTable.restricted_log.map(restrictedFrom),
         audit: byTable.audit_log.map(auditFrom), shifts: byTable.shifts.map(shiftFrom), storeCredits: byTable.store_credits.map(storeCreditFrom), snapshots: byTable.snapshots.map(snapshotFrom),
-        interactionPairs: byTable.interaction_pairs.map(interactionPairFrom),
+        interactionPairs: byTable.interaction_pairs.map(interactionPairFrom), coldChainLog: byTable.cold_chain_log.map(coldChainLogFrom),
       },
     };
   } catch (error) {

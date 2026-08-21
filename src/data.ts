@@ -69,6 +69,7 @@ export interface Product {
   ndc?: string;          // National Drug Code, 5-4-2 format (§3) — first-class identifier
   gtin?: string;         // GS1 GTIN-14 for scanning (§3)
   compound?: boolean;    // in-house compounded preparation (§3 compounding)
+  coldChain?: boolean;   // §5 cold chain — requires 2–8 °C handling, temp-logged
   fields?: Field[];      // user-defined attributes (6.7)
   uoms?: Uom[];          // multi-UOM pricing (§5) — sell in packs, stock converts to base
   variantOf?: string;    // strength/pack-size variant of a parent SKU (§5), shares supplier
@@ -114,6 +115,37 @@ export const fefoBatches = (p: { batches: Batch[] }): Batch[] =>
   [...p.batches].sort((a, b) => a.expiry.localeCompare(b.expiry) || a.batch.localeCompare(b.batch));
 
 export const nearestExpiry = (p: Product): string | null => fefoBatches(p)[0]?.expiry ?? null;
+
+/**
+ * Deduct `qty` from one named lot (RTV / write-off / corrections).
+ * Returns the remaining lots; the lot is dropped when it hits zero.
+ */
+export function deductFromLot(batches: Batch[], batch: string, qty: number): Batch[] {
+  return batches
+    .map((b) => (b.batch === batch ? { ...b, qty: b.qty - qty } : b))
+    .filter((b) => b.qty > 0);
+}
+
+/**
+ * Recall tracing (§3/§5): every patient who received units of a lot, via the
+ * FEFO allocation trail recorded on each sale line at the till.
+ */
+export function patientsForLot(
+  transactions: Transaction[],
+  productId: string,
+  batch: string,
+): { txId: string; at: number; customerId?: string; qty: number }[] {
+  const out: { txId: string; at: number; customerId?: string; qty: number }[] = [];
+  for (const tx of transactions) {
+    if (tx.refundOf) continue; // refunded units never came home with the patient
+    for (const l of tx.lines) {
+      if (l.productId !== productId || !l.alloc) continue;
+      const hit = l.alloc.find((a) => a.batch === batch);
+      if (hit) out.push({ txId: tx.id, at: tx.at, customerId: tx.customerId, qty: hit.qty });
+    }
+  }
+  return out.sort((a, b) => b.at - a.at);
+}
 
 /**
  * Consume `need` units from lots in FEFO order.
@@ -628,6 +660,35 @@ export const REDEEM_CHUNK_VALUE = 5;
 
 export interface HeldSale { id: string; label: string; at: number; expiresAt?: number; items: { productId: string; qty: number; note?: string; priceOverride?: number; daw?: number; substitutedFrom?: string; uom?: string }[]; }
 
+/* ------------------------------------------------------------------ */
+/*  Cold chain (§5) — temperature log lines for coldChain products     */
+/* ------------------------------------------------------------------ */
+
+/** 2–8 °C acceptance band for refrigerated products (§5 cold chain) */
+export const COLD_CHAIN_MIN_C = 2;
+export const COLD_CHAIN_MAX_C = 8;
+export const tempInRange = (tempC: number) => tempC >= COLD_CHAIN_MIN_C && tempC <= COLD_CHAIN_MAX_C;
+
+export interface ColdChainLog {
+  id: string;
+  productId: string;
+  tempC: number;
+  inRange: boolean;
+  staff?: string;
+  note?: string;
+  at: number;
+}
+
+export function makeColdChainLogs(now: number): ColdChainLog[] {
+  const h = 3_600_000;
+  return [
+    { id: "CCL-1001", productId: "insg", tempC: 3.8, inRange: true, staff: "R. Mensah, RPh", note: "Morning fridge check — zone B", at: now - 5 * h },
+    { id: "CCL-1002", productId: "insg", tempC: 4.1, inRange: true, staff: "D. Whitfield", note: "Delivery hand-off verified", at: now - 30 * 60_000 },
+    { id: "CCL-1003", productId: "salb", tempC: 7.4, inRange: true, staff: "R. Mensah, RPh", at: now - 26 * h },
+    { id: "CCL-1004", productId: "insg", tempC: 9.2, inRange: false, staff: "A. Okafor", note: "Fridge door left ajar — restock check", at: now - 49 * h },
+  ];
+}
+
 /* Store credit / gift-card balance (Phase A till ops). A gift card is simply a
    credit that carries a scannable `code`; both redeem as the store_credit tender. */
 export interface StoreCredit {
@@ -715,7 +776,7 @@ export function makeProducts(now: number): Product[] {
     p("met500", "Metformin 500mg", "Metformin HCl", "Glucophage", "diabetes", "Tablet · strip of 15", 4.9, 2.2, 210, 60, true, "MET-25B25", 290, "MediSource Ltd", ["MET-25K08", 130, 510]),
     p("glm1", "Glimepiride 1mg", "Glimepiride", "Amaryl", "diabetes", "Tablet · strip of 15", 8.8, 4.9, 52, 20, true, "GLM-25A14", 215, "MediSource Ltd"),
     p("glst50", "Glucometer Strips", "Glucose test strips", "Accu-Chek", "diabetes", "Strips · box of 50", 24.0, 15.5, 34, 15, false, "ACU-25D30", 400, "DevicePoint"),
-    p("insg", "Insulin Glargine", "Insulin glargine 100IU/ml", "Lantus", "diabetes", "SoloStar pen · 3ml", 46.5, 33.0, 12, 10, true, "LNT-24K02", 44, "ColdChain Direct", ["LNT-25L15", 8, 300]),
+    { ...p("insg", "Insulin Glargine", "Insulin glargine 100IU/ml", "Lantus", "diabetes", "SoloStar pen · 3ml", 46.5, 33.0, 12, 10, true, "LNT-24K02", 44, "ColdChain Direct", ["LNT-25L15", 8, 300]), coldChain: true },
     p("atv20", "Atorvastatin 20mg", "Atorvastatin calcium", "Lipitor", "cardio", "Tablet · strip of 15", 10.2, 5.6, 140, 40, true, "ATV-25C16", 275, "MediSource Ltd"),
     p("aml5", "Amlodipine 5mg", "Amlodipine besylate", "Norvasc", "cardio", "Tablet · strip of 15", 5.8, 2.9, 4, 20, true, "AML-24H08", 130, "MediSource Ltd"),
     p("asa75", "Aspirin 75mg", "Acetylsalicylic acid", "Ecosprin", "cardio", "Tablet · strip of 14", 2.4, 1.1, 230, 50, false, "ASP-25F22", 480, "PharmaLine Co"),
@@ -727,7 +788,7 @@ export function makeProducts(now: number): Product[] {
     p("oxim", "Pulse Oximeter", "Fingertip SpO2 + HR", "ChoiceMMed", "devices", "Device · 1 unit", 18.0, 11.4, 3, 8, false, "CMD-25U09", 640, "DevicePoint"),
     p("band", "Adhesive Bandages", "Sterile adhesive strips", "Band-Aid", "firstaid", "Box of 40 strips", 4.2, 2.0, 150, 40, false, "BND-26A12", 560, "Vital Trade"),
     p("detl", "Antiseptic Liquid", "Povidone-iodine 10%", "Betadine", "firstaid", "Solution · 100ml", 4.8, 2.4, 84, 25, false, "BET-25G15", 300, "Apex Distributors"),
-    p("salb", "Salbutamol Inhaler", "Salbutamol 100mcg", "Ventolin", "coldflu", "Inhaler · 200 doses", 14.8, 9.1, 22, 10, true, "VNT-25I06", 28, "ColdChain Direct", ["VNT-25N19", 14, 190]),
+    { ...p("salb", "Salbutamol Inhaler", "Salbutamol 100mcg", "Ventolin", "coldflu", "Inhaler · 200 doses", 14.8, 9.1, 22, 10, true, "VNT-25I06", 28, "ColdChain Direct", ["VNT-25N19", 14, 190]), coldChain: true },
     p("babyl", "Baby Lotion", "Gentle moisturizing lotion", "Johnson's", "baby", "Lotion · 200ml", 6.2, 3.5, 68, 20, false, "JNJ-25J18", 430, "Vital Trade"),
     p("gripe", "Gripe Water", "Dill oil preparation", "Woodward's", "baby", "Liquid · 200ml", 3.6, 1.7, 90, 25, false, "WWD-25K21", 350, "Apex Distributors"),
     /* controlled substances — DEA scheduled, ID + audit at the till */
