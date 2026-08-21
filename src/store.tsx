@@ -296,7 +296,9 @@ function withToast(s: State, kind: Toast["kind"], msg: string): State {
 }
 
 function withAudit(s: State, kind: AuditKind, detail: string): State {
-  return { ...s, audit: [{ id: auditSeq++, at: Date.now(), actor: s.user?.name ?? CASHIER, kind, detail }, ...s.audit].slice(0, 250) };
+  // actor comes from the session staff (F9); the DB trigger stamps it server-side,
+  // so a client-supplied value can never falsify it.
+  return { ...s, audit: [{ id: auditSeq++, at: Date.now(), actor: s.user?.name ?? "", kind, detail }, ...s.audit].slice(0, 250) };
 }
 
 /* ---------------- snapshot persistence (§9 automated backups) ---------------- */
