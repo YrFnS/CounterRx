@@ -30,7 +30,7 @@
   EVIDENCE: sync.ts entries mirror the existing `restricted_log` pattern.
 - [x] Migration 00011 pushed to remote.
   CHECK: `supabase db push` ledger contains `20260821000011_lot_costing`
-  EVIDENCE: (fill after push) — see coordinator report.
+  EVIDENCE: applied 2026-08-21 (coordinator `supabase db push` → `Finished supabase db push`, migration `20260821000011_lot_costing.sql`).
 - [x] i18n parity + full gate green.
   CHECK: `npm run typecheck && npm run test && npm run build`
   EVIDENCE: typecheck clean, 67 tests pass (incl. 13 supply-chain tests), build OK; `supply:` keys in both en.json and ar.json (parity check passes).
