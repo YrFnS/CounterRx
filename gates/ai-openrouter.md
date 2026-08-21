@@ -24,7 +24,7 @@
   CHECK: `npm run typecheck && npm run test && npm run build`
   EVIDENCE: typecheck clean, 54 tests pass, build OK.
 
-Not run: `deno check` / live function invocation — deno not installed locally. Function self-typechecks (temp Deno ambient stub) and follows the Supabase Edge runtime; live smoke test with a real OpenRouter key is a follow-up (needs `supabase secrets set OPENROUTER_API_KEY`). The 4 UI features (OCR intake, interaction assist, forecasting, alerts) are Phase G UI, not yet built.
+Not run: `deno check` / live function invocation — deno not installed locally. Function self-typechecks (temp Deno ambient stub) and follows the Supabase Edge runtime; live smoke test with a real OpenRouter key is a follow-up (needs `supabase secrets set OPENROUTER_API_KEY`, then `supabase functions deploy ai-proxy`). The 4 UI features (OCR intake, interaction assist, forecasting, alerts) shipped in Phase G UI (see the UI section below).
 
 ## Phase G UI (feat/phase-g-ui)
 
