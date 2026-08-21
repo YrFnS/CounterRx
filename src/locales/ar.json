@@ -123,7 +123,12 @@
     "quickStock": "Quick stock",
     "moreInfo": "More info",
     "layawayExpires": "Layaway expires",
-    "expired": "expired"
+    "expired": "expired",
+    "printToDevice": "طباعة إلى الجهاز",
+    "printDeviceHint": "إرسال البيع الحالي إلى طابعة ESC/POS متصلة",
+    "printSent": "تم إرسال الإيصال إلى الطابعة المتصلة",
+    "printDisabled": "الأجهزة معطلة في إعدادات المؤسسة",
+    "printFailed": "تعذر الطباعة — تحقق من اتصال الطابعة"
   },
   "prescriptions": {
     "title": "الوصفات",
@@ -373,7 +378,23 @@
     "loyalty": "Loyalty",
     "team": "Team",
     "timeClock": "Time clock",
-    "dataBackups": "Data & backups"
+    "dataBackups": "Data & backups",
+    "hardware": "الأجهزة",
+    "enableHardware": "تفعيل الأجهزة",
+    "enableHardwareHint": "السماح لهذا الجهاز بالتواصل مع أجهزة Web Serial (الطابعة، درج النقدية)",
+    "hardwareHint": "توصيل أجهزة ESC/POS عبر Web Serial (متصفحات Chromium فقط)",
+    "connectPrinter": "توصيل الطابعة",
+    "connectHint": "اختر المنفذ التسلسلي",
+    "testPrint": "طباعة تجريبية",
+    "testPrintHint": "يطبع ملصقاً تجريبياً",
+    "kickDrawer": "فتح الدرج",
+    "hardwareAbout": "حول الأجهزة",
+    "hardwareAboutHint": "ما تحتاجه للطباعة عبر Web Serial",
+    "hwReq1": "متصفح Chromium (Chrome / Edge) عبر https أو localhost",
+    "hwReq2": "طابعة حرارية ESC/POS على منفذ USB-تسلسلي",
+    "hwReq3": "درج نقدية موصول بمنفذ DK في الطابعة (اختياري)",
+    "hwOk": "{{op}} تم بنجاح",
+    "hwDisabled": "الأجهزة معطلة — فعّل مفتاح تفعيل الأجهزة"
   },
   "shift": {
     "title": "إدارة الورديات",
