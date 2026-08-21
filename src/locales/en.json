@@ -25,7 +25,10 @@
     "expiringSoon": "Expiring Soon",
     "recentActivity": "Recent Activity",
     "alerts": "Alerts",
-    "noAlerts": "No alerts at this time"
+    "noAlerts": "No alerts at this time",
+    "transactions": "Transactions",
+    "unitsSold": "Units sold today",
+    "openAlerts": "Open alerts"
   },
   "pos": {
     "title": "Point of Sale",
@@ -153,7 +156,15 @@
     "allergyWarning": "Allergy Warning",
     "duplicateTherapy": "Duplicate Therapy Detected",
     "refillTooSoon": "Refill Too Soon",
-    "controlledSubstance": "Controlled Substance"
+    "controlledSubstance": "Controlled Substance",
+    "droppedOff": "Dropped off",
+    "review": "Pharmacist review",
+    "filled": "Filled",
+    "waitingBin": "Waiting bin",
+    "dispensed": "Dispensed",
+    "startReview": "Start review",
+    "markFilled": "Mark filled",
+    "toWaitingBin": "To waiting bin"
   },
   "customers": {
     "title": "Customers",
@@ -178,7 +189,14 @@
     "deliveryAddress": "Delivery Address",
     "editCustomer": "Edit Customer",
     "deleteCustomer": "Delete Customer",
-    "mergeDuplicates": "Merge Duplicates"
+    "mergeDuplicates": "Merge Duplicates",
+    "onBook": "Customers on book",
+    "newThisWeek": "New this week",
+    "regulars": "Regulars · 3+ visits",
+    "loyaltyInPlay": "Loyalty pts in play",
+    "search": "Name or phone…",
+    "noMatch": "No customers match",
+    "noMatchHint": "Try another name or phone number."
   },
   "inventory": {
     "title": "Inventory",
@@ -217,7 +235,13 @@
     "nearExpiry": "Near Expiry",
     "deadStock": "Dead Stock",
     "valuationReport": "Valuation Report",
-    "marginReport": "Margin Report"
+    "marginReport": "Margin Report",
+    "expired": "Expired",
+    "everything": "Everything",
+    "lowStock": "Low stock",
+    "expiring60": "Expiring ≤60d",
+    "search": "Search SKU, lot, barcode…",
+    "requiresClinician": "Requires pharmacist or admin"
   },
   "finance": {
     "title": "Finance",

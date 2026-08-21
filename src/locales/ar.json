@@ -25,7 +25,10 @@
     "expiringSoon": "تنتهي قريباً",
     "recentActivity": "النشاط الأخير",
     "alerts": "تنبيهات",
-    "noAlerts": "لا توجد تنبيهات حالياً"
+    "noAlerts": "لا توجد تنبيهات حالياً",
+    "transactions": "Transactions",
+    "unitsSold": "Units sold today",
+    "openAlerts": "Open alerts"
   },
   "pos": {
     "title": "نقطة البيع",
@@ -153,7 +156,15 @@
     "allergyWarning": "تحذير حساسية",
     "duplicateTherapy": "علاج مكرر مكتشف",
     "refillTooSoon": "إعادة صرف مبكرة جداً",
-    "controlledSubstance": "مادة خاضعة للرقابة"
+    "controlledSubstance": "مادة خاضعة للرقابة",
+    "droppedOff": "Dropped off",
+    "review": "Pharmacist review",
+    "filled": "Filled",
+    "waitingBin": "Waiting bin",
+    "dispensed": "Dispensed",
+    "startReview": "Start review",
+    "markFilled": "Mark filled",
+    "toWaitingBin": "To waiting bin"
   },
   "customers": {
     "title": "العملاء",
@@ -178,7 +189,14 @@
     "deliveryAddress": "عنوان التوصيل",
     "editCustomer": "تعديل العميل",
     "deleteCustomer": "حذف العميل",
-    "mergeDuplicates": "دمج التكرارات"
+    "mergeDuplicates": "دمج التكرارات",
+    "onBook": "Customers on book",
+    "newThisWeek": "New this week",
+    "regulars": "Regulars · 3+ visits",
+    "loyaltyInPlay": "Loyalty pts in play",
+    "search": "Name or phone…",
+    "noMatch": "No customers match",
+    "noMatchHint": "Try another name or phone number."
   },
   "inventory": {
     "title": "المخزون",
@@ -200,7 +218,7 @@
     "stockOnHand": "المخزون المتوفر",
     "batchNumber": "رقم الدفعة",
     "expiryDate": "تاريخ الانتهاء",
-    "controlled": "خاضع للرقابة",
+    "controlled": "Controlled",
     "restricted": "مقيد",
     "requiresRx": "يتطلب وصفة",
     "compound": "مركب",
@@ -217,7 +235,13 @@
     "nearExpiry": "قرب الانتهاء",
     "deadStock": "مخزون راكد",
     "valuationReport": "تقرير التقييم",
-    "marginReport": "تقرير الهامش"
+    "marginReport": "تقرير الهامش",
+    "expired": "Expired",
+    "everything": "Everything",
+    "lowStock": "Low stock",
+    "expiring60": "Expiring ≤60d",
+    "search": "Search SKU, lot, barcode…",
+    "requiresClinician": "Requires pharmacist or admin"
   },
   "finance": {
     "title": "المالية",

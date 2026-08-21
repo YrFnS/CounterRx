@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { usePos, money, relTime, clockTime } from "../store";
 import { CATEGORIES, daysUntil, fefoBatches, stockOf, nearestExpiry, newBatchCode, FIELD_SUGGESTIONS, BRANCHES, can, ndcLookup } from "../data";
 import type { CategoryId, Product, Batch, TransferStatus, Transaction } from "../data";
@@ -8,6 +9,7 @@ import { ISearch, IPlus, IBox, IAlert, IDownload, IEdit, IX, ICheck, IReport, IC
 type Filter = "all" | "low" | "expiring" | "rx" | "controlled";
 
 export default function Inventory() {
+  const { t } = useTranslation();
   const { state, dispatch } = usePos();
   const [q, setQ] = useState("");
   const [cat, setCat] = useState<CategoryId | "all">("all");
@@ -31,7 +33,7 @@ export default function Inventory() {
   /* ---- expiry horizon: units at risk per month, next 12 months ---- */
   const horizon = useMemo(() => {
     const buckets: { key: string; label: string; units: number; lots: number }[] = [];
-    const expired = { key: "expired", label: "Expired", units: 0, lots: 0 };
+    const expired = { key: "expired", label: t("inventory.expired"), units: 0, lots: 0 };
     const now = new Date();
     for (let i = 0; i < 12; i++) {
       const d = new Date(now.getFullYear(), now.getMonth() + i, 1);
@@ -90,11 +92,11 @@ export default function Inventory() {
   };
 
   const filters: { id: Filter; label: string; count: number; tone?: string }[] = [
-    { id: "all", label: "Everything", count: state.products.length },
-    { id: "low", label: "Low stock", count: state.products.filter((p) => stockOf(p) <= p.reorderLevel).length, tone: "#e0a63c" },
-    { id: "expiring", label: "Expiring ≤60d", count: state.products.filter((p) => { const e = nearestExpiry(p); return e !== null && daysUntil(e) <= 60; }).length, tone: "#c24a2e" },
+    { id: "all", label: t("inventory.everything"), count: state.products.length },
+    { id: "low", label: t("inventory.lowStock"), count: state.products.filter((p) => stockOf(p) <= p.reorderLevel).length, tone: "#e0a63c" },
+    { id: "expiring", label: t("inventory.expiring60"), count: state.products.filter((p) => { const e = nearestExpiry(p); return e !== null && daysUntil(e) <= 60; }).length, tone: "#c24a2e" },
     { id: "rx", label: "℞ only", count: state.products.filter((p) => p.rx).length },
-    { id: "controlled", label: "Controlled", count: state.products.filter((p) => p.controlled).length, tone: "#222a27" },
+    { id: "controlled", label: t("inventory.controlled"), count: state.products.filter((p) => p.controlled).length, tone: "#222a27" },
   ];
 
   const maxBucket = Math.max(...horizon.buckets.map((b) => b.units), horizon.expired.units, 1);
@@ -103,10 +105,10 @@ export default function Inventory() {
     <div className="h-full flex flex-col px-3 sm:px-6 py-4 sm:py-5 min-h-0">
       <div className="flex flex-wrap items-center gap-3">
         <div className="relative flex-1 min-w-[220px] max-w-[360px]">
-          <ISearch size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-inksoft" />
+          <ISearch size={15} className="absolute start-3 top-1/2 -translate-y-1/2 text-inksoft" />
           <input value={q} onChange={(e) => setQ(e.target.value)}
-            placeholder="Search SKU, lot, barcode…"
-            className="w-full pl-9 pr-3 py-2 rounded-lg bg-card border border-mist text-sm focus:border-pine-500 focus:outline-none focus:ring-2 focus:ring-pine-200 transition" />
+            placeholder={t("inventory.search")}
+            className="w-full ps-9 pe-3 py-2 rounded-lg bg-card border border-mist text-sm focus:border-pine-500 focus:outline-none focus:ring-2 focus:ring-pine-200 transition" />
         </div>
 
         <div className="flex gap-1.5 flex-wrap">
@@ -139,7 +141,7 @@ export default function Inventory() {
           <ISwap size={14} /> Transfers
         </button>
         <button onClick={() => setCompounding(true)} disabled={!mayCompound}
-          title={mayCompound ? "Build a compounded preparation from shelf ingredients" : "Requires pharmacist or admin"}
+          title={mayCompound ? "Build a compounded preparation from shelf ingredients" : t("inventory.requiresClinician")}
           className={cx("flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-bold transition active:scale-95",
             mayCompound ? "bg-[#8a6fae] text-paper hover:brightness-110 shadow-lift" : "bg-mist text-inksoft/50 cursor-not-allowed")}>
           <IFlask size={14} /> Compound
@@ -196,12 +198,12 @@ export default function Inventory() {
         ) : (
           <table className="w-full text-sm border-collapse min-w-[980px]">
             <thead className="sticky top-0 z-10">
-              <tr className="bg-pine-900 text-pine-100 text-left text-[10px] uppercase tracking-[0.14em]">
+              <tr className="bg-pine-900 text-pine-100 text-start text-[10px] uppercase tracking-[0.14em]">
                 <th className="px-4 py-2.5 font-bold">Product</th>
                 <th className="px-3 py-2.5 font-bold">Lots · batch / expiry</th>
                 <th className="px-3 py-2.5 font-bold">Total stock</th>
-                <th className="px-3 py-2.5 font-bold text-right">Price</th>
-                <th className="px-4 py-2.5 font-bold text-right">Actions</th>
+                <th className="px-3 py-2.5 font-bold text-end">Price</th>
+                <th className="px-4 py-2.5 font-bold text-end">Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -216,7 +218,7 @@ export default function Inventory() {
                         <div className="min-w-0">
                           <p className="font-semibold text-ink leading-tight truncate max-w-[260px]">
                             {p.name} {p.rx && <span className="text-brick-700 font-bold">℞</span>}
-                            {p.controlled && <span className="ml-1 px-1.5 py-0.5 rounded bg-ink text-paper text-[9px] font-bold tracking-wide align-middle">{p.controlled}</span>}
+                            {p.controlled && <span className="ms-1 px-1.5 py-0.5 rounded bg-ink text-paper text-[9px] font-bold tracking-wide align-middle">{p.controlled}</span>}
                           </p>
                           <p className="num text-[10px] text-inksoft">{p.sku} · {p.barcode} · {p.supplier}</p>
                           {p.ndc && <p className="num text-[10px] text-pine-700 font-semibold">NDC {p.ndc}{p.gtin && <span className="text-inksoft font-normal"> · GTIN {p.gtin}</span>}</p>}
@@ -238,7 +240,7 @@ export default function Inventory() {
                       <StockBar stock={stock} reorder={p.reorderLevel} />
                       {low && <Badge tone={stock <= Math.ceil(p.reorderLevel / 3) ? "brick" : "honey"}>reorder</Badge>}
                     </td>
-                    <td className="px-3 py-2.5 text-right">
+                    <td className="px-3 py-2.5 text-end">
                       <p className="num font-bold text-ink">{money(p.price)}</p>
                       <p className="num text-[10px] text-inksoft">cost {money(p.cost)}</p>
                     </td>
@@ -485,7 +487,7 @@ function LotRow({ b, first, p }: { b: Batch; first: boolean; p: Product }) {
         <IAlert size={10} />
       </button>
 
-      <span className="num text-xs font-bold text-ink ml-auto pr-1">×{b.qty}</span>
+      <span className="num text-xs font-bold text-ink ml-auto pe-1">×{b.qty}</span>
       {first && <Badge tone="pine">FEFO</Badge>}
 
       {tracing && <LotTraceModal p={p} batch={b.batch} onClose={() => setTracing(false)} />}
@@ -550,11 +552,11 @@ function LotTraceModal({ p, batch, onClose }: { p: Product; batch: string; onClo
           <div className="max-h-60 overflow-y-auto scroll-slim rounded-lg border border-mist">
             <table className="w-full text-xs border-collapse">
               <thead className="sticky top-0">
-                <tr className="bg-pine-900 text-pine-100 text-left text-[9px] uppercase tracking-[0.14em]">
+                <tr className="bg-pine-900 text-pine-100 text-start text-[9px] uppercase tracking-[0.14em]">
                   <th className="px-3 py-2 font-bold">Receipt</th>
                   <th className="px-2 py-2 font-bold">When</th>
                   <th className="px-2 py-2 font-bold">Patient</th>
-                  <th className="px-3 py-2 font-bold text-right">Qty</th>
+                  <th className="px-3 py-2 font-bold text-end">Qty</th>
                 </tr>
               </thead>
               <tbody>
@@ -569,7 +571,7 @@ function LotTraceModal({ p, batch, onClose }: { p: Product; batch: string; onClo
                         ? <span className="font-semibold text-ink">{customerName(h.tx.customerId)}</span>
                         : <span className="text-inksoft italic">walk-in</span>}
                     </td>
-                    <td className="px-3 py-2 text-right num font-bold text-pine-800">×{h.qty}</td>
+                    <td className="px-3 py-2 text-end num font-bold text-pine-800">×{h.qty}</td>
                   </tr>
                 ))}
                 {hits.length === 0 && <tr><td colSpan={4} className="px-3 py-8 text-center text-inksoft">No units from this lot have been dispensed yet.</td></tr>}
@@ -657,7 +659,7 @@ function CompoundModal({ onClose }: { onClose: () => void }) {
                   inputMode="numeric" aria-label={`Quantity of ${r.p.name}`}
                   className={cx("num w-14 px-1.5 py-1 rounded-md border text-center text-xs font-bold focus:outline-none transition",
                     r.over ? "border-brick-500 bg-brick-100 text-brick-700" : "border-mist focus:border-pine-500")} />
-                <span className="num text-[11px] font-bold text-ink w-14 text-right">{money(r.qty * r.p.cost)}</span>
+                <span className="num text-[11px] font-bold text-ink w-14 text-end">{money(r.qty * r.p.cost)}</span>
                 <button onClick={() => setIngs(ings.filter((i) => i.productId !== r.productId))}
                   className="p-1 rounded text-inksoft hover:text-brick-700 hover:bg-brick-100 transition" aria-label={`Remove ${r.p.name}`}>
                   <IX size={11} />
@@ -887,9 +889,9 @@ function CountModal({ onClose }: { onClose: () => void }) {
       <div className="p-5">
         <div className="flex items-center gap-2 mb-3">
           <div className="relative flex-1">
-            <ISearch size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-inksoft" />
+            <ISearch size={13} className="absolute start-3 top-1/2 -translate-y-1/2 text-inksoft" />
             <input autoFocus value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Filter SKUs to count…"
-              className="w-full pl-8 pr-3 py-2 rounded-lg border border-mist text-sm focus:border-pine-500 focus:outline-none transition" />
+              className="w-full ps-8 pe-3 py-2 rounded-lg border border-mist text-sm focus:border-pine-500 focus:outline-none transition" />
           </div>
           <span className={cx("num text-[11px] font-bold px-2.5 py-1.5 rounded-md border",
             diffs.length === 0 ? "bg-card border-mist text-inksoft" : netUnits >= 0 ? "bg-pine-100 border-pine-300/60 text-pine-700" : "bg-brick-100 border-brick-300/60 text-brick-700")}>
@@ -900,7 +902,7 @@ function CountModal({ onClose }: { onClose: () => void }) {
         <div className="max-h-[380px] overflow-auto scroll-slim rounded-lg border border-mist">
               <table className="w-full text-xs border-collapse min-w-[540px]">
                 <thead className="sticky top-0">
-                  <tr className="bg-pine-900 text-pine-100 text-left text-[9px] uppercase tracking-[0.14em]">
+                  <tr className="bg-pine-900 text-pine-100 text-start text-[9px] uppercase tracking-[0.14em]">
                     <th className="px-3 py-2 font-bold">SKU · product</th>                <th className="px-2 py-2 font-bold text-center">On hand</th>
                 <th className="px-2 py-2 font-bold text-center">Counted</th>
                 <th className="px-3 py-2 font-bold text-center">Variance</th>
@@ -955,6 +957,7 @@ function CountModal({ onClose }: { onClose: () => void }) {
 }
 
 function ReportModal({ mode, onClose }: { mode: "low" | "expiry"; onClose: () => void }) {
+  const { t } = useTranslation();
   const { state, dispatch } = usePos();
   const isLow = mode === "low";
 
@@ -982,7 +985,7 @@ function ReportModal({ mode, onClose }: { mode: "low" | "expiry"; onClose: () =>
 
   const bucket = (lo: number, hi: number) => expRows.filter((r) => r.d >= lo && r.d <= hi);
   const buckets = [
-    { label: "Expired", rows: bucket(-9999, 0), tone: "#c24a2e" },
+    { label: t("inventory.expired"), rows: bucket(-9999, 0), tone: "#c24a2e" },
     { label: "0–30d", rows: bucket(1, 30), tone: "#c24a2e" },
     { label: "31–60d", rows: bucket(31, 60), tone: "#e0a63c" },
     { label: "61–90d", rows: bucket(61, 90), tone: "#3b8668" },
@@ -1036,13 +1039,13 @@ function ReportModal({ mode, onClose }: { mode: "low" | "expiry"; onClose: () =>
             <div className="max-h-80 overflow-auto scroll-slim rounded-lg border border-mist">
               <table className="w-full text-xs border-collapse min-w-[640px]">
                 <thead className="sticky top-0">
-                  <tr className="bg-pine-900 text-pine-100 text-left text-[9px] uppercase tracking-[0.14em]">
+                  <tr className="bg-pine-900 text-pine-100 text-start text-[9px] uppercase tracking-[0.14em]">
                     <th className="px-3 py-2 font-bold">Product</th>
                     <th className="px-2 py-2 font-bold text-center">On hand</th>
                     <th className="px-2 py-2 font-bold text-center">Par</th>
                     <th className="px-2 py-2 font-bold text-center">Suggest</th>
                     <th className="px-2 py-2 font-bold">Supplier</th>
-                    <th className="px-3 py-2 font-bold text-right">Order cost</th>
+                    <th className="px-3 py-2 font-bold text-end">Order cost</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -1053,7 +1056,7 @@ function ReportModal({ mode, onClose }: { mode: "low" | "expiry"; onClose: () =>
                       <td className="px-2 py-2 text-center num text-inksoft">{r.p.reorderLevel}</td>
                       <td className="px-2 py-2 text-center num font-bold text-pine-700">+{r.suggest}</td>
                       <td className="px-2 py-2 text-inksoft">{r.p.supplier}</td>
-                      <td className="px-3 py-2 text-right num font-semibold text-ink">{money(r.orderCost)}</td>
+                      <td className="px-3 py-2 text-end num font-semibold text-ink">{money(r.orderCost)}</td>
                     </tr>
                   ))}
                   {lowRows.length === 0 && <tr><td colSpan={6} className="px-3 py-8 text-center text-inksoft">All SKUs above par — nothing to order. ✓</td></tr>}
@@ -1075,12 +1078,12 @@ function ReportModal({ mode, onClose }: { mode: "low" | "expiry"; onClose: () =>
             <div className="max-h-80 overflow-auto scroll-slim rounded-lg border border-mist">
               <table className="w-full text-xs border-collapse min-w-[560px]">
                 <thead className="sticky top-0">
-                  <tr className="bg-pine-900 text-pine-100 text-left text-[9px] uppercase tracking-[0.14em]">
+                  <tr className="bg-pine-900 text-pine-100 text-start text-[9px] uppercase tracking-[0.14em]">
                     <th className="px-3 py-2 font-bold">Product · lot</th>
                     <th className="px-2 py-2 font-bold">Expiry</th>
                     <th className="px-2 py-2 font-bold text-center">Days</th>
                     <th className="px-2 py-2 font-bold text-center">Qty</th>
-                    <th className="px-3 py-2 font-bold text-right">Value at cost</th>
+                    <th className="px-3 py-2 font-bold text-end">Value at cost</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -1098,7 +1101,7 @@ function ReportModal({ mode, onClose }: { mode: "low" | "expiry"; onClose: () =>
                         </span>
                       </td>
                       <td className="px-2 py-2 text-center num font-bold text-ink">{r.b.qty}</td>
-                      <td className="px-3 py-2 text-right num font-semibold text-ink">{money(r.b.qty * r.p.cost)}</td>
+                      <td className="px-3 py-2 text-end num font-semibold text-ink">{money(r.b.qty * r.p.cost)}</td>
                     </tr>
                   ))}
                   {expRows.length === 0 && <tr><td colSpan={5} className="px-3 py-8 text-center text-inksoft">No lots expiring within 90 days. ✓</td></tr>}

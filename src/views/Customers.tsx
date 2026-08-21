@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { useTranslation } from "react-i18next";
 import type { ReactNode } from "react";
 import { usePos, money, relTime, clockTime } from "../store";
 import { ALLERGENS, can } from "../data";
@@ -9,6 +10,7 @@ import { IUsers, ISearch, IPlus, IX, IChevD, IStar, IRegister, IHistory, IPill, 
 const day = 86_400_000;
 
 export default function Customers() {
+  const { t } = useTranslation();
   const { state, dispatch } = usePos();
   const [q, setQ] = useState("");
   const [expanded, setExpanded] = useState<string | null>(null);
@@ -36,16 +38,16 @@ export default function Customers() {
     <div className="h-full flex flex-col px-3 sm:px-6 py-4 sm:py-5 min-h-0">
       <div className="flex items-end justify-between flex-wrap gap-3">
         <div className="grid grid-cols-2 md:grid-cols-4 gap-2.5 sm:gap-3 flex-1 w-full md:w-auto md:min-w-[420px]">
-          <Kpi label="Customers on book" value={String(state.customers.length)} />
-          <Kpi label="New this week" value={String(newThisWeek)} accent={newThisWeek > 0} />
-          <Kpi label="Regulars · 3+ visits" value={String(loyal)} />
-          <Kpi label="Loyalty pts in play" value={totalPoints.toLocaleString()} star />
+          <Kpi label={t("customers.onBook")} value={String(state.customers.length)} />
+          <Kpi label={t("customers.newThisWeek")} value={String(newThisWeek)} accent={newThisWeek > 0} />
+          <Kpi label={t("customers.regulars")} value={String(loyal)} />
+          <Kpi label={t("customers.loyaltyInPlay")} value={totalPoints.toLocaleString()} star />
         </div>
         <div className="flex items-center gap-2">
           <div className="relative w-full sm:w-60">
-            <ISearch size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-inksoft" />
-            <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Name or phone…"
-              className="w-full pl-9 pr-3 py-2 rounded-lg bg-card border border-mist text-sm focus:border-pine-500 focus:outline-none focus:ring-2 focus:ring-pine-200 transition" />
+            <ISearch size={14} className="absolute start-3 top-1/2 -translate-y-1/2 text-inksoft" />
+            <input value={q} onChange={(e) => setQ(e.target.value)} placeholder={t("customers.search")}
+              className="w-full ps-9 pe-3 py-2 rounded-lg bg-card border border-mist text-sm focus:border-pine-500 focus:outline-none focus:ring-2 focus:ring-pine-200 transition" />
           </div>
           <button onClick={() => setAdding(true)}
             className="flex items-center gap-1.5 px-3.5 py-2 rounded-lg bg-pine-700 text-pine-50 text-xs font-bold hover:bg-pine-600 transition active:scale-95 shadow-lift">
@@ -56,15 +58,15 @@ export default function Customers() {
 
       <div className="mt-4 flex-1 min-h-0 overflow-auto scroll-slim rounded-xl border border-mist bg-card shadow-lift">
         {rows.length === 0 ? (
-          <Empty icon={<IUsers size={22} />} title="No customers match" hint="Try another name or phone number." />
+          <Empty icon={<IUsers size={22} />} title={t("customers.noMatch")} hint={t("customers.noMatchHint")} />
         ) : (
           <table className="w-full text-sm border-collapse min-w-[880px]">
             <thead className="sticky top-0 z-10">
-              <tr className="bg-pine-900 text-pine-100 text-left text-[10px] uppercase tracking-[0.14em]">
+              <tr className="bg-pine-900 text-pine-100 text-start text-[10px] uppercase tracking-[0.14em]">
                 <th className="px-4 py-2.5 font-bold">Customer</th>
                 <th className="px-3 py-2.5 font-bold">Contact</th>
                 <th className="px-3 py-2.5 font-bold text-center">Visits</th>
-                <th className="px-3 py-2.5 font-bold text-right">Lifetime spend</th>
+                <th className="px-3 py-2.5 font-bold text-end">Lifetime spend</th>
                 <th className="px-3 py-2.5 font-bold text-center">Points</th>
                 <th className="px-3 py-2.5 font-bold">Last visit</th>
                 <th className="px-4 py-2.5 font-bold" />
@@ -122,14 +124,14 @@ function CustomerRow({ c, visits, spend, last, txs, expanded, onToggle }: {
           <p className="text-[10px] text-inksoft">{c.email ?? "no email on file"}</p>
         </td>
         <td className="px-3 py-2.5 text-center num font-bold text-ink">{visits}</td>
-        <td className="px-3 py-2.5 text-right num font-bold text-pine-800">{money(spend)}</td>
+        <td className="px-3 py-2.5 text-end num font-bold text-pine-800">{money(spend)}</td>
         <td className="px-3 py-2.5 text-center">
           <span className="inline-flex items-center gap-1 num text-xs font-bold text-honey-700">
             <IStar size={11} className="text-honey-500" />{c.points}
           </span>
         </td>
         <td className="px-3 py-2.5 text-xs text-inksoft">{last ? relTime(last) : "—"}</td>
-        <td className="px-4 py-2.5 text-right">
+        <td className="px-4 py-2.5 text-end">
           <span className="inline-flex items-center gap-2">
             <IChevD size={13} className={cx("text-inksoft transition-transform duration-200", expanded && "rotate-180")} />
           </span>
@@ -206,14 +208,14 @@ function AllergyEditor({ customerId, allergies }: { customerId: string; allergie
             <button key={a} onClick={() => toggle(a)}
               className={cx("px-2 py-1 rounded-md border text-[10px] font-bold transition-all active:scale-95",
                 on ? "bg-brick-600 border-brick-600 text-paper shadow-lift" : "bg-card border-mist text-inksoft hover:border-brick-400 hover:text-brick-700")}>
-              {on && <ICheck size={9} className="inline mr-1 -mt-px" />}{a}
+              {on && <ICheck size={9} className="inline me-1 -mt-px" />}{a}
             </button>
           );
         })}
         {allergies.filter((x) => !ALLERGENS.includes(x)).map((x) => (
           <button key={x} onClick={() => toggle(x)}
             className="px-2 py-1 rounded-md bg-brick-600 border border-brick-600 text-paper text-[10px] font-bold transition-all active:scale-95 shadow-lift">
-            <ICheck size={9} className="inline mr-1 -mt-px" />{x}
+            <ICheck size={9} className="inline me-1 -mt-px" />{x}
           </button>
         ))}
         <input value={custom} onChange={(e) => setCustom(e.target.value)}

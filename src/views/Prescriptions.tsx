@@ -1,4 +1,6 @@
 import { useMemo, useState } from "react";
+import { useTranslation } from "react-i18next";
+import i18n from "../i18n";
 import type { ChangeEvent } from "react";
 import {
   DndContext, DragOverlay, PointerSensor, useSensor, useSensors, closestCorners,
@@ -36,7 +38,7 @@ import { IRx, ICheck, IClock, IRegister, IShield, IGrab, IRefresh, ISend, IRecal
 
 const FLOW: RxStatus[] = ["new", "verifying", "ready", "waiting", "dispensed"];
 const LABEL: Record<RxStatus, string> = {
-  new: "Dropped off", verifying: "Pharmacist review", ready: "Filled", waiting: "Waiting bin", dispensed: "Dispensed",
+  new: i18n.t("prescriptions.droppedOff"), verifying: i18n.t("prescriptions.review"), ready: i18n.t("prescriptions.filled"), waiting: i18n.t("prescriptions.waitingBin"), dispensed: i18n.t("prescriptions.dispensed"),
 };
 const ACCENT: Record<RxStatus, { bar: string; chip: string }> = {
   new: { bar: "#5c6b66", chip: "bg-mist/70 text-ink" },
@@ -46,13 +48,14 @@ const ACCENT: Record<RxStatus, { bar: string; chip: string }> = {
   dispensed: { bar: "#0f4437", chip: "bg-ink text-paper" },
 };
 const NEXT: Partial<Record<RxStatus, { to: RxStatus; label: string }>> = {
-  new: { to: "verifying", label: "Start review" },
-  verifying: { to: "ready", label: "Mark filled" },
-  ready: { to: "waiting", label: "To waiting bin" },
+  new: { to: "verifying", label: i18n.t("prescriptions.startReview") },
+  verifying: { to: "ready", label: i18n.t("prescriptions.markFilled") },
+  ready: { to: "waiting", label: i18n.t("prescriptions.toWaitingBin") },
   waiting: { to: "dispensed", label: "Hand over" },
 };
 
 export default function Prescriptions() {
+  const { t } = useTranslation();
   const { state, dispatch, product, prescriber } = usePos();
   const [activeId, setActiveId] = useState<string | null>(null);
   const [overCol, setOverCol] = useState<RxStatus | null>(null);
@@ -195,6 +198,7 @@ export default function Prescriptions() {
 function Column({ status, items, highlight, dimmed, ghostId }: {
   status: RxStatus; items: Prescription[]; highlight: boolean; dimmed: boolean; ghostId: string | null;
 }) {
+  const { t } = useTranslation();
   const { setNodeRef } = useDroppable({ id: status });
   const acc = ACCENT[status];
   return (
@@ -273,11 +277,11 @@ function BackorderStrip() {
                 <p className="text-[10px] text-inksoft num">
                   {b.supplier}
                   {b.status === "ordered" && (
-                    <span className={cx("ml-1.5 font-bold", left < 0 ? "text-brick-700" : "text-honey-700")}>
+                    <span className={cx("ms-1.5 font-bold", left < 0 ? "text-brick-700" : "text-honey-700")}>
                       · ETA {left < 0 ? `${Math.abs(left)}d overdue` : `${left}d`}
                     </span>
                   )}
-                  {b.arrivedAt && b.status !== "ordered" && <span className="ml-1.5 text-pine-700 font-bold">· in {relTime(b.arrivedAt)}</span>}
+                  {b.arrivedAt && b.status !== "ordered" && <span className="ms-1.5 text-pine-700 font-bold">· in {relTime(b.arrivedAt)}</span>}
                 </p>
                 {b.phone && <p className="text-[10px] text-inksoft num">{b.phone}</p>}
 
@@ -316,6 +320,7 @@ function BackorderStrip() {
 }
 
 function RxCard({ rx, ghost, overlay }: { rx: Prescription; ghost?: boolean; overlay?: boolean }) {
+  const { t } = useTranslation();
   const { state, dispatch, product, prescriber } = usePos();
   const { attributes, listeners, setNodeRef } = useDraggable({ id: rx.id });
   const p = product(rx.productId);
@@ -379,7 +384,7 @@ function RxCard({ rx, ghost, overlay }: { rx: Prescription; ghost?: boolean; ove
           className="mt-2 group/scan relative w-full h-16 rounded-lg overflow-hidden border border-mist focus:outline-none focus:ring-2 focus:ring-pine-300"
           title="View attached hard-copy scan">
           <img src={rx.scan} alt="Hard-copy prescription scan" className="w-full h-full object-cover transition-transform duration-200 group-hover/scan:scale-105" />
-          <span className="absolute inset-x-0 bottom-0 bg-pine-950/70 text-pine-100 text-[9px] font-bold uppercase tracking-wide px-2 py-0.5 text-left">
+          <span className="absolute inset-x-0 bottom-0 bg-pine-950/70 text-pine-100 text-[9px] font-bold uppercase tracking-wide px-2 py-0.5 text-start">
             📄 Hard-copy on file · {relTime(rx.scanAt ?? rx.createdAt)}
           </span>
         </button>
@@ -678,11 +683,11 @@ function PrescriberModal({ prescriberId, onClose }: { prescriberId: string; onCl
           <div className="max-h-56 overflow-y-auto scroll-slim rounded-lg border border-mist">
             <table className="w-full text-xs border-collapse">
               <thead className="sticky top-0">
-                <tr className="bg-pine-900 text-pine-100 text-left text-[9px] uppercase tracking-[0.14em]">
+                <tr className="bg-pine-900 text-pine-100 text-start text-[9px] uppercase tracking-[0.14em]">
                   <th className="px-3 py-2 font-bold">Rx</th>
                   <th className="px-2 py-2 font-bold">Patient</th>
                   <th className="px-2 py-2 font-bold">Product</th>
-                  <th className="px-3 py-2 font-bold text-right">Status</th>
+                  <th className="px-3 py-2 font-bold text-end">Status</th>
                 </tr>
               </thead>
               <tbody>
@@ -691,7 +696,7 @@ function PrescriberModal({ prescriberId, onClose }: { prescriberId: string; onCl
                     <td className="px-3 py-2 num font-bold text-ink">{rx.id}</td>
                     <td className="px-2 py-2 text-ink">{rx.patient}</td>
                     <td className="px-2 py-2 text-inksoft truncate max-w-[140px]">{rx.productId}</td>
-                    <td className="px-3 py-2 text-right"><StatusPill status={rx.status} /></td>
+                    <td className="px-3 py-2 text-end"><StatusPill status={rx.status} /></td>
                   </tr>
                 ))}
                 {theirs.length === 0 && <tr><td colSpan={4} className="px-3 py-8 text-center text-inksoft">No prescriptions on file.</td></tr>}
@@ -756,7 +761,7 @@ function XferLogModal({ onClose }: { onClose: () => void }) {
         <div className="max-h-[380px] overflow-auto scroll-slim rounded-lg border border-mist">
           <table className="w-full text-xs border-collapse min-w-[600px]">
             <thead className="sticky top-0">
-              <tr className="bg-pine-900 text-pine-100 text-left text-[9px] uppercase tracking-[0.14em]">
+              <tr className="bg-pine-900 text-pine-100 text-start text-[9px] uppercase tracking-[0.14em]">
                 <th className="px-3 py-2 font-bold">Dir</th>
                 <th className="px-2 py-2 font-bold">Transfer #</th>
                 <th className="px-2 py-2 font-bold">Patient · drug</th>

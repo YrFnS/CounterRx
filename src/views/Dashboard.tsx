@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { usePos, money, clockTime } from "../store";
 import { CATEGORIES, daysUntil, nearestExpiry, stockOf, fefoBatches } from "../data";
 import type { Customer } from "../data";
@@ -10,6 +11,7 @@ import {
 const DAY = 86_400_000;
 
 export default function Dashboard() {
+  const { t } = useTranslation();
   const { state, dispatch, lowStock, expiring, newRx, todayStats } = usePos();
   const [range, setRange] = useState<7 | 30>(7);
 
@@ -116,13 +118,13 @@ export default function Dashboard() {
   return (
     <div className="h-full overflow-y-auto scroll-slim px-3 sm:px-6 py-4 sm:py-5">
       <div className="grid grid-cols-2 xl:grid-cols-4 gap-3.5">
-        <Stat label="Today's revenue" value={money(todayStats.revenue)}
+        <Stat label={t("dashboard.salesToday")} value={money(todayStats.revenue)}
           icon={<ICash size={15} />} accent="#0f4437" sub={<Delta v={delta} />} />
-        <Stat label="Transactions" value={todayStats.count}
+        <Stat label={t("dashboard.transactions")} value={todayStats.count}
           icon={<ICart size={15} />} accent="#3b8668" sub={<span>{yesterday.length} yesterday · avg basket <span className="num font-bold">{money(todayStats.avg)}</span></span>} />
-        <Stat label="Units sold today" value={todayStats.items}
+        <Stat label={t("dashboard.unitsSold")} value={todayStats.items}
           icon={<IPill size={15} />} accent="#5da184" sub={<span>across {new Set(state.transactions.filter((t) => t.at >= t0).flatMap((t) => t.lines.map((l) => l.productId))).size} products</span>} />
-        <Stat label="Open alerts" value={lowStock.length + expiring.length + newRx}
+        <Stat label={t("dashboard.openAlerts")} value={lowStock.length + expiring.length + newRx}
           icon={<IAlert size={15} />} accent="#c24a2e"
           sub={<span><span className="font-bold text-honey-700">{lowStock.length}</span> low · <span className="font-bold text-brick-700">{expiring.length}</span> expiring · <span className="font-bold">{newRx}</span> ℞ queue</span>} />
       </div>
@@ -159,7 +161,7 @@ export default function Dashboard() {
                   className="relative flex-1 flex flex-col items-center gap-1.5 group">
                   {active && (
                     <div className="anim-pop absolute bottom-[calc(100%-6px)] left-1/2 -translate-x-1/2 z-20 whitespace-nowrap pointer-events-none">
-                      <div className="bg-pine-950 text-pine-50 rounded-lg px-3 py-2 shadow-lift text-left">
+                      <div className="bg-pine-950 text-pine-50 rounded-lg px-3 py-2 shadow-lift text-start">
                         <p className="text-[11px] font-bold">{w.label}, {w.date}{isToday && <span className="text-pine-300"> · today</span>}</p>
                         <p className="num text-[13px] font-bold text-honey-300">{money(w.total)}</p>
                         <p className="text-[10px] text-pine-200 num">{w.units} units · {w.count} sale{w.count === 1 ? "" : "s"}</p>
@@ -196,13 +198,13 @@ export default function Dashboard() {
         {/* alert feed */}
         <div className="bg-card border border-mist rounded-xl shadow-lift p-5 flex flex-col">
           <h2 className="font-display font-bold text-ink text-[15px]">Needs attention</h2>
-          <div className="mt-3 space-y-2 flex-1 overflow-y-auto scroll-slim pr-1">
+          <div className="mt-3 space-y-2 flex-1 overflow-y-auto scroll-slim pe-1">
             {expiring.slice(0, 4).map((p) => {
               const e = nearestExpiry(p)!;
               const d = daysUntil(e);
               return (
                 <button key={p.id} onClick={() => dispatch({ type: "GO", view: "inventory", invPreset: "expiring" })}
-                  className="w-full text-left flex items-center gap-2.5 px-2.5 py-2 rounded-lg bg-brick-100/50 border border-brick-300/40 hover:border-brick-500/60 transition group">
+                  className="w-full text-start flex items-center gap-2.5 px-2.5 py-2 rounded-lg bg-brick-100/50 border border-brick-300/40 hover:border-brick-500/60 transition group">
                   <IAlert size={14} className="text-brick-700 shrink-0" />
                   <span className="flex-1 min-w-0">
                     <span className="block text-xs font-semibold text-ink truncate">{p.name}</span>
@@ -216,7 +218,7 @@ export default function Dashboard() {
             })}
             {lowStock.slice(0, 4).map((p) => (
               <button key={`low-${p.id}`} onClick={() => dispatch({ type: "GO", view: "inventory", invPreset: "low" })}
-                className="w-full text-left flex items-center gap-2.5 px-2.5 py-2 rounded-lg bg-honey-100/60 border border-honey-300/50 hover:border-honey-500/70 transition group">
+                className="w-full text-start flex items-center gap-2.5 px-2.5 py-2 rounded-lg bg-honey-100/60 border border-honey-300/50 hover:border-honey-500/70 transition group">
                 <IBox size={14} className="text-honey-700 shrink-0" />
                 <span className="flex-1 min-w-0">
                   <span className="block text-xs font-semibold text-ink truncate">{p.name}</span>
@@ -227,7 +229,7 @@ export default function Dashboard() {
             ))}
             {newRx > 0 && (
               <button onClick={() => dispatch({ type: "GO", view: "prescriptions" })}
-                className="w-full text-left flex items-center gap-2.5 px-2.5 py-2 rounded-lg bg-pine-100/70 border border-pine-200 hover:border-pine-400 transition group">
+                className="w-full text-start flex items-center gap-2.5 px-2.5 py-2 rounded-lg bg-pine-100/70 border border-pine-200 hover:border-pine-400 transition group">
                 <IRx size={14} className="text-pine-700 shrink-0" />
                 <span className="flex-1">
                   <span className="block text-xs font-semibold text-ink">{newRx} prescription{newRx === 1 ? "" : "s"} in review</span>
@@ -254,7 +256,7 @@ export default function Dashboard() {
                 <div className="flex-1 min-w-0">
                   <div className="flex justify-between text-xs mb-1">
                     <span className="font-semibold text-ink truncate">{t.name}</span>
-                    <span className="num text-inksoft shrink-0 ml-2">{t.qty} sold · {money(t.revenue)}</span>
+                    <span className="num text-inksoft shrink-0 ms-2">{t.qty} sold · {money(t.revenue)}</span>
                   </div>
                   <div className="h-2 rounded-full bg-mist/60 overflow-hidden">
                     <div className="anim-grow-w h-full rounded-full"
@@ -279,7 +281,7 @@ export default function Dashboard() {
           <div className="mt-3 divide-y divide-mist/70">
             {recent.map((t) => (
               <button key={t.id} onClick={() => dispatch({ type: "OPEN_RECEIPT", tx: t })}
-                className="w-full flex items-center gap-3 py-2 text-left hover:bg-pine-50/60 rounded-md px-1.5 -mx-1.5 transition group">
+                className="w-full flex items-center gap-3 py-2 text-start hover:bg-pine-50/60 rounded-md px-1.5 -mx-1.5 transition group">
                 <span className="num text-[11px] text-inksoft w-14 shrink-0">{clockTime(t.at)}</span>
                 <span className="num text-[11px] font-bold text-ink w-16 shrink-0">{t.id}</span>
                 <span className="flex-1 text-xs text-inksoft truncate">
@@ -324,7 +326,7 @@ export default function Dashboard() {
                 <div className="flex-1 min-w-0">
                   <div className="flex justify-between text-xs mb-0.5">
                     <span className="font-semibold text-ink truncate">{t.c.name}</span>
-                    <span className="num text-pine-800 font-bold shrink-0 ml-2">{money(t.spend)}</span>
+                    <span className="num text-pine-800 font-bold shrink-0 ms-2">{money(t.spend)}</span>
                   </div>
                   <div className="h-1.5 rounded-full bg-mist/60 overflow-hidden">
                     <div className="anim-grow-w h-full rounded-full bg-honey-500"
