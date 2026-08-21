@@ -9,8 +9,9 @@ import { cx, Modal, Badge } from "../ui";
 import {
   IGear, IPrint, IStar, IUsers, IDownload, IUpload, IPlus, IX, ICheck, ICopy, ITrash, IRecall, IAlert, IScan, IChevD, IClockIn,
 } from "../icons";
+import { connectPrinter, printLabel, kickDrawer, HardwareError } from "../lib/hardware";
 
-type Tab = "profile" | "receipt" | "loyalty" | "team" | "clock" | "data" | "language";
+type Tab = "profile" | "receipt" | "loyalty" | "team" | "clock" | "hardware" | "data" | "language";
 
 export default function Settings() {
   const { t } = useTranslation();
@@ -25,6 +26,7 @@ export default function Settings() {
     { id: "loyalty", label: t("settings.loyalty"), icon: <IStar size={14} /> },
     { id: "team", label: t("settings.team"), icon: <IUsers size={14} /> },
     { id: "clock", label: t("settings.timeClock"), icon: <IClockIn size={14} /> },
+    { id: "hardware", label: t("settings.hardware"), icon: <IPrint size={14} /> },
     { id: "data", label: t("settings.dataBackups"), icon: <IDownload size={14} /> },
     { id: "language", label: t("settings.language"), icon: <IX size={14} /> },
   ];
@@ -58,6 +60,7 @@ export default function Settings() {
         {tab === "loyalty" && <LoyaltyTab admin={admin} />}
         {tab === "team" && teamAdmin && <TeamTab />}
         {tab === "clock" && <TimeTab />}
+        {tab === "hardware" && <HardwareTab admin={admin} />}
         {tab === "data" && <DataTab />}
         {tab === "language" && <LanguageTab />}
       </div>
@@ -176,6 +179,66 @@ function ReceiptTab({ admin }: { admin: boolean }) {
           <p className="text-center text-inksoft mt-2">{s.receiptFooter}</p>
         </div>
       </div>
+    </div>
+  );
+}
+
+/* --------------------------------- hardware -------------------------------- */
+function HardwareTab({ admin }: { admin: boolean }) {
+  const { state, dispatch } = usePos();
+  const { t } = useTranslation();
+  const s = state.settings;
+  const set = (patch: Partial<OrgSettings>) => admin && dispatch({ type: "UPDATE_SETTINGS", patch });
+  const [busy, setBusy] = useState(false);
+
+  const run = async (label: string, fn: () => Promise<void>) => {
+    setBusy(true);
+    try {
+      await fn();
+      dispatch({ type: "TOAST", kind: "success", msg: t("settings.hwOk", { op: label }) });
+    } catch (e) {
+      const err = e as HardwareError;
+      const msg = err instanceof HardwareError && err.code === "disabled"
+        ? t("settings.hwDisabled")
+        : err.message;
+      dispatch({ type: "TOAST", kind: "error", msg });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const HwBtn = ({ label, onClick, hint }: { label: string; onClick: () => Promise<void>; hint?: string }) => (
+    <button onClick={() => run(label, onClick)} disabled={busy || !s.hardwareEnabled}
+      className={cx("flex-1 py-2.5 rounded-lg border text-sm font-bold transition-all",
+        s.hardwareEnabled ? "border-pine-300 bg-pine-50 text-pine-800 hover:bg-pine-100" : "border-mist text-inksoft/50 cursor-not-allowed")}>
+      {label}
+      {hint && <span className="block text-[10px] font-normal mt-0.5">{hint}</span>}
+    </button>
+  );
+
+  return (
+    <div className="grid lg:grid-cols-2 gap-4 max-w-[980px] items-start">
+      <Card title={t("settings.hardware")} hint={t("settings.hardwareHint")}>
+        <div className="space-y-3">
+          <ToggleRow disabled={!admin} on={s.hardwareEnabled} onChange={(v) => set({ hardwareEnabled: v })}
+            icon={<IPrint size={14} />} label={t("settings.enableHardware")} hint={t("settings.enableHardwareHint")} />
+          <div className="flex gap-2 pt-1 flex-wrap">
+            <HwBtn label={t("settings.connectPrinter")} hint={t("settings.connectHint")}
+              onClick={() => connectPrinter(s.hardwareEnabled)} />
+            <HwBtn label={t("settings.testPrint")} hint={t("settings.testPrintHint")}
+              onClick={() => printLabel({ title: "CounterRx", barcode: "T-01", subtitle: s.orgName }, s.hardwareEnabled)} />
+            <HwBtn label={t("settings.kickDrawer")}
+              onClick={() => kickDrawer(s.hardwareEnabled)} />
+          </div>
+        </div>
+      </Card>
+      <Card title={t("settings.hardwareAbout")} hint={t("settings.hardwareAboutHint")}>
+        <ul className="text-[12px] text-inksoft space-y-1.5 list-disc ps-4">
+          <li>{t("settings.hwReq1")}</li>
+          <li>{t("settings.hwReq2")}</li>
+          <li>{t("settings.hwReq3")}</li>
+        </ul>
+      </Card>
     </div>
   );
 }

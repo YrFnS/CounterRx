@@ -6,8 +6,9 @@ import { CATEGORIES, TAX_RATE, daysUntil, stockOf, nearestExpiry, bulkPct, fefoB
 import type { CategoryId, Product } from "../data";
 import { cx, Badge, Empty } from "../ui";
 import {
-  ISearch, IScan, IPlus, IMinus, ITrash, IPause, IRecall, IX, ICart, IPill, IChevD, ISpark, IEdit, ITag, IUsers, IAlert,
+  ISearch, IScan, IPlus, IMinus, ITrash, IPause, IRecall, IX, ICart, IPill, IChevD, ISpark as ISparkIcon, IEdit, ITag, IUsers, IAlert, IPrint,
 } from "../icons";
+import { printReceipt, HardwareError } from "../lib/hardware";
 
 /* Tiny WebAudio "scanner beep" — the signature sound of a POS, fired on a real barcode hit. */
 let audioCtx: AudioContext | null = null;
@@ -169,6 +170,34 @@ export default function Register() {
   const { subtotal, tax, total } = totals;
   const itemCount = state.cart.reduce((s, c) => s + c.qty, 0);
   const hasRx = cartLines.some((x) => x.p.rx);
+
+  const onPrintToDevice = async () => {
+    const s = state.settings;
+    const lines = cartLines.map(({ line, p }) => {
+      const up = unitPrice(state, p.id);
+      const name = `${p.name}${p.rx ? " ℞" : ""}${line.daw ? ` (DAW-${line.daw})` : ""}${line.substitutedFrom ? " [gen]" : ""}`;
+      return `${name} x${line.qty}  ${money(up * line.qty)}`;
+    });
+    if (totals.bulkSavings > 0) lines.push(`Bulk savings     -${money(totals.bulkSavings)}`);
+    if (totals.loyaltyDeduct > 0) lines.push(`Points redeemed -${money(totals.loyaltyDeduct)}`);
+    lines.push(`Subtotal        ${money(subtotal)}`);
+    lines.push(`Tax             ${money(tax)}`);
+    lines.push(`TOTAL           ${money(total)}`);
+    try {
+      await printReceipt({
+        header: [s.orgName, s.branch, s.address, s.phone, s.license],
+        lines,
+        footer: s.receiptFooter || s.receiptTerms,
+      }, s.hardwareEnabled);
+      dispatch({ type: "TOAST", kind: "success", msg: t("pos.printSent") });
+    } catch (e) {
+      const err = e as HardwareError;
+      const msg = err instanceof HardwareError && err.code === "disabled"
+        ? t("pos.printDisabled")
+        : t("pos.printFailed");
+      dispatch({ type: "TOAST", kind: "error", msg });
+    }
+  };
 
   return (
     <div className="flex flex-col lg:flex-row h-full min-h-0 overflow-y-auto lg:overflow-hidden scroll-slim">
@@ -439,6 +468,14 @@ export default function Register() {
               <IPause size={14} /> Hold
             </button>
             <button
+              onClick={onPrintToDevice}
+              disabled={state.cart.length === 0}
+              title={t("pos.printDeviceHint")}
+              className={cx("px-3 py-3 rounded-lg border font-display font-semibold text-sm flex items-center gap-1.5 transition-all",
+                state.cart.length ? "border-mist text-ink hover:border-pine-400 hover:bg-pine-50 active:scale-[0.97]" : "border-mist text-inksoft/50 cursor-not-allowed")}>
+              <IPrint size={14} /> Print
+            </button>
+            <button
               onClick={() => dispatch({ type: "OPEN_PAY", open: true })}
               disabled={state.cart.length === 0}
               className={cx("flex-1 py-3 rounded-lg font-display font-bold text-[15px] flex items-center justify-center gap-2 transition-all",
@@ -470,7 +507,7 @@ function QuickPicks({ items, onAdd }: { items: { p: Product; sold: number }[]; o
   return (
     <div className="mb-4 anim-fade-up">
       <div className="flex items-center gap-1.5 mb-2">
-        <ISpark size={13} className="text-honey-700" />
+        <ISparkIcon size={13} className="text-honey-700" />
         <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-inksoft">Fast movers · top sellers</p>
       </div>
       <div className="flex gap-2 overflow-x-auto scroll-slim pb-1">

@@ -557,6 +557,7 @@ export interface OrgSettings {
   idleLockMins: number;            // 0 = never
   autoSnapshotMins: number;        // 0 = off
   terminalId: string;
+  hardwareEnabled: boolean;        // Phase E: Web Serial hardware (printer/drawer/scale)
 }
 
 export const CURRENCIES = ["USD", "EUR", "GBP", "NGN", "KES", "ZAR", "GHS", "INR", "CAD"];
@@ -573,6 +574,7 @@ export function makeSettings(): OrgSettings {
     idleLockMins: 10,
     autoSnapshotMins: 15,
     terminalId: "T-01",
+    hardwareEnabled: false,
   };
 }
 
