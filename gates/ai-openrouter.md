@@ -25,3 +25,38 @@
   EVIDENCE: typecheck clean, 54 tests pass, build OK.
 
 Not run: `deno check` / live function invocation — deno not installed locally. Function self-typechecks (temp Deno ambient stub) and follows the Supabase Edge runtime; live smoke test with a real OpenRouter key is a follow-up (needs `supabase secrets set OPENROUTER_API_KEY`). The 4 UI features (OCR intake, interaction assist, forecasting, alerts) are Phase G UI, not yet built.
+
+## Phase G UI (feat/phase-g-ui)
+
+- [x] Rx OCR intake (Prescriptions, P1).
+  CHECK: "OCR prescription" button → photo (native file input `capture="environment"`) or clipboard paste → client-side resize → `aiOcr` → editable review form with fuzzy catalog suggestions → pharmacist confirms → `NEW_PRESCRIPTION` via the existing intake reducer path.
+  EVIDENCE: `OcrIntakeModal` in `src/views/Prescriptions.tsx`; every field editable; AI never auto-creates; failure = toast + retry affordance + modal stays usable.
+  NOTE: patient age/prescriber are not OCR-extractable from the endpoint shape — defaulted (45 / first active directory prescriber) and surfaced for pharmacist correction during review; recorded here as a known simplification.
+
+- [x] Interaction checker assist (Register, P1).
+  CHECK: subtle "AI second pass" action on the cart side → `cartToInteractionPrompt()` builds the prompt CLIENT-side (function receives final strings) → `aiClassify` → novel conflicts parsed into a review dialog for the pharmacist.
+  EVIDENCE: `AiSecondPass` block in `src/views/Register.tsx`; never blocks checkout (pure advisory panel); API failure = inline degraded note + no crash.
+
+- [x] Demand forecasting + reorder (Inventory, P1).
+  CHECK: per-product "Forecast" action → history pulled from existing `state.transactions` (30-day daily units per product) → `aiForecast(history, products)` → dialog shows predicted demand + suggested reorder qty with a "use as reorder level" action the user can act on.
+  EVIDENCE: `ForecastModal` in `src/views/Inventory.tsx`; payload builders in `src/lib/ai-ui.ts`; applying updates only after an explicit user click.
+
+- [x] Anomaly alerts (Dashboard, P1).
+  CHECK: alerts panel calls `aiAnomaly(summary)` with a compact summary built from existing state (period sales/returns totals, top products w/ stock-vs-reorder, low-stock count, recent returns) → renders anomaly cards (unusual returns / dead stock / stock-vs-sales divergence).
+  EVIDENCE: `AiAlertsPanel` in `src/views/Dashboard.tsx`; panel hides itself entirely when the call fails (degrades to nothing, no error chrome).
+
+- [x] AI usage readout (Dashboard footer, optional feature shipped).
+  CHECK: tiny footer line queries `ai_log` count (last 24h) through the EXISTING supabase client (`from("ai_log").select("id", { count: "exact", head: true })`) — RLS scopes it to the org; query errors are swallowed and the line simply doesn't render.
+  EVIDENCE: same panel component; no new tables/endpoints/env vars.
+
+- [x] Prompt/payload helpers unit-tested.
+  CHECK: `npm run test`
+  EVIDENCE: `src/__tests__/ai-ui.test.ts` covers cart→prompt, classify JSON parse (incl. fenced output), history→forecast rows, anomaly summary shape, OCR fuzzy catalog match, and OCR→intake mapping. All prior 54 tests still green alongside the new suite.
+
+- [x] i18n parity for every new string.
+  CHECK: key-parity test enforces en/ar set equality
+  EVIDENCE: all new strings under the appended `ai:` namespace in BOTH locale files; test passes.
+
+Not run (follow-ups for the coordinator):
+- Live end-to-end OCR/forecast/anomaly smoke against a deployed ai-proxy + real OpenRouter key (`supabase secrets set OPENROUTER_API_KEY`, then deploy the function). All UI paths handle rejection gracefully so undeployed functions degrade to toasts/hidden panels.
+- `ai_log` has no update policy by design (append-only); marking outputs "reviewed" in-table would need a coordinator-approved migration — out of scope for Phase G UI.

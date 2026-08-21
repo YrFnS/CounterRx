@@ -11,6 +11,8 @@ import { usePos, relTime } from "../store";
 import { stockOf, can, daysUntil, allergyConflicts } from "../data";
 import { findInteractions, detectDuplicateTherapy, dispenseBlockers } from "../lib/clinical";
 import type { RxStatus, Prescription, BackOrderStatus, Product } from "../data";
+import { aiOcr, type OcrResult } from "../lib/ai";
+import { suggestProducts } from "../lib/ai-ui";
 import { cx, Badge, Modal } from "../ui";
 
 /* Client-side image resize → JPEG data-URL so hard-copy scans stay small enough for local storage.
@@ -35,7 +37,7 @@ function resizeToDataUrl(file: File, maxDim: number): Promise<string> {
     img.src = url;
   });
 }
-import { IRx, ICheck, IClock, IRegister, IShield, IGrab, IRefresh, ISend, IRecall, IX, IBox, ISwap, IArrowIn, IArrowOut, IDownload, IPlus, IScan, IAlert, IPrint } from "../icons";
+import { IRx, ICheck, IClock, IRegister, IShield, IGrab, IRefresh, ISend, IRecall, IX, IBox, ISwap, IArrowIn, IArrowOut, IDownload, IPlus, IScan, IAlert, IPrint, ISpark } from "../icons";
 
 const FLOW: RxStatus[] = ["new", "verifying", "ready", "waiting", "dispensed"];
 const LABEL: Record<RxStatus, string> = {
@@ -63,6 +65,7 @@ export default function Prescriptions() {
   const [xferLog, setXferLog] = useState(false);
   const [xferIn, setXferIn] = useState(false);
   const [intake, setIntake] = useState(false);
+  const [ocrIntake, setOcrIntake] = useState(false);
   const mayTransfer = can(state.user?.role, "transfer_rx");
 
   /* Refill radar: maintenance fills whose days-supply runs out within 7 days */
@@ -101,6 +104,11 @@ export default function Prescriptions() {
         <button onClick={() => setIntake(true)}
           className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-pine-700 text-pine-50 text-xs font-bold hover:bg-pine-600 transition active:scale-95 shadow-lift">
           <IPlus size={14} /> New prescription
+        </button>
+        <button onClick={() => setOcrIntake(true)}
+          className="flex items-center gap-1.5 px-3 py-2 rounded-lg border border-pine-300 bg-pine-50 text-pine-800 text-xs font-bold hover:bg-pine-100 transition active:scale-95"
+          title={t("ai.ocrHint")}>
+          <ISpark size={14} /> {t("ai.ocrButton")}
         </button>
         <button onClick={() => setXferLog(true)}
           className="flex items-center gap-1.5 px-3 py-2 rounded-lg border border-mist bg-card text-xs font-bold text-ink hover:border-pine-400 hover:bg-pine-50 transition active:scale-95">
@@ -192,6 +200,7 @@ export default function Prescriptions() {
       {xferLog && <XferLogModal onClose={() => setXferLog(false)} />}
       {xferIn && <XferInModal onClose={() => setXferIn(false)} />}
       {intake && <IntakeModal onClose={() => setIntake(false)} />}
+      {ocrIntake && <OcrIntakeModal onClose={() => setOcrIntake(false)} />}
     </div>
   );
 }
@@ -1128,6 +1137,239 @@ function IntakeModal({ onClose }: { onClose: () => void }) {
           <IPlus size={15} /> Drop off for review
         </button>
       </div>
+    </Modal>
+  );
+}
+
+/* ================================================================== */
+/*  Phase G — AI OCR prescription intake                              */
+/* ================================================================== */
+
+/** Reuse the existing hard-copy scan resize helper (client-side JPEG data URL). */
+const ocrResize = resizeToDataUrl;
+
+/** Phase G (P1): photo/paste → aiOcr → pharmacist review → NEW_PRESCRIPTION.
+ *  AI output never auto-applies: every field lands in an editable review form,
+ *  and failures degrade to a toast + no crash (function may be undeployed). */
+function OcrIntakeModal({ onClose }: { onClose: () => void }) {
+  const { t } = useTranslation();
+  const { state, dispatch } = usePos();
+  const [image, setImage] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState(false);
+  const [rx, setRx] = useState<OcrResult | null>(null);
+
+  /* editable extracted fields — the pharmacist reviews/edits before creating */
+  const [medication, setMedication] = useState("");
+  const [dose, setDose] = useState("");
+  const [sig, setSig] = useState("");
+  const [qty, setQty] = useState("");
+  const [refills, setRefills] = useState("");
+  const [prescriberText, setPrescriberText] = useState("");
+  const [patient, setPatient] = useState("");
+
+  /* fuzzy catalog match over the (edited) medication text */
+  const suggestions = useMemo(() => suggestProducts(medication, state.products), [medication, state.products]);
+  const [productId, setProductId] = useState("");
+
+  const applyResult = (res: OcrResult) => {
+    setRx(res);
+    setMedication(res.medication ?? "");
+    setDose(res.dose ?? "");
+    setSig(res.sig ?? "");
+    setQty(res.qty ?? "");
+    setRefills(res.refills ?? "");
+    setPrescriberText(res.prescriber ?? "");
+  };
+
+  const onFile = async (e: ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    try {
+      const url = await ocrResize(file, 1024);
+      setImage(url);
+      await runOcr(url);
+    } catch {
+      dispatch({ type: "TOAST", kind: "error", msg: t("ai.ocrFailed") });
+    }
+  };
+
+  const runOcr = async (dataUrl: string) => {
+    setBusy(true);
+    setError(false);
+    try {
+      const res = await aiOcr(dataUrl);
+      if (!res || (!res.medication && !res.sig)) {
+        dispatch({ type: "TOAST", kind: "warn", msg: t("ai.ocrEmptyFields") });
+      }
+      applyResult(res);
+    } catch {
+      setError(true);
+      dispatch({ type: "TOAST", kind: "error", msg: t("ai.ocrFailed") });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const onPaste = async () => {
+    try {
+      const items = await navigator.clipboard.read();
+      for (const item of items) {
+        const type = item.types.find((ty) => ty.startsWith("image/"));
+        if (type) {
+          const blob = await item.getType(type);
+          const url = await ocrResize(new File([blob], "paste.jpg", { type }), 1024);
+          setImage(url);
+          await runOcr(url);
+          return;
+        }
+      }
+      dispatch({ type: "TOAST", kind: "info", msg: t("ai.ocrPasteFailed") });
+    } catch {
+      dispatch({ type: "TOAST", kind: "info", msg: t("ai.ocrPasteFailed") });
+    }
+  };
+
+  const canCreate = patient.trim().length >= 2 && productId && parseInt(qty, 10) > 0;
+  const create = () => {
+    if (!canCreate) return;
+    dispatch({
+      type: "NEW_PRESCRIPTION",
+      intake: {
+        patient: patient.trim(),
+        age: 45, // unknown from OCR — pharmacist corrects during review stage
+        productId,
+        qty: parseInt(qty, 10) || 30,
+        prescriberId: state.prescribers[0]?.id ?? "",
+        refillsAuthorized: parseInt(refills, 10) || undefined,
+        rxExpiry: new Date(Date.now() + 365 * 86_400_000).toISOString().slice(0, 10),
+        note: [sig, dose && `dose: ${dose}`, prescriberText && `prescriber: ${prescriberText}`].filter(Boolean).join(" · "),
+      },
+    });
+    dispatch({ type: "AUDIT_LOG", kind: "rx", detail: `AI OCR intake — fields reviewed by ${state.user?.name ?? "pharmacist"} before queueing` });
+    dispatch({ type: "TOAST", kind: "success", msg: t("ai.ocrCreated") });
+    onClose();
+  };
+
+  return (
+    <Modal onClose={onClose} width={560} labelledBy="ocr-title">
+      <div className="px-5 py-4 border-b border-mist flex items-start justify-between">
+        <div>
+          <h2 id="ocr-title" className="font-display font-bold text-ink flex items-center gap-2">
+            <ISpark size={17} className="text-pine-700" /> {t("ai.ocrTitle")}
+          </h2>
+          <p className="text-xs text-inksoft mt-0.5">{t("ai.ocrHint")}</p>
+        </div>
+        <button onClick={onClose} className="p-1.5 rounded-md hover:bg-mist/60 text-inksoft" aria-label={t("common.close")}><IX size={14} /></button>
+      </div>
+
+      <div className="p-5 space-y-4 max-h-[64vh] overflow-y-auto scroll-slim">
+        {!image && (
+          <div>
+            <input type="file" accept="image/*" capture="environment" className="hidden" id="ai-ocr-file" onChange={onFile} />
+            <div className="flex gap-2">
+              <label htmlFor="ai-ocr-file"
+                className="flex-1 flex items-center justify-center gap-2 py-3 rounded-lg border-2 border-dashed border-pine-300 bg-pine-50/60 text-pine-800 text-sm font-bold hover:bg-pine-100 transition cursor-pointer active:scale-[0.98]">
+                <IScan size={16} /> {t("ai.ocrPickImage")}
+              </label>
+              <button onClick={onPaste}
+                className="px-4 py-3 rounded-lg border border-mist bg-card text-xs font-bold text-ink hover:border-pine-400 hover:bg-pine-50 transition active:scale-[0.98]">
+                {t("ai.ocrPasteImage")}
+              </button>
+            </div>
+          </div>
+        )}
+
+        {image && (
+          <div className="rounded-xl border border-mist overflow-hidden bg-paper">
+            <img src={image} alt="Prescription to extract" className="w-full max-h-40 object-contain" />
+            {busy && (
+              <p className="px-3 py-2 text-[11px] font-bold text-honey-700 bg-honey-100/60 anim-fade-up flex items-center gap-1.5">
+                <IClock size={11} /> {t("ai.ocrRunning")}
+              </p>
+            )}
+            {error && (
+              <button onClick={() => runOcr(image)}
+                className="w-full px-3 py-2 text-[11px] font-bold text-brick-700 bg-brick-100/50 hover:bg-brick-100 transition text-start">
+                {t("ai.ocrFailed")} — click to retry
+              </button>
+            )}
+          </div>
+        )}
+
+        {(rx || error) && !busy && (
+          <div className="space-y-3 anim-fade-up">
+            <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-honey-700 flex items-center gap-1.5">
+              <IAlert size={10} /> {t("ai.ocrReviewTitle")} — {t("ai.ocrReviewHint")}
+            </p>
+            <div className="grid grid-cols-2 gap-2.5">
+              <div className="col-span-2">
+                <label className="text-[11px] font-semibold uppercase tracking-[0.14em] text-inksoft">{t("ai.ocrPatientName")}</label>
+                <input autoFocus value={patient} onChange={(e) => setPatient(e.target.value)} placeholder="Full name"
+                  className="w-full mt-1 px-2.5 py-2 rounded-lg border border-mist bg-card text-sm focus:border-pine-500 focus:outline-none transition" />
+              </div>
+              <div>
+                <label className="text-[11px] font-semibold uppercase tracking-[0.14em] text-inksoft">{t("ai.ocrMedication")}</label>
+                <input value={medication} onChange={(e) => { setMedication(e.target.value); setProductId(""); }}
+                  className="w-full mt-1 px-2.5 py-2 rounded-lg border border-mist bg-card text-sm focus:border-pine-500 focus:outline-none transition" />
+              </div>
+              <div>
+                <label className="text-[11px] font-semibold uppercase tracking-[0.14em] text-inksoft">{t("ai.ocrDose")}</label>
+                <input value={dose} onChange={(e) => setDose(e.target.value)}
+                  className="w-full mt-1 px-2.5 py-2 rounded-lg border border-mist bg-card text-sm focus:border-pine-500 focus:outline-none transition" />
+              </div>
+              <div className="col-span-2">
+                <label className="text-[11px] font-semibold uppercase tracking-[0.14em] text-inksoft">{t("ai.ocrSig")}</label>
+                <input value={sig} onChange={(e) => setSig(e.target.value)}
+                  className="w-full mt-1 px-2.5 py-2 rounded-lg border border-mist bg-card text-sm focus:border-pine-500 focus:outline-none transition" />
+              </div>
+              <div>
+                <label className="text-[11px] font-semibold uppercase tracking-[0.14em] text-inksoft">{t("ai.ocrQty")}</label>
+                <input value={qty} onChange={(e) => setQty(e.target.value.replace(/[^0-9]/g, ""))} inputMode="numeric"
+                  className="num w-full mt-1 px-2.5 py-2 rounded-lg border border-mist bg-card text-sm focus:border-pine-500 focus:outline-none transition" />
+              </div>
+              <div>
+                <label className="text-[11px] font-semibold uppercase tracking-[0.14em] text-inksoft">{t("ai.ocrRefills")}</label>
+                <input value={refills} onChange={(e) => setRefills(e.target.value.replace(/[^0-9]/g, ""))} inputMode="numeric"
+                  className="num w-full mt-1 px-2.5 py-2 rounded-lg border border-mist bg-card text-sm focus:border-pine-500 focus:outline-none transition" />
+              </div>
+              <div className="col-span-2">
+                <label className="text-[11px] font-semibold uppercase tracking-[0.14em] text-inksoft">{t("ai.ocrCatalogMatch")}</label>
+                {suggestions.length > 0 ? (
+                  <select value={productId} onChange={(e) => setProductId(e.target.value)}
+                    className="w-full mt-1 px-2.5 py-2 rounded-lg border border-mist bg-card text-sm focus:border-pine-500 focus:outline-none transition">
+                    <option value="">—</option>
+                    {suggestions.map((s) => (
+                      <option key={s.productId} value={s.productId}>{s.name} ({s.generic})</option>
+                    ))}
+                  </select>
+                ) : (
+                  <select value={productId} onChange={(e) => setProductId(e.target.value)}
+                    className="w-full mt-1 px-2.5 py-2 rounded-lg border border-mist bg-card text-sm focus:border-pine-500 focus:outline-none transition">
+                    <option value="">{t("ai.ocrNoMatch")}</option>
+                    {state.products.map((p) => <option key={p.id} value={p.id}>{p.name}{p.rx ? " ℞" : ""}</option>)}
+                  </select>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {(rx || error) && !busy && (
+        <div className="px-5 py-4 border-t border-mist flex justify-end gap-2">
+          <button onClick={onClose}
+            className="px-4 py-2 rounded-lg border border-mist text-xs font-semibold text-inksoft hover:text-ink hover:border-ink/30 transition">
+            {t("ai.ocrCancel")}
+          </button>
+          <button onClick={create} disabled={!canCreate}
+            className={cx("flex items-center gap-1.5 px-4 py-2 rounded-lg text-xs font-bold transition active:scale-95",
+              canCreate ? "bg-pine-700 text-pine-50 hover:bg-pine-600 shadow-lift" : "bg-mist text-inksoft cursor-not-allowed")}>
+            <IPlus size={13} /> {t("ai.ocrCreateRx")}
+          </button>
+        </div>
+      )}
     </Modal>
   );
 }
