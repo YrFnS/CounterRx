@@ -1,9 +1,14 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { usePos, money, clockTime } from "../store";
 import { CATEGORIES, daysUntil, nearestExpiry, stockOf, fefoBatches } from "../data";
 import type { Customer } from "../data";
+import { aiAnomaly } from "../lib/ai";
+import type { Anomaly } from "../lib/ai";
+import { buildAnomalySummary, type AnomalySummary } from "../lib/ai-ui";
+import { supabase, isSupabaseConfigured } from "../lib/supabase";
 import { Stat, cx } from "../ui";
+import { ISpark, IRefresh } from "../icons";
 import {
   ICash, ICart, ITrendUp, ITrendDown, IAlert, IBox, IRx, IPill, IChevD, IFlask, IUsers, IStar,
 } from "../icons";
@@ -379,6 +384,160 @@ export default function Dashboard() {
           </div>
         </div>
       </div>
+
+      {/* Phase G (P1): AI anomaly alerts — panel hides itself entirely on API failure */}
+      <AiAlertsPanel range={range} t0={t0} />
+    </div>
+  );
+}
+
+/* ================================================================== */
+/*  Phase G — AI anomaly alerts + usage readout                       */
+/* ================================================================== */
+
+const ANOMALY_LABEL: Record<string, string> = {
+  unusual_returns: "ai.anomalyTypeUnusualReturns",
+  dead_stock: "ai.anomalyTypeDeadStock",
+  stock_sales_divergence: "ai.anomalyTypeStockSalesDivergence",
+  other: "ai.anomalyTypeOther",
+};
+
+/** Build the compact summary the anomaly endpoint expects, from existing state. */
+function AiAlertsPanel({ range, t0 }: { range: 7 | 30; t0: number }) {
+  const { t } = useTranslation();
+  const { state } = usePos();
+  const [busy, setBusy] = useState(false);
+  const [failed, setFailed] = useState(false);
+  const [anomalies, setAnomalies] = useState<Anomaly[] | null>(null);
+
+  /* optional AI usage readout: count of recent ai_log rows for this org (RLS-scoped).
+     Cheap via the existing supabase client; silently absent when unconfigured or denied. */
+  const [usageCount, setUsageCount] = useState<number | null>(null);
+  useEffect(() => {
+    if (!isSupabaseConfigured) return;
+    let alive = true;
+    const since = new Date(Date.now() - 86_400_000).toISOString();
+    void (async () => {
+      try {
+        const { count } = await supabase
+          .from("ai_log")
+          .select("id", { count: "exact", head: true })
+          .gte("created_at", since);
+        if (alive && typeof count === "number") setUsageCount(count);
+      } catch { /* readout is optional — stay hidden */ }
+    })();
+    return () => { alive = false; };
+  }, []);
+
+  const run = async () => {
+    if (busy) return;
+    setBusy(true);
+    setFailed(false);
+    try {
+      const DAY = 86_400_000;
+      const start = t0 - (range - 1) * DAY;
+      const window = state.transactions.filter((tx) => tx.at >= start);
+      const sales = window.filter((tx) => !tx.refundOf);
+      const returns = window.filter((tx) => tx.refundOf);
+
+      const unitsByProduct = new Map<string, number>();
+      for (const tx of sales) for (const l of tx.lines) {
+        unitsByProduct.set(l.productId, (unitsByProduct.get(l.productId) ?? 0) + l.qty);
+      }
+      const topProducts = [...unitsByProduct.entries()]
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 12)
+        .flatMap(([id, units]) => {
+          const p = state.products.find((x) => x.id === id);
+          return p ? [{ id, name: p.name, unitsSold: units, stock: stockOf(p), reorderLevel: p.reorderLevel }] : [];
+        });
+
+      const summary: AnomalySummary = {
+        periodStart: start,
+        periodEnd: Date.now(),
+        totalSales: sales.reduce((s, tx) => s + tx.total, 0),
+        totalReturns: returns.reduce((s, tx) => s + Math.abs(tx.total), 0),
+        lowStockCount: state.products.filter((p) => stockOf(p) <= p.reorderLevel).length,
+        topProducts,
+        products: state.products.slice(0, 40).map((p) => ({
+          id: p.id, name: p.name, stock: stockOf(p), reorderLevel: p.reorderLevel, category: p.category,
+        })),
+        recentReturns: returns.slice(0, 10).map((tx) => ({
+          id: tx.id,
+          product_id: tx.lines[0]?.productId ?? "",
+          product_name: tx.lines[0]?.name ?? "",
+          qty: tx.lines.reduce((s, l) => s + l.qty, 0),
+          at: tx.at,
+        })),
+      };
+
+      const res = await aiAnomaly(buildAnomalySummary(summary));
+      setAnomalies(Array.isArray(res) ? res : []);
+    } catch {
+      setFailed(true);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  /* auto-scan once on mount */
+  useEffect(() => { void run(); /* eslint-disable-line react-hooks/exhaustive-deps */ }, []);
+
+  /* graceful degradation: API failure → panel renders nothing at all */
+  if (failed && anomalies === null) return null;
+
+  return (
+    <div className="mt-4 bg-card border border-mist rounded-xl shadow-lift p-5 pb-6">
+      <div className="flex items-center justify-between gap-3 flex-wrap">
+        <div>
+          <h2 className="font-display font-bold text-ink text-[15px] flex items-center gap-2">
+            <ISpark size={15} className="text-pine-600" /> {t("ai.anomalyTitle")}
+          </h2>
+          <p className="text-[10px] text-inksoft mt-0.5">
+            Unusual returns · dead stock · stock-vs-sales divergence over the last {range} days
+          </p>
+        </div>
+        <div className="flex items-center gap-2.5">
+          {usageCount !== null && (
+            <span className="text-[10px] font-semibold text-inksoft num">{t("ai.usageLabel", { count: usageCount })}</span>
+          )}
+          <button onClick={run} disabled={busy}
+            className={cx("flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-[11px] font-bold transition active:scale-95",
+              busy ? "border-mist bg-mist/40 text-inksoft cursor-wait" : "border-pine-200 bg-pine-50 text-pine-700 hover:bg-pine-100")}>
+            <IRefresh size={11} /> {busy ? t("ai.anomalyRunning") : t("ai.anomalyRefresh")}
+          </button>
+        </div>
+      </div>
+
+      {!busy && anomalies !== null && anomalies.length === 0 && (
+        <p className="mt-3 text-xs text-inksoft">{t("ai.anomalyNone")}</p>
+      )}
+
+      {!busy && anomalies !== null && anomalies.length > 0 && (
+        <div className="mt-3 grid sm:grid-cols-2 xl:grid-cols-3 gap-2.5">
+          {anomalies.map((a, i) => {
+            const sev = (a.severity ?? "").toLowerCase();
+            const tone = sev.includes("high") || sev.includes("major")
+              ? { border: "border-brick-300/70", bg: "bg-brick-100/40", text: "text-brick-700" }
+              : sev.includes("moderate") || sev.includes("medium")
+                ? { border: "border-honey-300/60", bg: "bg-honey-100/40", text: "text-honey-700" }
+                : { border: "border-mist", bg: "bg-paper/60", text: "text-inksoft" };
+            return (
+              <div key={i} className={cx("anim-fade-up rounded-lg border px-3 py-2.5", tone.border, tone.bg)}
+                style={{ animationDelay: `${i * 60}ms` }}>
+                <div className="flex items-center justify-between gap-2">
+                  <p className={cx("text-[10px] font-bold uppercase tracking-[0.12em]", tone.text)}>
+                    {t(ANOMALY_LABEL[a.type] ?? ANOMALY_LABEL.other)}
+                  </p>
+                  {a.severity && <span className={cx("num text-[9px] font-bold uppercase", tone.text)}>{a.severity}</span>}
+                </div>
+                <p className="text-xs font-bold text-ink truncate mt-0.5">{a.entity}</p>
+                <p className="text-[11px] text-inksoft leading-snug mt-0.5">{a.reason}</p>
+              </div>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }
