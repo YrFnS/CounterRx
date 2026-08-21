@@ -8,6 +8,13 @@
 set search_path = public, extensions;
 
 /* ------------------------------------------------------------------ */
+/* Organizations (single tenant seeded; RLS scopes by organization_id) */
+/* ------------------------------------------------------------------ */
+insert into public.organizations (id, name) values
+  ('00000000-0000-0000-0000-000000000001', 'CounterRx Default')
+  on conflict (id) do nothing;
+
+/* ------------------------------------------------------------------ */
 /* Staff                                                                */
 /* ------------------------------------------------------------------ */
 insert into public.staff (id, name, role, pin_hash, initials, active) values
