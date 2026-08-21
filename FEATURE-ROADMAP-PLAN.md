@@ -186,6 +186,11 @@ Phases A→B→C are the core value and are AI-independent — build them first,
 pure app (no provider) and can land with or after C. G last, standalone. D/H deferred
 (external partners) — re-open when a partner/credential exists.
 
+**Status 2026-08-21: A, B, C, E, F, G (backend + UI) all shipped** — gates ticked,
+87 tests green, migrations 0006–00012 applied to the live remote. Only D (claims,
+NCPDP gateway) and H (Sentry DSN; CI/CD/backups/terminal-ID/org-export are
+dependency-free and liftable later) remain deferred.
+
 | Phase | Gate | AI | External dependency |
 |---|---|---|---|
 | A Till ops | `gates/till-ops.md` | — | — |
