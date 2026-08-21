@@ -3,15 +3,15 @@ import { useTranslation } from "react-i18next";
 import type { ReactNode } from "react";
 import { usePos, listSnapshots, money } from "../store";
 import i18n from "../i18n";
-import { CURRENCIES, ROLE_LABEL, can, randomPin } from "../data";
+import { CURRENCIES, ROLE_LABEL, can, randomPin, Coupon } from "../data";
 import type { OrgSettings, Role, Staff, Snapshot, Product } from "../data";
 import { cx, Modal, Badge } from "../ui";
 import {
-  IGear, IPrint, IStar, IUsers, IDownload, IPlus, IX, ICheck, ITrash, IRecall, IAlert, IScan, IChevD, IClockIn, IPill,
+  IGear, IPrint, IStar, IUsers, IDownload, IPlus, IX, ICheck, ITrash, IRecall, IAlert, IScan, IChevD, IClockIn, IPill, IEdit,
 } from "../icons";
 import { connectPrinter, printLabel, kickDrawer, HardwareError } from "../lib/hardware";
 
-type Tab = "profile" | "receipt" | "loyalty" | "team" | "clock" | "hardware" | "data" | "language" | "clinical";
+type Tab = "profile" | "receipt" | "loyalty" | "team" | "clock" | "hardware" | "data" | "language" | "clinical" | "coupons";
 
 export default function Settings() {
   const { t } = useTranslation();
@@ -30,6 +30,7 @@ export default function Settings() {
     { id: "data", label: t("settings.dataBackups"), icon: <IDownload size={14} /> },
     { id: "language", label: t("settings.language"), icon: <IX size={14} /> },
     { id: "clinical", label: t("settings.clinical"), icon: <IPill size={14} /> },
+    { id: "coupons", label: t("analytics.coupons"), icon: <IPlus size={14} /> },
   ];
 
   return (
@@ -66,6 +67,7 @@ export default function Settings() {
         {tab === "data" && <DataTab />}
         {tab === "language" && <LanguageTab />}
         {tab === "clinical" && <ClinicalTab admin={admin} />}
+        {tab === "coupons" && <CouponsTab admin={admin} />}
       </div>
     </div>
   );
@@ -701,6 +703,144 @@ function ClinicalTab({ admin }: { admin: boolean }) {
           Restricted OTC products require ID capture and a mandatory log entry at the till.
           The Register (Phase A) enforces the limitPerSale cap and writes to restricted_log.
         </p>
+      </div>
+    </div>
+  );
+}
+
+/* Coupons CRUD (Phase F) — configurable discount codes applied at the payment modal */
+function CouponsTab({ admin }: { admin: boolean }) {
+  const { t } = useTranslation();
+  const { state, dispatch } = usePos();
+  const [editing, setEditing] = useState<Coupon | null>(null);
+  const [creating, setCreating] = useState(false);
+  const [code, setCode] = useState("");
+  const [type, setType] = useState<"percent" | "amount">("percent");
+  const [value, setValue] = useState("");
+  const [expiry, setExpiry] = useState("");
+  const [customerId, setCustomerId] = useState("");
+  const [active, setActive] = useState(true);
+
+  const save = () => {
+    if (!admin || !code.trim() || !value) return;
+    const v = parseFloat(value);
+    if (!(v > 0) || (type === "percent" && v > 100)) return;
+    dispatch({
+      type: "SAVE_COUPON",
+      coupon: {
+        id: editing?.id ?? crypto.randomUUID(),
+        code: code.trim().toUpperCase(),
+        type, value: v,
+        expiresAt: expiry ? new Date(expiry + "T23:59:59").getTime() : undefined,
+        customerId: customerId.trim() || undefined,
+        active,
+        createdAt: editing?.createdAt ?? Date.now(),
+        updatedAt: Date.now(),
+      },
+    });
+    setEditing(null); setCreating(false); setCode(""); setValue(""); setExpiry(""); setCustomerId(""); setActive(true);
+  };
+
+  const openEdit = (c: Coupon) => {
+    setEditing(c); setCreating(true); setCode(c.code); setType(c.type);
+    setValue(String(c.value));
+    setExpiry(c.expiresAt ? new Date(c.expiresAt).toISOString().slice(0, 10) : "");
+    setCustomerId(c.customerId ?? ""); setActive(c.active);
+  };
+
+  return (
+    <div className="space-y-4 max-w-[980px]">
+      <div className="flex items-center justify-between">
+        <h3 className="font-display font-bold text-ink text-[15px] flex items-center gap-2">
+          <IStar size={16} className="text-pine-700" /> {t("analytics.couponsTitle", "Coupons")}
+        </h3>
+        <button onClick={() => { setCreating(true); setEditing(null); setCode(""); setType("percent"); setValue(""); setExpiry(""); setCustomerId(""); setActive(true); }}
+          className="px-3 py-1.5 rounded-lg bg-pine-700 text-pine-50 text-xs font-bold hover:bg-pine-600 transition flex items-center gap-1.5">
+          <IPlus size={13} /> {t("analytics.newCoupon", "New coupon")}
+        </button>
+      </div>
+
+      {creating && (
+        <div className="rounded-xl border border-mist bg-card shadow-lift p-4 space-y-3 anim-fade-up">
+          <div className="grid grid-cols-2 gap-3">
+            <label className="block text-[11px] font-bold text-inksoft">Code
+              <input value={code} onChange={(e) => setCode(e.target.value)} placeholder="WELCOME10"
+                className="mt-1 w-full px-2.5 py-1.5 rounded-lg border border-mist bg-card text-sm font-bold focus:border-pine-500 focus:outline-none" />
+            </label>
+            <label className="block text-[11px] font-bold text-inksoft">Value
+              <input value={value} onChange={(e) => setValue(e.target.value)} placeholder={type === "percent" ? "10" : "5.00"} inputMode="decimal"
+                className="mt-1 w-full px-2.5 py-1.5 rounded-lg border border-mist bg-card text-sm font-bold focus:border-pine-500 focus:outline-none" />
+            </label>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <label className="block text-[11px] font-bold text-inksoft">Type
+              <select value={type} onChange={(e) => setType(e.target.value as "percent" | "amount")}
+                className="mt-1 w-full px-2.5 py-1.5 rounded-lg border border-mist bg-card text-sm font-bold focus:border-pine-500 focus:outline-none">
+                <option value="percent">Percent %</option>
+                <option value="amount">Fixed amount</option>
+              </select>
+            </label>
+            <label className="block text-[11px] font-bold text-inksoft">Expiry (optional)
+              <input type="date" value={expiry} onChange={(e) => setExpiry(e.target.value)}
+                className="mt-1 w-full px-2.5 py-1.5 rounded-lg border border-mist bg-card text-sm font-bold focus:border-pine-500 focus:outline-none" />
+            </label>
+          </div>
+          <label className="block text-[11px] font-bold text-inksoft">Customer scope (optional)
+            <input value={customerId} onChange={(e) => setCustomerId(e.target.value)} placeholder="C-001"
+              className="mt-1 w-full px-2.5 py-1.5 rounded-lg border border-mist bg-card text-sm font-bold focus:border-pine-500 focus:outline-none" />
+          </label>
+          <label className="flex items-center gap-2 text-sm font-bold text-ink cursor-pointer">
+            <input type="checkbox" checked={active} onChange={(e) => setActive(e.target.checked)} className="accent-pine-700" />
+            Active
+          </label>
+          <div className="flex gap-2">
+            <button onClick={save} className="px-4 py-2 rounded-lg bg-pine-700 text-pine-50 text-xs font-bold hover:bg-pine-600 transition flex items-center gap-1.5">
+              <ICheck size={13} /> {t("analytics.saveCoupon", "Save coupon")}
+            </button>
+            <button onClick={() => { setCreating(false); setEditing(null); }} className="px-4 py-2 rounded-lg border border-mist text-xs font-bold text-inksoft hover:bg-mist/50 transition">
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+
+      <div className="rounded-xl border border-mist bg-card shadow-lift overflow-auto scroll-slim">
+        <table className="w-full text-sm border-collapse min-w-[720px]">
+          <thead className="sticky top-0 z-10">
+            <tr className="bg-pine-900 text-pine-100 text-start text-[10px] uppercase tracking-[0.14em]">
+              <th className="px-4 py-2.5 font-bold">Code</th>
+              <th className="px-3 py-2.5 font-bold">Type</th>
+              <th className="px-3 py-2.5 font-bold text-end">Value</th>
+              <th className="px-3 py-2.5 font-bold">Expires</th>
+              <th className="px-3 py-2.5 font-bold">Scope</th>
+              <th className="px-3 py-2.5 font-bold">Status</th>
+              <th className="px-4 py-2.5 font-bold text-end" />
+            </tr>
+          </thead>
+          <tbody>
+            {state.coupons.length === 0 && (
+              <tr><td colSpan={7} className="px-4 py-6 text-center text-xs text-inksoft">{t("analytics.noCoupons", "No coupons yet — create one above.")}</td></tr>
+            )}
+            {state.coupons.map((c) => (
+              <tr key={c.id} className="border-t border-mist/70">
+                <td className="px-4 py-2 font-bold font-mono text-[13px]">{c.code}</td>
+                <td className="px-3 py-2 text-xs">{c.type === "percent" ? `${c.value}%` : money(c.value)}</td>
+                <td className="px-3 py-2 text-xs num text-end">{c.type === "percent" ? `${c.value}% off` : money(c.value)}</td>
+                <td className="px-3 py-2 text-xs num">{c.expiresAt ? new Date(c.expiresAt).toLocaleDateString() : "—"}</td>
+                <td className="px-3 py-2 text-xs num">{c.customerId ?? "all"}</td>
+                <td className="px-3 py-2 text-xs">
+                  <Badge tone={c.active ? "pine" : "mist"}>{c.active ? "Active" : "Inactive"}</Badge>
+                </td>
+                <td className="px-4 py-2 text-end">
+                  <div className="inline-flex gap-1.5">
+                    <button onClick={() => openEdit(c)} className="p-1.5 rounded-md hover:bg-mist/60 text-inksoft" aria-label="Edit"><IEdit size={13} /></button>
+                    <button onClick={() => dispatch({ type: "DELETE_COUPON", id: c.id })} className="p-1.5 rounded-md hover:bg-rose-50 text-rose-500" aria-label="Delete"><ITrash size={13} /></button>
+                  </div>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
       </div>
     </div>
   );

@@ -3,8 +3,8 @@ import { useTranslation } from "react-i18next";
 import i18n from "../i18n";
 import type { ReactNode } from "react";
 import { usePos, money, clockTime } from "../store";
-import { CATEGORIES, fefoBatches, generateXReport, generateZReport } from "../data";
-import type { Product, TxLine, Transaction, PayMethod, Shift, ZReport } from "../data";
+import { CATEGORIES, fefoBatches, generateXReport, generateZReport, calculateLTV, supplierPerformance, expiryAtRisk } from "../data";
+import type { Product, TxLine, Transaction, PayMethod, Shift, ZReport, Customer, Supplier, PurchaseOrder, ApInvoice } from "../data";
 import { cx, Badge, Empty, Modal } from "../ui";
 import { ITrendUp, IDownload, IX, IPlus, IBox, ICash, ISearch, ICalendar } from "../icons";
 
@@ -39,7 +39,7 @@ const PRESETS: { id: Preset; label: string }[] = [
 ];
 
 /* ================= MAIN VIEW ================= */
-type Tab = "margin" | "valuation" | "pnl" | "builder" | "till";
+type Tab = "margin" | "valuation" | "pnl" | "builder" | "till" | "analytics";
 export default function Reports() {
   const { t } = useTranslation();
   const { state } = usePos();
@@ -60,6 +60,7 @@ export default function Reports() {
     { id: "pnl", label: "P&L", icon: <ICash size={14} /> },
     { id: "builder", label: i18n.t("reports.builder"), icon: <ISearch size={14} /> },
     { id: "till", label: i18n.t("reports.till"), icon: <ICash size={14} /> },
+    { id: "analytics", label: i18n.t("analytics.title"), icon: <ITrendUp size={14} /> },
   ];
 
   return (
@@ -102,6 +103,7 @@ export default function Reports() {
         {tab === "pnl" && <PnlTab ledger={ledger} />}
         {tab === "builder" && <BuilderTab from={from} to={to} preset={preset} />}
         {tab === "till" && <TillTab />}
+        {tab === "analytics" && <AnalyticsTab />}
       </div>
     </div>
   );
@@ -722,6 +724,151 @@ function XZReport({ shift, onClose }: { shift: Shift; onClose: () => void }) {
         )}
       </div>
     </Modal>
+  );
+}
+
+/* ================= ANALYTICS TAB (Phase F) ================= */
+function AnalyticsTab() {
+  const { t } = useTranslation();
+  const { state } = usePos();
+  const [preset, setPreset] = useState<Preset>("30d");
+  const { from, to } = rangeFor(preset);
+
+  const ltv = useMemo(() => calculateLTV(state.customers, state.transactions.filter(t => inRange(t.at, from, to))), [state.customers, state.transactions, from, to]);
+  const supplierPerf = useMemo(() => supplierPerformance(state.purchaseOrders, state.apInvoices, state.deliveries, state.suppliers), [state.purchaseOrders, state.apInvoices, state.deliveries, state.suppliers]);
+  const expiryRisk = useMemo(() => expiryAtRisk(state.products, 90), [state.products]);
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center gap-2 rounded-lg border border-mist bg-card p-1">
+        {PRESETS.map((p) => (
+          <button key={p.id} onClick={() => setPreset(p.id)}
+            className={cx("px-2.5 py-1.5 rounded-md text-[11px] font-bold transition-all duration-150",
+              preset === p.id ? "bg-pine-700 text-pine-50 shadow-lift" : "text-inksoft hover:text-ink hover:bg-mist/60")}>
+            {p.label}
+          </button>
+        ))}
+      </div>
+
+      {/* LTV Section */}
+      <div className="rounded-xl border border-mist bg-card shadow-lift overflow-auto scroll-slim">
+        <div className="px-4 py-3 border-b border-mist flex items-center justify-between">
+          <h2 className="font-display font-bold text-[15px] text-ink">{t("analytics.ltv")}</h2>
+          <Badge tone="mist">{ltv.length} {t("analytics.customers")}</Badge>
+        </div>
+        <div className="p-4">
+          <table className="w-full text-sm border-collapse min-w-[640px]">
+            <thead className="sticky top-0 z-10">
+              <tr className="bg-pine-900 text-pine-100 text-start text-[10px] uppercase tracking-[0.14em]">
+                <th className="px-4 py-2.5 font-bold">{t("analytics.customer")}</th>
+                <th className="px-3 py-2.5 font-bold text-end">{t("analytics.ltv")}</th>
+                <th className="px-3 py-2.5 font-bold text-end">{t("analytics.visits")}</th>
+                <th className="px-3 py-2.5 font-bold text-end">{t("analytics.avgBasket")}</th>
+                <th className="px-4 py-2.5 font-bold text-end">{t("analytics.lastVisit")}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {ltv.slice(0, 50).map((r, i) => (
+                <tr key={r.customerId} className={cx("border-t border-mist/70 transition-colors hover:bg-pine-50/60", i % 2 === 1 && "bg-paper/50")}>
+                  <td className="px-4 py-2 font-semibold text-ink">{state.customers.find(c => c.id === r.customerId)?.name ?? r.customerId}</td>
+                  <td className="px-3 py-2 text-end num text-ink">{money(r.ltv)}</td>
+                  <td className="px-3 py-2 text-center num text-inksoft">{r.visits}</td>
+                  <td className="px-3 py-2 text-end num text-ink">{money(r.avgBasket)}</td>
+                  <td className="px-4 py-2 text-end num text-inksoft">{new Date(r.lastVisit).toLocaleDateString()}</td>
+                </tr>
+              ))}
+              {ltv.length === 0 && <tr><td colSpan={5}><Empty icon={<ITrendUp size={20} />} title={t("analytics.noData")} hint={t("analytics.noLtvHint")} /></td></tr>}
+            </tbody>
+          </table>
+        </div>
+        {ltv.length > 0 && (
+          <div className="px-4 py-3 border-t border-mist flex items-center justify-end">
+            <ExportCsv name="ltv-report" head={["customer", "ltv", "visits", "avg_basket", "last_visit"]}
+              rows={ltv.map((r) => [state.customers.find(c => c.id === r.customerId)?.name ?? r.customerId, r.ltv.toFixed(2), r.visits, r.avgBasket.toFixed(2), new Date(r.lastVisit).toISOString()])} />
+          </div>
+        )}
+      </div>
+
+      {/* Supplier Performance Section */}
+      <div className="rounded-xl border border-mist bg-card shadow-lift overflow-auto scroll-slim">
+        <div className="px-4 py-3 border-b border-mist flex items-center justify-between">
+          <h2 className="font-display font-bold text-[15px] text-ink">{t("analytics.supplierPerformance")}</h2>
+          <Badge tone="mist">{supplierPerf.length} {t("analytics.suppliers")}</Badge>
+        </div>
+        <div className="p-4">
+          <table className="w-full text-sm border-collapse min-w-[720px]">
+            <thead className="sticky top-0 z-10">
+              <tr className="bg-pine-900 text-pine-100 text-start text-[10px] uppercase tracking-[0.14em]">
+                <th className="px-4 py-2.5 font-bold">{t("analytics.supplier")}</th>
+                <th className="px-3 py-2.5 font-bold text-end">{t("analytics.onTimeRate")}</th>
+                <th className="px-3 py-2.5 font-bold text-end">{t("analytics.avgLeadDays")}</th>
+                <th className="px-3 py-2.5 font-bold text-end">{t("analytics.totalSpend")}</th>
+                <th className="px-4 py-2.5 font-bold text-end">{t("analytics.invoiceCount")}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {supplierPerf.map((r, i) => (
+                <tr key={r.supplierId} className={cx("border-t border-mist/70 transition-colors hover:bg-pine-50/60", i % 2 === 1 && "bg-paper/50")}>
+                  <td className="px-4 py-2 font-semibold text-ink">{r.supplierName}</td>
+                  <td className="px-3 py-2 text-end num text-ink">{Math.round(r.onTimeRate * 100)}%</td>
+                  <td className="px-3 py-2 text-center num text-inksoft">{r.avgLeadDays}</td>
+                  <td className="px-3 py-2 text-end num text-ink">{money(r.totalSpend)}</td>
+                  <td className="px-4 py-2 text-center num text-inksoft">{r.invoiceCount}</td>
+                </tr>
+              ))}
+              {supplierPerf.length === 0 && <tr><td colSpan={5}><Empty icon={<IBox size={20} />} title={t("analytics.noData")} hint={t("analytics.noSupplierHint")} /></td></tr>}
+            </tbody>
+          </table>
+        </div>
+        {supplierPerf.length > 0 && (
+          <div className="px-4 py-3 border-t border-mist flex items-center justify-end">
+            <ExportCsv name="supplier-performance" head={["supplier", "on_time_rate", "avg_lead_days", "total_spend", "invoice_count"]}
+              rows={supplierPerf.map((r) => [r.supplierName, Math.round(r.onTimeRate * 100), r.avgLeadDays, r.totalSpend.toFixed(2), r.invoiceCount])} />
+          </div>
+        )}
+      </div>
+
+      {/* Expiry At-Risk Section */}
+      <div className="rounded-xl border border-mist bg-card shadow-lift overflow-auto scroll-slim">
+        <div className="px-4 py-3 border-b border-mist flex items-center justify-between">
+          <h2 className="font-display font-bold text-[15px] text-ink">{t("analytics.expiryAtRisk")}</h2>
+          <Badge tone={expiryRisk.length > 0 ? "honey" : "pine"}>{expiryRisk.length} {t("analytics.batches")}</Badge>
+        </div>
+        <div className="p-4">
+          <table className="w-full text-sm border-collapse min-w-[800px]">
+            <thead className="sticky top-0 z-10">
+              <tr className="bg-pine-900 text-pine-100 text-start text-[10px] uppercase tracking-[0.14em]">
+                <th className="px-4 py-2.5 font-bold">{t("analytics.product")}</th>
+                <th className="px-3 py-2.5 font-bold text-center">{t("analytics.batch")}</th>
+                <th className="px-3 py-2.5 font-bold text-center">{t("analytics.qty")}</th>
+                <th className="px-4 py-2.5 font-bold text-center">{t("analytics.expiryDate")}</th>
+                <th className="px-3 py-2.5 font-bold text-end">{t("analytics.daysLeft")}</th>
+                <th className="px-4 py-2.5 font-bold text-end">{t("analytics.valueAtRisk")}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {expiryRisk.slice(0, 100).map((r, i) => (
+                <tr key={`${r.productId}-${r.batch}`} className={cx("border-t border-mist/70 transition-colors hover:bg-pine-50/60", i % 2 === 1 && "bg-paper/50")}>
+                  <td className="px-4 py-2 font-semibold text-ink">{r.productName}</td>
+                  <td className="px-3 py-2 text-center text-inksoft">{r.batch}</td>
+                  <td className="px-3 py-2 text-center num text-ink">{r.qty}</td>
+                  <td className="px-4 py-2 text-center text-inksoft">{new Date(r.expiryDate).toLocaleDateString()}</td>
+                  <td className={cx("px-3 py-2 text-end num font-bold", r.daysUntilExpiry <= 30 ? "text-brick-700" : r.daysUntilExpiry <= 60 ? "text-amber-700" : "text-ink")}>{r.daysUntilExpiry}</td>
+                  <td className="px-4 py-2 text-end num text-ink">{money(r.valueAtRisk)}</td>
+                </tr>
+              ))}
+              {expiryRisk.length === 0 && <tr><td colSpan={6}><Empty icon={<ICalendar size={20} />} title={t("analytics.noAtRisk")} hint={t("analytics.noAtRiskHint")} /></td></tr>}
+            </tbody>
+          </table>
+        </div>
+        {expiryRisk.length > 0 && (
+          <div className="px-4 py-3 border-t border-mist flex items-center justify-end">
+            <ExportCsv name="expiry-at-risk" head={["product", "batch", "qty", "expiry_date", "days_left", "value_at_risk"]}
+              rows={expiryRisk.map((r) => [r.productName, r.batch, r.qty, new Date(r.expiryDate).toISOString(), r.daysUntilExpiry, r.valueAtRisk.toFixed(2)])} />
+          </div>
+        )}
+      </div>
+    </div>
   );
 }
 

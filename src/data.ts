@@ -1,3 +1,4 @@
+import { parseISO } from "date-fns";
 /* ------------------------------------------------------------------ */
 /*  CounterRx — data model, seed catalog & helpers                     */
 /* ------------------------------------------------------------------ */
@@ -206,6 +207,7 @@ export interface Transaction {
   customerId?: string;
   bulkSavings?: number;      // quantity-tier savings across lines
   loyaltyDeduct?: number;    // value of redeemed points
+  couponDiscount?: number;    // coupon applied (Phase F)
   pointsEarned?: number;
   pointsRedeemed?: number;
 }
@@ -416,6 +418,19 @@ export interface Customer {
   clinicalNotes?: string;   // pharmacist-only (§3 HIPAA role-scoped)
 }
 
+/** Coupon — configurable discount code (§9 Phase F) */
+export interface Coupon {
+  id: string;
+  code: string;
+  type: "percent" | "amount";
+  value: number;
+  expiresAt?: number;
+  customerId?: string;
+  active: boolean;
+  createdAt: number;
+  updatedAt: number;
+}
+
 /* Allergen → ingredient keyword rules for drug–allergy screening (§3) */
 export const ALLERGENS = ["Penicillin", "Sulfa", "Aspirin / NSAID", "Codeine / opioid", "Iodine", "Latex"];
 export const ALLERGY_RULES: { allergen: string; keywords: string[] }[] = [
@@ -458,7 +473,7 @@ export const ROLE_LABEL: Record<Role, string> = {
 
 export type Perm =
   | "refund" | "approve_transfer" | "adjust_stock" | "apply_count"
-  | "edit_settings" | "manage_staff" | "restore_snapshot" | "verify_rx" | "transfer_rx"
+  | "edit_settings" | "manage_settings" | "manage_staff" | "restore_snapshot" | "verify_rx" | "transfer_rx"
   | "create_po" | "receive_po" | "pay_invoice" | "add_expense";
 
 /* Permission matrix — enforced in the UI layer now, mirrors the future RLS checks */
@@ -468,6 +483,7 @@ export const PERMS: Record<Perm, Role[]> = {
   adjust_stock: ["pharmacist", "manager", "pharmacy_admin"],
   apply_count: ["manager", "pharmacy_admin"],
   edit_settings: ["pharmacy_admin"],
+  manage_settings: ["pharmacy_admin"],
   manage_staff: ["pharmacy_admin"],
   restore_snapshot: ["pharmacy_admin"],
   verify_rx: ["pharmacist", "pharmacy_admin"],
@@ -606,7 +622,7 @@ export interface OrgSettings {
   orgName: string; branch: string; address: string; phone: string; license: string;
   currency: string;
   receiptFooter: string; receiptTerms: string; showBarcode: boolean;
-  loyalty: { ptsPerUnit: number; chunkPts: number; chunkValue: number; silverAt: number; goldAt: number };
+  loyalty: { ptsPerUnit: number; chunkPts: number; chunkValue: number; silverAt: number; goldAt: number; platinumAt?: number };
   scanBeep: boolean;
   idleLockMins: number;            // 0 = never
   autoSnapshotMins: number;        // 0 = off
@@ -623,7 +639,7 @@ export function makeSettings(): OrgSettings {
     receiptFooter: "Get well soon — returns within 7 days with receipt",
     receiptTerms: "℞ items verified & dispensed by licensed pharmacist",
     showBarcode: true,
-    loyalty: { ptsPerUnit: 1, chunkPts: 100, chunkValue: 5, silverAt: 100, goldAt: 300 },
+    loyalty: { ptsPerUnit: 1, chunkPts: 100, chunkValue: 5, silverAt: 100, goldAt: 300, platinumAt: 1000 },
     scanBeep: true,
     idleLockMins: 10,
     autoSnapshotMins: 15,
@@ -636,7 +652,7 @@ export interface SnapshotMeta { id: string; at: number; label: string; auto: boo
 export interface Snapshot { meta: SnapshotMeta; data: Record<string, unknown>; }
 export const SNAPS_KEY = "counterrx:snapshots";
 
-export type AuditKind = "sale" | "stock" | "money" | "rx" | "system" | "shift" | "cash" | "void" | "report";
+export type AuditKind = "sale" | "stock" | "money" | "rx" | "system" | "shift" | "cash" | "void" | "report" | "settings";
 export interface AuditEntry { id: number; at: number; actor: string; kind: AuditKind; detail: string; }
 
 /** Behind-the-counter / monitored OTC sale — ID captured, mandatory log (§3) */
@@ -1350,4 +1366,89 @@ export function generateZReport(shift: Shift): ZReport | null {
     overShort: shift.overShort!,
     notes: shift.notes,
   };
+}
+
+/** Analytics helpers for Phase F — LTV, supplier performance, expiry at-risk */
+export function calculateLTV(customers: Customer[], transactions: Transaction[], now: number = Date.now()): { customerId: string; ltv: number; visits: number; avgBasket: number; lastVisit: number }[] {
+  const results: { customerId: string; ltv: number; visits: number; avgBasket: number; lastVisit: number }[] = [];
+  
+  for (const customer of customers) {
+    const customerTxns = transactions.filter(t => t.customerId === customer.id && !t.refundOf);
+    if (customerTxns.length === 0) continue;
+    
+    const ltv = customerTxns.reduce((sum, t) => sum + t.total, 0);
+    const visits = customerTxns.length;
+    const avgBasket = ltv / visits;
+    const lastVisit = Math.max(...customerTxns.map(t => t.at));
+    
+    results.push({ customerId: customer.id, ltv, visits, avgBasket, lastVisit });
+  }
+  
+  return results.sort((a, b) => b.ltv - a.ltv);
+}
+
+export function supplierPerformance(purchaseOrders: PurchaseOrder[], apInvoices: ApInvoice[], deliveries: Delivery[], suppliers: Supplier[], now: number = Date.now()): { supplierId: string; supplierName: string; onTimeRate: number; avgLeadDays: number; totalSpend: number; invoiceCount: number }[] {
+  const results: { supplierId: string; supplierName: string; onTimeRate: number; avgLeadDays: number; totalSpend: number; invoiceCount: number }[] = [];
+  
+  for (const supplier of suppliers) {
+    const supplierPOs = purchaseOrders.filter(po => po.supplierId === supplier.id && po.status === "received");
+    const supplierInvoices = apInvoices.filter(inv => inv.supplierId === supplier.id);
+    
+    if (supplierPOs.length === 0 && supplierInvoices.length === 0) continue;
+    
+    const onTimePOs = supplierPOs.filter(po => po.receivedAt && po.expectedAt && po.receivedAt <= po.expectedAt);
+    const onTimeRate = supplierPOs.length > 0 ? onTimePOs.length / supplierPOs.length : 1;
+    
+    const leadDaysList = supplierPOs
+      .filter(po => po.receivedAt && po.createdAt)
+      .map(po => (po.receivedAt! - po.createdAt) / (1000 * 60 * 60 * 24));
+    const avgLeadDays = leadDaysList.length > 0 
+      ? leadDaysList.reduce((a, b) => a + b, 0) / leadDaysList.length
+      : supplier.leadDays;
+    
+    const totalSpend = supplierInvoices.reduce((sum, inv) => sum + inv.total, 0);
+    
+    results.push({
+      supplierId: supplier.id,
+      supplierName: supplier.name,
+      onTimeRate: Math.round(onTimeRate * 100) / 100,
+      avgLeadDays: Math.round(avgLeadDays * 10) / 10,
+      totalSpend: Math.round(totalSpend * 100) / 100,
+      invoiceCount: supplierInvoices.length,
+    });
+  }
+  
+  return results.sort((a, b) => b.totalSpend - a.totalSpend);
+}
+
+export function expiryAtRisk(products: Product[], windowDays: number = 90, now: number = Date.now()): { productId: string; productName: string; batch: string; qty: number; expiryDate: number; daysUntilExpiry: number; valueAtRisk: number }[] {
+  const results: { productId: string; productName: string; batch: string; qty: number; expiryDate: number; daysUntilExpiry: number; valueAtRisk: number }[] = [];
+  const windowMs = windowDays * 24 * 60 * 60 * 1000;
+  
+  for (const product of products) {
+    for (const batch of product.batches) {
+      if (batch.qty <= 0) continue;
+      if (!batch.expiry) continue;
+      
+      const expiryDate = parseISO(batch.expiry).getTime();
+      if (isNaN(expiryDate)) continue;
+      
+      const daysUntilExpiry = Math.floor((expiryDate - now) / (24 * 60 * 60 * 1000));
+      
+      if (daysUntilExpiry <= windowDays && daysUntilExpiry >= 0) {
+        const valueAtRisk = batch.qty * product.cost;
+        results.push({
+          productId: product.id,
+          productName: product.name,
+          batch: batch.batch,
+          qty: batch.qty,
+          expiryDate,
+          daysUntilExpiry,
+          valueAtRisk: Math.round(valueAtRisk * 100) / 100,
+        });
+      }
+    }
+  }
+  
+  return results.sort((a, b) => a.daysUntilExpiry - b.daysUntilExpiry);
 }

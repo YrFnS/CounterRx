@@ -34,6 +34,18 @@ export function PaymentModal() {
     : undefined;
   const creditBalance = creditMatch?.balance ?? 0;
 
+  /* Phase F coupon — validate against org coupons: exists, active, not expired, in scope */
+  const [couponCode, setCouponCode] = useState("");
+  const couponMatch = couponCode.trim()
+    ? state.coupons.find((c) => c.code.toUpperCase() === couponCode.trim().toUpperCase())
+    : undefined;
+  const couponError = couponCode.trim() && !couponMatch ? tr("analytics.couponInvalid", "Unknown coupon code") :
+    couponMatch && !couponMatch.active ? tr("analytics.couponInactive", "This coupon is inactive") :
+    couponMatch && couponMatch.expiresAt && Date.now() > couponMatch.expiresAt ? tr("analytics.couponExpired", "This coupon has expired") :
+    couponMatch && couponMatch.customerId && couponMatch.customerId !== state.saleCustomerId ? tr("analytics.couponScope", "Coupon is for another customer") :
+    undefined;
+  const couponValid = !!couponMatch && !couponError;
+
   /* drug–drug interaction check across the cart (§3/§4) */
   const interactions = useMemo(
     () => findInteractions(state.cart.map((c) => c.productId)),
@@ -48,10 +60,20 @@ export function PaymentModal() {
     .map((c) => ({ qty: c.qty, p: product(c.productId) }))
     .filter((x): x is { qty: number; p: Product } => !!x.p && !!x.p.restricted);
   const taxExempt = !!(customer?.taxExempt || exemptToggle);
-  const t = useMemo(() => cartTotals(state, discountPct, taxExempt), [state, discountPct, taxExempt]);
+  /* coupon discount computed from the pre-coupon subtotal (cartTotals applies it) */
+  const preCouponSubtotal = round2(state.cart.reduce((s, c) => {
+    const p = state.products.find((x) => x.id === c.productId);
+    return p ? s + (c.priceOverride ?? p.price) * c.qty : s;
+  }, 0));
+  const couponDiscount = couponValid
+    ? couponMatch!.type === "percent"
+      ? round2((preCouponSubtotal * couponMatch!.value) / 100)
+      : Math.min(couponMatch!.value, preCouponSubtotal)
+    : 0;
+  const t = useMemo(() => cartTotals(state, discountPct, taxExempt, couponDiscount), [state, discountPct, taxExempt, couponDiscount]);
   const hasControlled = state.cart.some((c) => product(c.productId)?.controlled);
   /* redeemable chunks: 100 pts = $5, capped by payable balance */
-  const payableNow = Math.max(0, t.subtotal - t.bulkSavings - t.discount);
+  const payableNow = Math.max(0, t.subtotal - t.bulkSavings - t.discount - t.coupon);
   const loy = state.settings.loyalty;
   const maxChunks = customer ? Math.min(Math.floor(customer.points / Math.max(1, loy.chunkPts)), Math.floor(payableNow / Math.max(0.01, loy.chunkValue))) : 0;
   const redeeming = state.redeemPoints > 0;
@@ -95,6 +117,7 @@ export function PaymentModal() {
         : [{ method: leg1, amount: t.total }];
     dispatch({
       type: "COMPLETE_SALE", payments, discountPct, taxExempt, idChecked,
+      couponDiscount: couponDiscount > 0 ? couponDiscount : undefined,
       tendered: !split && leg1 === "cash" ? tenderedNum : undefined,
       restricted: restrictedLines.length > 0
         ? { purchaser: rPurchaser, idType: rIdType, idLast4: rIdLast4 }
@@ -409,6 +432,23 @@ export function PaymentModal() {
                 <div className={cx("rounded-lg px-3 py-2 text-sm flex justify-between", creditBalance >= t.total ? "bg-pine-100 text-pine-800" : "bg-honey-100 text-honey-800")}>
                   <span>{creditMatch.code ? `${tr("modal.giftCard")} ${creditMatch.code}` : tr("modal.storeCredit")}</span>
                   <span className="num font-bold">{money(creditBalance)} {creditBalance < t.total && `· ${tr("modal.remainingDue")} ${money(t.total - creditBalance)}`}</span>
+                </div>
+              )}
+            </div>
+          )}
+
+          {state.coupons.length > 0 && (
+            <div className="rounded-lg border border-mist p-3 space-y-2">
+              <label className="text-[11px] font-semibold uppercase tracking-[0.14em] text-inksoft">{tr("analytics.couponCode", "Coupon code")}</label>
+              <input value={couponCode} onChange={(e) => setCouponCode(e.target.value)} placeholder="WELCOME10"
+                className="w-full px-3 py-2.5 rounded-lg border-2 border-mist bg-card text-base font-semibold text-ink focus:border-pine-500 focus:outline-none transition" />
+              {couponError && (
+                <p className="text-xs text-brick-700 font-semibold">{couponError}</p>
+              )}
+              {couponValid && (
+                <div className="rounded-lg px-3 py-2 text-sm bg-pine-100 text-pine-800 flex justify-between">
+                  <span className="font-bold">{couponMatch!.code}</span>
+                  <span className="num font-bold">−{money(couponDiscount)}</span>
                 </div>
               )}
             </div>

@@ -65,6 +65,7 @@ describe("reducer - HYDRATE_BACKEND", () => {
       snapshots: [],
       interactionPairs: [],
       coldChainLog: [],
+      coupons: [],
     };
 
     const action: Action = { type: "HYDRATE_BACKEND", data: backendData };
@@ -110,6 +111,7 @@ describe("reducer - HYDRATE_BACKEND", () => {
       snapshots: [],
       interactionPairs: [],
       coldChainLog: [],
+      coupons: [],
     };
 
     const action: Action = { type: "HYDRATE_BACKEND", data: backendData };
@@ -150,6 +152,7 @@ describe("reducer - HYDRATE_BACKEND", () => {
       snapshots: [],
       interactionPairs: [],
       coldChainLog: [],
+      coupons: [],
     };
 
     const action: Action = { type: "HYDRATE_BACKEND", data: backendData };

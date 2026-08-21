@@ -17,7 +17,7 @@ import type {
   Supplier, PurchaseOrder, ApInvoice, ApPayMethod, Expense,
   Delivery, DeliveryStatus, WebOrder, WebOrderStatus, TimeEntry,
   Shift, XReport, ZReport, CashMovement, ShiftTransaction, TxType, TenderType, StoreCredit,
-  InteractionPair, ColdChainLog,
+  InteractionPair, ColdChainLog, Coupon,
 } from "./data";
 import { makeStaff, makeSettings, makeBackOrders, makeRxTransfers, SNAPS_KEY, hashPin, ROLE_LABEL } from "./data";
 import type { BackendData, LoadResult } from "./lib/sync";
@@ -58,6 +58,7 @@ interface State {
   shifts: Shift[];
   interactionPairs: InteractionPair[];
   coldChainLog: ColdChainLog[];
+  coupons: Coupon[];
   currentShift: Shift | null;
   cart: { productId: string; qty: number; note?: string; priceOverride?: number; daw?: number; substitutedFrom?: string; uom?: string }[];
   held: HeldSale[];
@@ -124,9 +125,11 @@ type Action =
   | { type: "DROP_HELD"; id: string }
   | { type: "ISSUE_STORE_CREDIT"; credit: StoreCredit }
   | { type: "REDEEM_STORE_CREDIT"; id: string; amount: number }
+  | { type: "SAVE_COUPON"; coupon: Coupon }
+  | { type: "DELETE_COUPON"; id: string }
   | { type: "EXPIRE_HELDS" }
   | { type: "OPEN_PAY"; open: boolean }
-  | { type: "COMPLETE_SALE"; payments: PaymentLeg[]; tendered?: number; discountPct: number; taxExempt: boolean; idChecked: boolean; restricted?: { purchaser: string; idType: string; idLast4: string } }
+  | { type: "COMPLETE_SALE"; payments: PaymentLeg[]; tendered?: number; discountPct: number; taxExempt: boolean; idChecked: boolean; restricted?: { purchaser: string; idType: string; idLast4: string }; couponDiscount?: number }
   | { type: "OPEN_RECEIPT"; tx: Transaction | null }
   | { type: "ADJUST_BATCH"; productId: string; batch: string; newQty: number; reason: string }
   | { type: "RESTOCK"; productId: string; amount: number; batch: string; expiry: string; cost?: number }
@@ -180,7 +183,7 @@ let toastSeq = 1;
 let heldSeq = 1;
 let auditSeq = 100;
 
-export const seed = (): Pick<State, "products" | "transactions" | "prescriptions" | "prescribers" | "customers" | "audit" | "transfers" | "backorders" | "rxTransfers" | "suppliers" | "purchaseOrders" | "apInvoices" | "expenses" | "deliveries" | "webOrders" | "timeEntries" | "staff" | "settings" | "shifts" | "storeCredits" | "interactionPairs" | "coldChainLog"> => {
+export const seed = (): Pick<State, "products" | "transactions" | "prescriptions" | "prescribers" | "customers" | "audit" | "transfers" | "backorders" | "rxTransfers" | "suppliers" | "purchaseOrders" | "apInvoices" | "expenses" | "deliveries" | "webOrders" | "timeEntries" | "staff" | "settings" | "shifts" | "storeCredits" | "interactionPairs" | "coldChainLog" | "coupons"> => {
   const now = Date.now();
   const products = makeProducts(now);
   const customers = makeCustomers(now);
@@ -204,6 +207,7 @@ export const seed = (): Pick<State, "products" | "transactions" | "prescriptions
     coldChainLog: makeColdChainLogs(now),
     shifts: [],
     interactionPairs: [],
+    coupons: [],
     staff: makeStaff(now),
     settings: makeSettings(),
     storeCredits: [],
@@ -249,6 +253,7 @@ function load(): State {
           storeCredits: saved.storeCredits ?? [],
           interactionPairs: saved.interactionPairs ?? [],
           coldChainLog: saved.coldChainLog ?? [],
+          coupons: saved.coupons ?? [],
         };
       }
     }
@@ -278,7 +283,7 @@ export function uomFactor(state: State, productId: string, uomCode?: string): nu
   return p?.uoms?.find((u) => u.code === uomCode)?.factor ?? 1;
 }
 
-export function cartTotals(state: State, discountPct: number, taxExempt = false) {
+export function cartTotals(state: State, discountPct: number, taxExempt = false, couponDiscount = 0) {
   const lines: TxLine[] = state.cart.map((c) => {
     const p = state.products.find((x) => x.id === c.productId)!;
     const base = unitPrice(state, p.id, c.uom);           // UOM-aware effective price (§5)
@@ -304,13 +309,14 @@ export function cartTotals(state: State, discountPct: number, taxExempt = false)
   /* bulk tiers apply per non-Rx line */
   const bulkSavings = round2(lines.reduce((s, l) => s + (l.rx ? 0 : (l.price * l.qty * bulkPct(l.qty)) / 100), 0));
   const discount = round2((subtotal * discountPct) / 100);
+  const coupon = round2(Math.max(0, couponDiscount));
   /* loyalty redemption — org-configurable chunks (§7), capped by the payable balance */
   const loy = state.settings.loyalty;
-  const payable = Math.max(0, subtotal - bulkSavings - discount);
+  const payable = Math.max(0, subtotal - bulkSavings - discount - coupon);
   const loyaltyDeduct = round2(Math.min((state.redeemPoints / Math.max(1, loy.chunkPts)) * loy.chunkValue, payable));
   const tax = taxExempt ? 0 : round2((payable - loyaltyDeduct) * TAX_RATE);
   return {
-    lines, subtotal, bulkSavings, discount, loyaltyDeduct, tax,
+    lines, subtotal, bulkSavings, discount, coupon, loyaltyDeduct, tax,
     total: round2(payable - loyaltyDeduct + tax),
   };
 }
@@ -851,6 +857,19 @@ export function reducer(state: State, a: Action): State {
       return { ...state, storeCredits: applyStoreCredit(state.storeCredits, a.id, a.amount) };
     }
 
+    case "SAVE_COUPON": {
+      if (!can(state.user?.role, "manage_settings")) return withToast(state, "error", "Admin required to manage coupons");
+      const exists = state.coupons.findIndex((c) => c.id === a.coupon.id);
+      const coupons = exists >= 0 ? state.coupons.map((c) => (c.id === a.coupon.id ? a.coupon : c)) : [...state.coupons, a.coupon];
+      return withToast(withAudit({ ...state, coupons }, "settings", exists >= 0 ? `Coupon ${a.coupon.code} updated` : `Coupon ${a.coupon.code} created`), "success", exists >= 0 ? i18n.t("toast.couponUpdated", { code: a.coupon.code }) : i18n.t("toast.couponCreated", { code: a.coupon.code }));
+    }
+
+    case "DELETE_COUPON": {
+      if (!can(state.user?.role, "manage_settings")) return withToast(state, "error", "Admin required to manage coupons");
+      const coupons = state.coupons.filter((c) => c.id !== a.id);
+      return withToast(withAudit({ ...state, coupons }, "settings", `Coupon ${a.id} deleted`), "success", i18n.t("toast.couponDeleted"));
+    }
+
     case "RECALL_HELD": {
       const h = state.held.find((x) => x.id === a.id);
       if (!h) return state;
@@ -873,7 +892,7 @@ export function reducer(state: State, a: Action): State {
 
     case "COMPLETE_SALE": {
       if (state.cart.length === 0) return state;
-      const t = cartTotals(state, a.discountPct, a.taxExempt);
+      const t = cartTotals(state, a.discountPct, a.taxExempt, a.couponDiscount ?? 0);
       const customer = state.customers.find((c) => c.id === state.saleCustomerId) ?? null;
       /* DEA controlled substances — require an identified customer and an ID check */
       const controlledLines = t.lines.filter((l) => state.products.find((p) => p.id === l.productId)?.controlled);
@@ -940,7 +959,7 @@ export function reducer(state: State, a: Action): State {
       const tx: Transaction = {
         id: `T-${Date.now().toString(36).toUpperCase().slice(-6)}`,
         at: Date.now(), lines: t.lines,
-        subtotal: t.subtotal, discount: t.discount, tax: t.tax, total: t.total,
+        subtotal: t.subtotal, discount: t.discount, couponDiscount: t.coupon > 0 ? t.coupon : undefined, tax: t.tax, total: t.total,
         method: primary.method, cashier: state.user?.name ?? CASHIER,
         taxExempt: a.taxExempt || undefined,
         payments: a.payments.length > 1 ? a.payments : undefined,
@@ -1555,6 +1574,7 @@ export function reducer(state: State, a: Action): State {
         storeCredits: a.data.storeCredits,
         interactionPairs: a.data.interactionPairs ?? [],
         coldChainLog: a.data.coldChainLog ?? [],
+        coupons: a.data.coupons ?? [],
       };
     }
 
@@ -1671,6 +1691,7 @@ const backendDataFromState = (state: State): BackendData => ({
   snapshots: listSnapshots(),
   interactionPairs: state.interactionPairs ?? [],
   coldChainLog: state.coldChainLog ?? [],
+  coupons: state.coupons ?? [],
 });
 
 export function PosProvider({ children }: { children: ReactNode }) {

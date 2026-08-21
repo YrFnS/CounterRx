@@ -25,6 +25,7 @@ import type {
   Transaction,
   Transfer,
   WebOrder,
+  Coupon,
 } from "../data";
 
 /** The persisted part of the reducer state. UI/session-only state stays local. */
@@ -53,6 +54,7 @@ export interface BackendData {
   snapshots: Snapshot[];
   interactionPairs: InteractionPair[];
   coldChainLog: ColdChainLog[];
+  coupons: Coupon[];
 }
 
 type Row = Record<string, unknown>;
@@ -60,7 +62,7 @@ const TABLES = [
   "products", "transactions", "prescriptions", "prescribers", "customers", "transfers",
   "backorders", "rx_transfers", "suppliers", "purchase_orders", "ap_invoices", "expenses",
   "deliveries", "web_orders", "time_entries", "staff", "settings", "restricted_log",
-  "audit_log", "shifts", "store_credits", "snapshots", "interaction_pairs", "cold_chain_log",
+  "audit_log", "shifts", "store_credits", "snapshots", "interaction_pairs", "cold_chain_log", "coupons"
 ] as const;
 
 type TableName = (typeof TABLES)[number];
@@ -307,6 +309,20 @@ function coldChainLogFrom(row: Row): ColdChainLog {
   };
 }
 
+function couponFrom(row: Row): Coupon {
+  return {
+    id: text(row, "id"),
+    code: text(row, "code"),
+    type: text(row, "type", "percent") as "percent" | "amount",
+    value: numberValue(row, "value"),
+    expiresAt: optionalNumber(row, "expires_at"),
+    customerId: optionalText(row, "customer_id"),
+    active: booleanValue(row, "active", true),
+    createdAt: rowEpoch(row, "created_at"),
+    updatedAt: rowEpoch(row, "updated_at"),
+  };
+}
+
 function rowsFor(data: BackendData): Record<TableName, Row[]> {
   return {
     products: data.products.map((p) => ({
@@ -354,6 +370,7 @@ function rowsFor(data: BackendData): Record<TableName, Row[]> {
     snapshots: data.snapshots.map((s) => ({ id: s.meta.id, at: s.meta.at, label: s.meta.label, auto: s.meta.auto, data: s.data })),
     interaction_pairs: data.interactionPairs.map((i) => ({ a: i.a, b: i.b, severity: i.severity, effect: i.effect, action: i.action })),
     cold_chain_log: data.coldChainLog.map((c) => ({ id: c.id, product_id: c.productId, temp_c: c.tempC, in_range: c.inRange, staff: nullable(c.staff), note: nullable(c.note), created_at: timestamp(c.at) })),
+    coupons: data.coupons.map((c) => ({ id: c.id, code: c.code, type: c.type, value: c.value, expires_at: nullable(c.expiresAt), customer_id: nullable(c.customerId), active: c.active, created_at: timestamp(c.createdAt), updated_at: timestamp(c.updatedAt) })),
   };
 }
 
@@ -398,6 +415,7 @@ export async function loadBackendData(seed: BackendData): Promise<LoadResult> {
         staff: byTable.staff.map(staffFrom), settings: settingsFrom(byTable.settings[0], seed.settings), restrictedLog: byTable.restricted_log.map(restrictedFrom),
         audit: byTable.audit_log.map(auditFrom), shifts: byTable.shifts.map(shiftFrom), storeCredits: byTable.store_credits.map(storeCreditFrom), snapshots: byTable.snapshots.map(snapshotFrom),
         interactionPairs: byTable.interaction_pairs.map(interactionPairFrom), coldChainLog: byTable.cold_chain_log.map(coldChainLogFrom),
+        coupons: byTable.coupons.map(couponFrom),
       },
     };
   } catch (error) {

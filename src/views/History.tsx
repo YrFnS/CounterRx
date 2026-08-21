@@ -431,6 +431,7 @@ const KIND_META: Record<AuditKind, { label: string; dot: string }> = {
   cash: { label: "Cash", dot: "#c2952e" },
   void: { label: "Void", dot: "#c24a5e" },
   report: { label: "Report", dot: "#3c7dc2" },
+  settings: { label: "Settings", dot: "#6b7f8c" },
 };
 
 /* Behind-the-counter purchase log — mandatory ID-capture record (§3) */
