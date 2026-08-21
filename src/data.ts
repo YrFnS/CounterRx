@@ -472,12 +472,31 @@ export const INTERACTIONS: InteractionPair[] = [
   { a: "cipro500", b: "alpr05", severity: "moderate", effect: "CYP3A4 inhibition raises alprazolam levels → excess sedation.", action: "Reduce alprazolam dose; monitor sedation." },
   { a: "cet10", b: "alpr05", severity: "moderate", effect: "Antihistamine + benzodiazepine → additive sedation.", action: "Counsel against driving; avoid alcohol." },
   { a: "azi250", b: "atv20", severity: "moderate", effect: "Macrolide raises statin exposure → myopathy risk.", action: "Watch for muscle pain; consider holding statin during course." },
+  { a: "alpr05", b: "zolp5", severity: "major", effect: "Benzodiazepine + non-benzodiazepine hypnotic → severe additive CNS depression.", action: "Avoid concurrent use; if unavoidable use lowest doses and warn on sedation driving risk." },
+  { a: "atv20", b: "amx500", severity: "moderate", effect: "Macrolide antibiotic raises statin levels via CYP3A4 inhibition.", action: "Monitor for myalgia; consider statin dose reduction during the course." },
+  { a: "cet10", b: "zolp5", severity: "moderate", effect: "Antihistamine + sedative-hypnotic → additive next-day impairment.", action: "Counsel on drowsiness; avoid operating machinery." },
+  { a: "met500", b: "insg", severity: "moderate", effect: "Metformin + insulin increases hypoglycemia risk.", action: "Check glucose before and after; adjust insulin dose down." },
+  { a: "omz20", b: "atv20", severity: "moderate", effect: "Omeprazole raises atorvastatin exposure via CYP2C19/3A4 inhibition.", action: "Monitor for statin myopathy signs." },
+  { a: "diclo50", b: "asa75", severity: "moderate", effect: "NSAID + aspirin → additive GI ulceration and bleeding risk.", action: "Add gastroprotection if co-prescribed long-term." },
+  { a: "cfsyrup", b: "alpr05", severity: "moderate", effect: "Antitussive + benzodiazepine → additive sedation.", action: "Counsel on sedation and fall risk in elderly." },
+  { a: "met500", b: "atv20", severity: "moderate", effect: "Metformin + statin — monitor for combined lactic acidosis risk in renal impairment.", action: "Check renal function before co-train." },
+  { a: "zolp5", b: "cet10", severity: "moderate", effect: "Sedative-hypnotic + antihistamine → prolonged psychomotor impairment.", action: "Counsel on next-day drowsiness; avoid alcohol." },
 ];
 
-/** All interactions present among a set of product ids. */
+/** All interactions present among a set of product ids. Consults the runtime
+ *  override (populated from the interaction_pairs table via sync) first, falling
+ *  back to INTERACTIONS for offline mode. */
+let _runtimeInteractions: InteractionPair[] | null = null;
+
+/** Called by sync.ts after loading the interaction_pairs table. */
+export function setRuntimeInteractions(rows: InteractionPair[]): void {
+  _runtimeInteractions = rows.length > 0 ? rows : null;
+}
+
 export function findInteractions(ids: string[]): InteractionPair[] {
+  const source = _runtimeInteractions ?? INTERACTIONS;
   const set = new Set(ids);
-  return INTERACTIONS.filter((i) => set.has(i.a) && set.has(i.b));
+  return source.filter((i) => set.has(i.a) && set.has(i.b));
 }
 
 /* Compact synchronous SHA-256 (FIPS 180-4) — keeps PIN verification off async paths */
@@ -716,6 +735,8 @@ export function makeProducts(now: number): Product[] {
     { ...p("codsyr", "Codeine Cough Syrup", "Codeine phosphate 10mg/5ml", "Cheratussin AC", "coldflu", "Syrup · 118ml", 8.9, 4.6, 28, 10, true, "COD-25B09", 190, "Apex Distributors"), controlled: "C-V" as Schedule },
     { ...p("alpr05", "Alprazolam 0.5mg", "Alprazolam", "Xanax", "cns", "Tablet · strip of 15", 9.4, 4.2, 34, 12, true, "ALP-25D06", 300, "MediSource Ltd"), controlled: "C-IV" as Schedule },
     { ...p("zolp5", "Zolpidem 5mg", "Zolpidem tartrate", "Ambien", "cns", "Tablet · strip of 10", 11.6, 5.9, 18, 8, true, "ZOL-25A11", 240, "PharmaLine Co"), controlled: "C-IV" as Schedule },
+    { ...p("oxy30", "Oxycodone 30mg", "Oxycodone HCl", "Roxicodone", "cns", "Tablet · strip of 10", 18.5, 12.8, 24, 12, true, "OXY-25G22", 480, "MediSource Ltd"), controlled: "C-II" as Schedule },
+    { ...p("mor15", "Morphine 15mg", "Morphine sulfate", "MS Contin", "cns", "Tablet · strip of 10", 15.9, 11.0, 16, 10, true, "MOR-25F08", 360, "MediSource Ltd"), controlled: "C-II" as Schedule },
     /* restricted OTC — behind-the-counter, ID + log required, quantity-limited (§3) */
     { ...p("sud30", "Pseudoephedrine 30mg", "Pseudoephedrine HCl", "Sudafed", "coldflu", "Tablet · strip of 12", 6.8, 3.1, 40, 12, false, "SUD-25B14", 320, "Apex Distributors"), restricted: { limitPerSale: 2 } },
     /* generic equivalents (§3 DAW substitution) — linked to their brand SKU */
@@ -802,6 +823,11 @@ export function makePrescriptions(now: number): Prescription[] {
     /* maintenance fills from earlier this month — feed the refill radar */
     { id: "RX-2441", patient: "Helen Okafor", age: 67, productId: "atv20", qty: 2, prescriberId: "DR-02", status: "dispensed", createdAt: now - 29 * d, dispensedAt: now - 29 * d, daysSupply: 30, refillsAuthorized: 5, refillsRemaining: 1, rxExpiry: iso(now + 150 * d), note: "Monthly maintenance — auto-refill allowed", insurance: { plan: "BlueCross PBM", memberId: "XCB-4471-02", status: "verified" }, pa: { status: "approved", requestedAt: now - 40 * d, decidedAt: now - 38 * d, note: "Approved 12 months — step therapy documented" } },
     { id: "RX-2436", patient: "Victor Adeyemi", age: 58, productId: "met500", qty: 4, prescriberId: "DR-03", status: "dispensed", createdAt: now - 33 * d, dispensedAt: now - 33 * d, daysSupply: 30, refillsAuthorized: 3, refillsRemaining: 0, rxExpiry: iso(now + 60 * d), insurance: { plan: "MediPlan Rx", memberId: "MPX-2210-44", status: "verified" } },
+    /* clinical edge cases for dispense guards (§3/§5) */
+    { id: "RX-2431", patient: "Helen Okafor", age: 67, productId: "alpr05", qty: 1, prescriberId: "DR-05", status: "ready", createdAt: now - 2 * h, daysSupply: 30, refillsAuthorized: 2, refillsRemaining: 0, rxExpiry: iso(now + 120 * d), note: "PRN anxiety — no refills left" },
+    { id: "RX-2429", patient: "Marta Kessler", age: 34, productId: "amx500", qty: 1, prescriberId: "DR-01", status: "ready", createdAt: now - 3 * d, daysSupply: 7, refillsAuthorized: 1, refillsRemaining: 1, rxExpiry: iso(now - 5 * d), note: "Expired — do not dispense" },
+    { id: "RX-2428", patient: "Priya Nair", age: 45, productId: "met500", qty: 4, prescriberId: "DR-03", status: "ready", createdAt: now - 1 * d, daysSupply: 30, refillsAuthorized: 3, refillsRemaining: 1, rxExpiry: iso(now + 200 * d), note: "Maintenance — refill too soon, last dispense 1 day ago" },
+    { id: "RX-2427", patient: "Grace Lin", age: 52, productId: "insg", qty: 1, prescriberId: "DR-03", status: "ready", createdAt: now - 6 * h, daysSupply: 28, refillsAuthorized: 3, refillsRemaining: 2, rxExpiry: iso(now + 90 * d), dispensedAt: now - 6 * h, note: "Duplicate therapy — same class as RX-2477 insg" },
   ];
 }
 

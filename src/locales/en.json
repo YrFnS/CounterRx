@@ -394,7 +394,9 @@
     "hwReq2": "An ESC/POS thermal receipt printer on a USB-serial port",
     "hwReq3": "A cash drawer wired to the printer's DK port (optional)",
     "hwOk": "{{op}} succeeded",
-    "hwDisabled": "Hardware is disabled — turn on the Enable hardware switch"
+    "hwDisabled": "Hardware is disabled — turn on the Enable hardware switch",
+    "clinical": "Clinical",
+    "restrictedCatalog": "Restricted OTC catalog"
   },
   "shift": {
     "title": "Shift Management",

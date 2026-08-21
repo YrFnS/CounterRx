@@ -4,14 +4,14 @@ import type { ReactNode } from "react";
 import { usePos, listSnapshots, money } from "../store";
 import i18n from "../i18n";
 import { CURRENCIES, ROLE_LABEL, can, randomPin } from "../data";
-import type { OrgSettings, Role, Staff, Snapshot } from "../data";
+import type { OrgSettings, Role, Staff, Snapshot, Product } from "../data";
 import { cx, Modal, Badge } from "../ui";
 import {
-  IGear, IPrint, IStar, IUsers, IDownload, IUpload, IPlus, IX, ICheck, ICopy, ITrash, IRecall, IAlert, IScan, IChevD, IClockIn,
+  IGear, IPrint, IStar, IUsers, IDownload, IPlus, IX, ICheck, ITrash, IRecall, IAlert, IScan, IChevD, IClockIn, IPill,
 } from "../icons";
 import { connectPrinter, printLabel, kickDrawer, HardwareError } from "../lib/hardware";
 
-type Tab = "profile" | "receipt" | "loyalty" | "team" | "clock" | "hardware" | "data" | "language";
+type Tab = "profile" | "receipt" | "loyalty" | "team" | "clock" | "hardware" | "data" | "language" | "clinical";
 
 export default function Settings() {
   const { t } = useTranslation();
@@ -29,6 +29,7 @@ export default function Settings() {
     { id: "hardware", label: t("settings.hardware"), icon: <IPrint size={14} /> },
     { id: "data", label: t("settings.dataBackups"), icon: <IDownload size={14} /> },
     { id: "language", label: t("settings.language"), icon: <IX size={14} /> },
+    { id: "clinical", label: t("settings.clinical"), icon: <IPill size={14} /> },
   ];
 
   return (
@@ -43,6 +44,7 @@ export default function Settings() {
       <div className="flex items-center gap-1.5 flex-wrap">
         {TABS.map((t) => {
           if (t.id === "team" && !teamAdmin) return null;
+          if (t.id === "clinical" && !admin) return null;
           const active = tab === t.id;
           return (
             <button key={t.id} onClick={() => setTab(t.id)}
@@ -63,6 +65,7 @@ export default function Settings() {
         {tab === "hardware" && <HardwareTab admin={admin} />}
         {tab === "data" && <DataTab />}
         {tab === "language" && <LanguageTab />}
+        {tab === "clinical" && <ClinicalTab admin={admin} />}
       </div>
     </div>
   );
@@ -631,6 +634,73 @@ function TimeTab() {
             </div>
           ))}
         </div>
+      </div>
+    </div>
+  );
+}
+
+/* ---------------------------------- clinical ---------------------------------- */
+function ClinicalTab({ admin }: { admin: boolean }) {
+  const { t } = useTranslation();
+  const { state, dispatch } = usePos();
+
+  /* restricted OTC products — behind-the-counter, ID-captured at sale (§3) */
+  const restricted = useMemo(() => state.products.filter((p) => p.restricted), [state.products]);
+  const toggleRestricted = (p: Product) => {
+    if (!admin) return;
+    const next = p.restricted ? undefined : { limitPerSale: 2 };
+    dispatch({ type: "TOGGLE_RESTRICTED", productId: p.id, restricted: next });
+  };
+
+  return (
+    <div className="space-y-4 max-w-[980px]">
+      <div className="flex items-center justify-between">
+        <h3 className="font-display font-bold text-ink text-[15px] flex items-center gap-2">
+          <IPill size={16} className="text-pine-700" /> {t("settings.restrictedCatalog")}
+        </h3>
+        <p className="text-[11px] text-inksoft">{restricted.length} restricted OTC product{restricted.length === 1 ? "" : "s"}</p>
+      </div>
+
+      <div className="rounded-xl border border-mist bg-card shadow-lift overflow-auto scroll-slim">
+        <table className="w-full text-sm border-collapse min-w-[720px]">
+          <thead className="sticky top-0 z-10">
+            <tr className="bg-pine-900 text-pine-100 text-start text-[10px] uppercase tracking-[0.14em]">
+              <th className="px-4 py-2.5 font-bold">Product</th>
+              <th className="px-3 py-2.5 font-bold">Category</th>
+              <th className="px-3 py-2.5 font-bold">Limit / sale</th>
+              <th className="px-3 py-2.5 font-bold text-center">Restricted OTC</th>
+            </tr>
+          </thead>
+          <tbody>
+            {restricted.map((p) => (
+              <tr key={p.id} className="border-t border-mist/70">
+                <td className="px-4 py-2.5">
+                  <p className="font-bold text-ink">{p.name}</p>
+                  <p className="text-[10px] text-inksoft num">{p.id} · {p.sku}</p>
+                </td>
+                <td className="px-3 py-2.5 text-xs text-inksoft">{p.category}</td>
+                <td className="px-3 py-2.5 text-xs num">{p.restricted?.limitPerSale ?? "—"}</td>
+                <td className="px-3 py-2.5 text-center">
+                  <label className="relative inline-block w-10 h-5">
+                    <input type="checkbox" checked={Boolean(p.restricted)} onChange={() => toggleRestricted(p)} disabled={!admin}
+                      className="opacity-0 w-0 h-0" />
+                    <span className={cx("absolute inset-0 rounded-full transition", p.restricted ? "bg-pine-600" : "bg-mist", !admin && "cursor-not-allowed opacity-60")} />
+                    <span className={cx("absolute top-0.5 w-4 h-4 rounded-full bg-white shadow transition-all duration-200", p.restricted ? "start-[18px]" : "start-0.5")} />
+                  </label>
+                </td>
+              </tr>
+            ))}
+            {restricted.length === 0 && <tr><td colSpan={4} className="px-4 py-12 text-center text-inksoft">No restricted OTC products in the catalog.</td></tr>}
+          </tbody>
+        </table>
+      </div>
+
+      <div className="rounded-lg border border-honey-300/60 bg-honey-100/40 px-3 py-2.5 flex items-start gap-2 anim-fade-up">
+        <IAlert size={14} className="text-honey-700 shrink-0 mt-px" />
+        <p className="text-[10px] text-honey-700 leading-relaxed">
+          Restricted OTC products require ID capture and a mandatory log entry at the till.
+          The Register (Phase A) enforces the limitPerSale cap and writes to restricted_log.
+        </p>
       </div>
     </div>
   );

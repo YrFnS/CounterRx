@@ -8,6 +8,7 @@ import type {
   Delivery,
   Expense,
   OrgSettings,
+  InteractionPair,
   Prescriber,
   Prescription,
   Product,
@@ -49,6 +50,7 @@ export interface BackendData {
   shifts: Shift[];
   storeCredits: StoreCredit[];
   snapshots: Snapshot[];
+  interactionPairs: InteractionPair[];
 }
 
 type Row = Record<string, unknown>;
@@ -56,7 +58,7 @@ const TABLES = [
   "products", "transactions", "prescriptions", "prescribers", "customers", "transfers",
   "backorders", "rx_transfers", "suppliers", "purchase_orders", "ap_invoices", "expenses",
   "deliveries", "web_orders", "time_entries", "staff", "settings", "restricted_log",
-  "audit_log", "shifts", "store_credits", "snapshots",
+  "audit_log", "shifts", "store_credits", "snapshots", "interaction_pairs",
 ] as const;
 
 type TableName = (typeof TABLES)[number];
@@ -135,6 +137,14 @@ function prescriptionFrom(row: Row): Prescription {
     pa: jsonValue(row, "pa", undefined), notifiedAt: optionalNumber(row, "notified_at"), dispensedAt: optionalNumber(row, "dispensed_at"),
     remindedAt: optionalNumber(row, "reminded_at"), scan: optionalText(row, "scan"), scanAt: optionalNumber(row, "scan_at"),
     transferredOut: jsonValue(row, "transferred_out", undefined),
+  };
+}
+
+function interactionPairFrom(row: Row): InteractionPair {
+  return {
+    a: text(row, "a"), b: text(row, "b"),
+    severity: (text(row, "severity", "moderate") as InteractionPair["severity"]) || "moderate",
+    effect: text(row, "effect"), action: text(row, "action"),
   };
 }
 
@@ -332,6 +342,7 @@ function rowsFor(data: BackendData): Record<TableName, Row[]> {
     shifts: data.shifts.map((s) => ({ id: s.id, terminal_id: s.terminalId, cashier_id: nullable(s.cashierId), cashier_name: s.cashierName, opened_at: s.openedAt, closed_at: nullable(s.closedAt), status: s.status, opening_balance: s.openingBalance, closing_balance: nullable(s.closingBalance), counted_cash: nullable(s.countedCash), transactions: s.transactions, cash_movements: s.cashMovements, sales_total: s.salesTotal, refunds_total: s.refundsTotal, card_total: s.cardTotal, insurance_total: s.insuranceTotal, store_credit_total: s.storeCreditTotal, paid_in_total: s.paidInTotal, paid_out_total: s.paidOutTotal, expected_cash: s.expectedCash, over_short: nullable(s.overShort), notes: nullable(s.notes) })),
     store_credits: data.storeCredits.map((c) => ({ id: c.id, customer_id: nullable(c.customerId), balance: c.balance, issued_at: c.issuedAt, expires_at: nullable(c.expiresAt), code: nullable(c.code), note: nullable(c.note) })),
     snapshots: data.snapshots.map((s) => ({ id: s.meta.id, at: s.meta.at, label: s.meta.label, auto: s.meta.auto, data: s.data })),
+    interaction_pairs: data.interactionPairs.map((i) => ({ a: i.a, b: i.b, severity: i.severity, effect: i.effect, action: i.action })),
   };
 }
 
@@ -375,6 +386,7 @@ export async function loadBackendData(seed: BackendData): Promise<LoadResult> {
         timeEntries: byTable.time_entries.map((row) => ({ id: numberValue(row, "id"), staffId: text(row, "staff_id"), inAt: rowEpoch(row, "in_at"), outAt: optionalNumber(row, "out_at") })),
         staff: byTable.staff.map(staffFrom), settings: settingsFrom(byTable.settings[0], seed.settings), restrictedLog: byTable.restricted_log.map(restrictedFrom),
         audit: byTable.audit_log.map(auditFrom), shifts: byTable.shifts.map(shiftFrom), storeCredits: byTable.store_credits.map(storeCreditFrom), snapshots: byTable.snapshots.map(snapshotFrom),
+        interactionPairs: byTable.interaction_pairs.map(interactionPairFrom),
       },
     };
   } catch (error) {

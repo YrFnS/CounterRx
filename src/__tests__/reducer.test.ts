@@ -62,7 +62,8 @@ describe("reducer - HYDRATE_BACKEND", () => {
       audit: [],
       shifts: [],
       storeCredits: [],
-      snapshots: []
+      snapshots: [],
+      interactionPairs: [],
     };
 
     const action: Action = { type: "HYDRATE_BACKEND", data: backendData };
@@ -105,7 +106,8 @@ describe("reducer - HYDRATE_BACKEND", () => {
       audit: [],
       shifts: [],
       storeCredits: [],
-      snapshots: []
+      snapshots: [],
+      interactionPairs: [],
     };
 
     const action: Action = { type: "HYDRATE_BACKEND", data: backendData };
@@ -143,7 +145,8 @@ describe("reducer - HYDRATE_BACKEND", () => {
       audit: [],
       shifts: [],
       storeCredits: [],
-      snapshots: []
+      snapshots: [],
+      interactionPairs: [],
     };
 
     const action: Action = { type: "HYDRATE_BACKEND", data: backendData };

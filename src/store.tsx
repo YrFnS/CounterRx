@@ -16,10 +16,12 @@ import type {
   Supplier, PurchaseOrder, ApInvoice, ApPayMethod, Expense,
   Delivery, DeliveryStatus, WebOrder, WebOrderStatus, TimeEntry,
   Shift, XReport, ZReport, CashMovement, ShiftTransaction, TxType, TenderType, StoreCredit,
+  InteractionPair,
 } from "./data";
 import { makeStaff, makeSettings, makeBackOrders, makeRxTransfers, SNAPS_KEY, hashPin, ROLE_LABEL } from "./data";
 import type { BackendData, LoadResult } from "./lib/sync";
 import { loadBackendData, persistBackendData, signOutStaff, subscribeToBackend } from "./lib/sync";
+import { setRuntimeInteractions } from "./lib/clinical";
 import i18n from "./i18n";
 
 export type View = "register" | "dashboard" | "customers" | "inventory" | "finance" | "reports" | "prescriptions" | "deliveries" | "history" | "settings";
@@ -53,6 +55,7 @@ interface State {
   webOrders: WebOrder[];
   timeEntries: TimeEntry[];
   shifts: Shift[];
+  interactionPairs: InteractionPair[];
   currentShift: Shift | null;
   cart: { productId: string; qty: number; note?: string; priceOverride?: number; daw?: number; substitutedFrom?: string; uom?: string }[];
   held: HeldSale[];
@@ -80,6 +83,7 @@ type Action =
   | { type: "SET_STAFF_PIN"; id: string; pin: string }
   | { type: "ADD_PRESCRIBER"; prescriber: Omit<Prescriber, "id"> }
   | { type: "FLAG_RECALL"; productId: string; batch: string; flagged: boolean }
+  | { type: "TOGGLE_RESTRICTED"; productId: string; restricted: { limitPerSale: number } | undefined }
   | { type: "UPDATE_SETTINGS"; patch: Partial<Omit<OrgSettings, "loyalty">> & { loyalty?: Partial<OrgSettings["loyalty"]> } }
   | { type: "SNAPSHOT_SAVE"; label: string; auto: boolean }
   | { type: "SNAPSHOT_DELETE"; id: string }
@@ -169,7 +173,7 @@ let toastSeq = 1;
 let heldSeq = 1;
 let auditSeq = 100;
 
-export const seed = (): Pick<State, "products" | "transactions" | "prescriptions" | "prescribers" | "customers" | "audit" | "transfers" | "backorders" | "rxTransfers" | "suppliers" | "purchaseOrders" | "apInvoices" | "expenses" | "deliveries" | "webOrders" | "timeEntries" | "staff" | "settings" | "shifts" | "storeCredits"> => {
+export const seed = (): Pick<State, "products" | "transactions" | "prescriptions" | "prescribers" | "customers" | "audit" | "transfers" | "backorders" | "rxTransfers" | "suppliers" | "purchaseOrders" | "apInvoices" | "expenses" | "deliveries" | "webOrders" | "timeEntries" | "staff" | "settings" | "shifts" | "storeCredits" | "interactionPairs"> => {
   const now = Date.now();
   const products = makeProducts(now);
   const customers = makeCustomers(now);
@@ -191,6 +195,7 @@ export const seed = (): Pick<State, "products" | "transactions" | "prescriptions
     webOrders: makeWebOrders(now),
     timeEntries: makeTimeEntries(now),
     shifts: [],
+    interactionPairs: [],
     staff: makeStaff(now),
     settings: makeSettings(),
     storeCredits: [],
@@ -234,6 +239,7 @@ function load(): State {
           audit: saved.audit ?? [],
           shifts: saved.shifts ?? [],
           storeCredits: saved.storeCredits ?? [],
+          interactionPairs: saved.interactionPairs ?? [],
         };
       }
     }
@@ -411,6 +417,13 @@ export function reducer(state: State, a: Action): State {
           : `Recall flag cleared on lot ${a.batch} of ${p.name}`);
       return withToast(next, a.flagged ? "warn" : "success",
         a.flagged ? `Lot ${a.batch} flagged for recall — trace affected patients` : `Recall flag cleared on ${a.batch}`);
+    }
+
+    case "TOGGLE_RESTRICTED": {
+      const products = state.products.map((p) => p.id === a.productId ? { ...p, restricted: a.restricted } : p);
+      return withAudit({ ...state, products }, "system",
+        a.restricted ? `Restricted OTC flag set on ${state.products.find((p) => p.id === a.productId)?.name ?? a.productId} (limit ${a.restricted.limitPerSale}/sale)`
+          : `Restricted OTC flag cleared`);
     }
 
     case "UPDATE_SETTINGS": {
@@ -1402,6 +1415,8 @@ export function reducer(state: State, a: Action): State {
       const hydratedUser = state.user
         ? a.data.staff.find((staff) => staff.id === state.user?.id && staff.active) ?? state.user
         : null;
+      /* push runtime interaction pairs to the clinical module so findInteractionsAtRuntime uses them */
+      setRuntimeInteractions(a.data.interactionPairs ?? []);
       return {
         ...state,
         user: hydratedUser,
@@ -1427,6 +1442,7 @@ export function reducer(state: State, a: Action): State {
         audit: a.data.audit,
         shifts: a.data.shifts,
         storeCredits: a.data.storeCredits,
+        interactionPairs: a.data.interactionPairs ?? [],
       };
     }
 
@@ -1541,6 +1557,7 @@ const backendDataFromState = (state: State): BackendData => ({
   shifts: state.shifts,
   storeCredits: state.storeCredits,
   snapshots: listSnapshots(),
+  interactionPairs: state.interactionPairs ?? [],
 });
 
 export function PosProvider({ children }: { children: ReactNode }) {
