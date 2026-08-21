@@ -18,7 +18,7 @@ import type {
   Shift, XReport, ZReport, CashMovement, ShiftTransaction, TxType, TenderType,
 } from "./data";
 import { makeStaff, makeSettings, makeBackOrders, makeRxTransfers, SNAPS_KEY, hashPin, ROLE_LABEL } from "./data";
-import type { BackendData } from "./lib/sync";
+import type { BackendData, LoadResult } from "./lib/sync";
 import { loadBackendData, persistBackendData, signOutStaff, subscribeToBackend } from "./lib/sync";
 
 export type View = "register" | "dashboard" | "customers" | "inventory" | "finance" | "reports" | "prescriptions" | "deliveries" | "history" | "settings";
@@ -30,6 +30,8 @@ interface State {
   user: Staff | null;
   /** True only after the current PIN was accepted by Supabase; false keeps the local fallback offline-safe. */
   backendAuthenticated: boolean;
+  /** Backend is unavailable; UI should show offline banner and never present seed as live-synced. */
+  backendOffline: boolean;
   staff: Staff[];
   settings: OrgSettings;
   lockouts: Record<string, { fails: number; until: number }>;
@@ -155,13 +157,14 @@ type Action =
   | { type: "GENERATE_X_REPORT"; shiftId: string }
   | { type: "GENERATE_Z_REPORT"; shiftId: string }
   | { type: "RESET" }
-  | { type: "HYDRATE_BACKEND"; data: BackendData };
+  | { type: "HYDRATE_BACKEND"; data: BackendData }
+  | { type: "BACKEND_OFFLINE" };
 
 let toastSeq = 1;
 let heldSeq = 1;
 let auditSeq = 100;
 
-const seed = (): Pick<State, "products" | "transactions" | "prescriptions" | "prescribers" | "customers" | "audit" | "transfers" | "backorders" | "rxTransfers" | "suppliers" | "purchaseOrders" | "apInvoices" | "expenses" | "deliveries" | "webOrders" | "timeEntries" | "staff" | "settings" | "shifts"> => {
+export const seed = (): Pick<State, "products" | "transactions" | "prescriptions" | "prescribers" | "customers" | "audit" | "transfers" | "backorders" | "rxTransfers" | "suppliers" | "purchaseOrders" | "apInvoices" | "expenses" | "deliveries" | "webOrders" | "timeEntries" | "staff" | "settings" | "shifts"> => {
   const now = Date.now();
   const products = makeProducts(now);
   const customers = makeCustomers(now);
@@ -193,7 +196,7 @@ const LS_KEY = "counterrx:v10";
 
 function load(): State {
   const base: State = {
-    ...seed(), user: null, backendAuthenticated: false, lockouts: {}, restrictedLog: [], online: typeof navigator === "undefined" ? true : navigator.onLine,
+    ...seed(), user: null, backendAuthenticated: false, backendOffline: false, lockouts: {}, restrictedLog: [], online: typeof navigator === "undefined" ? true : navigator.onLine,
     cart: [], held: [], saleCustomerId: null, redeemPoints: 0, currentShift: null,
     view: "register", invPreset: "all",
     payOpen: false, receipt: null, toasts: [], flashId: null, flashKey: 0, snapshotVersion: 0,
@@ -309,7 +312,7 @@ function writeSnapshots(snaps: Snapshot[]) {
 const LOCK_AFTER = 5;          // failed attempts before lockout
 const LOCK_MS = 60_000;        // 60s lockout window
 
-function reducer(state: State, a: Action): State {
+export function reducer(state: State, a: Action): State {
   switch (a.type) {
     case "LOGIN": {
       const s = state.staff.find((x) => x.id === a.staffId);
@@ -1357,6 +1360,7 @@ function reducer(state: State, a: Action): State {
       return {
         ...state,
         user: hydratedUser,
+        backendOffline: false,
         products: a.data.products,
         transactions: a.data.transactions,
         prescriptions: a.data.prescriptions,
@@ -1379,6 +1383,9 @@ function reducer(state: State, a: Action): State {
         shifts: a.data.shifts,
       };
     }
+
+    case "BACKEND_OFFLINE":
+      return { ...state, backendOffline: true };
 
     case "SHIFT_OPEN": {
       if (!state.user) return state;
@@ -1517,13 +1524,19 @@ export function PosProvider({ children }: { children: ReactNode }) {
     let active = true;
     hydrationInFlightRef.current = true;
     const hydrate = async () => {
-      const data = await loadBackendData(backendDataFromState(stateRef.current));
+      const result = await loadBackendData(backendDataFromState(stateRef.current));
       if (!active) return;
-      if (data.snapshots.length > 0) writeSnapshots(data.snapshots);
-      skipPersistRef.current = true;
-      hydratedRef.current = true;
-      hydrationInFlightRef.current = false;
-      dispatch({ type: "HYDRATE_BACKEND", data });
+      if (result.ok) {
+        if (result.data.snapshots.length > 0) writeSnapshots(result.data.snapshots);
+        skipPersistRef.current = true;
+        hydratedRef.current = true;
+        hydrationInFlightRef.current = false;
+        dispatch({ type: "HYDRATE_BACKEND", data: result.data });
+      } else {
+        // Failed load or empty tenant
+        hydrationInFlightRef.current = false;
+        dispatch({ type: "BACKEND_OFFLINE" });
+      }
     };
     void hydrate();
     return () => { active = false; };
@@ -1538,10 +1551,14 @@ export function PosProvider({ children }: { children: ReactNode }) {
         return;
       }
       const run = async () => {
-        const data = await loadBackendData(backendDataFromState(stateRef.current));
-        if (data.snapshots.length > 0) writeSnapshots(data.snapshots);
-        skipPersistRef.current = true;
-        dispatch({ type: "HYDRATE_BACKEND", data });
+        const result = await loadBackendData(backendDataFromState(stateRef.current));
+        if (result.ok) {
+          if (result.data.snapshots.length > 0) writeSnapshots(result.data.snapshots);
+          skipPersistRef.current = true;
+          dispatch({ type: "HYDRATE_BACKEND", data: result.data });
+        } else {
+          dispatch({ type: "BACKEND_OFFLINE" });
+        }
       };
       const pending = run().finally(() => {
         realtimeReloadRef.current = null;

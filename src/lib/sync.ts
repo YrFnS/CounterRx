@@ -333,34 +333,42 @@ async function readTable(client: SupabaseClient, table: TableName): Promise<{ ta
   }
 }
 
-/** Load all backend collections; any failed read leaves the caller's seed untouched. */
-export async function loadBackendData(seed: BackendData): Promise<BackendData> {
-  if (!isSupabaseConfigured) return seed;
+/** Result type for loadBackendData: distinguishes real backend data from seed fallback. */
+export type LoadResult =
+  | { ok: true; data: BackendData }
+  | { ok: false; failedTable: string | null }; // null = empty tenant, otherwise the table that failed
+
+/** Load all backend collections; returns explicit success/failure signal. */
+export async function loadBackendData(seed: BackendData): Promise<LoadResult> {
+  if (!isSupabaseConfigured) return { ok: false, failedTable: null };
   const results = await Promise.all(TABLES.map((table) => readTable(supabase, table)));
   const failed = results.find((result) => result.error);
   if (failed) {
     warn(`load ${failed.table}`, failed.error);
-    return seed;
+    return { ok: false, failedTable: failed.table };
   }
   const byTable = Object.fromEntries(results.map((result) => [result.table, result.rows])) as Record<TableName, Row[]>;
   if (byTable.products.length === 0 && byTable.customers.length === 0 && byTable.staff.length === 0) {
-    void persistBackendData(seed);
-    return seed;
+    // Empty tenant is a real state — do NOT auto-write demo seed.
+    return { ok: false, failedTable: null };
   }
   try {
     return {
-      products: byTable.products.map(productFrom), transactions: byTable.transactions.map(transactionFrom), prescriptions: byTable.prescriptions.map(prescriptionFrom),
-      prescribers: byTable.prescribers.map(prescriberFrom), customers: byTable.customers.map(customerFrom), transfers: byTable.transfers.map(transferFrom),
-      backorders: byTable.backorders.map(backorderFrom), rxTransfers: byTable.rx_transfers.map(rxTransferFrom), suppliers: byTable.suppliers.map(supplierFrom),
-      purchaseOrders: byTable.purchase_orders.map(purchaseOrderFrom), apInvoices: byTable.ap_invoices.map(apInvoiceFrom), expenses: byTable.expenses.map(expenseFrom),
-      deliveries: byTable.deliveries.map(deliveryFrom), webOrders: byTable.web_orders.map(webOrderFrom),
-      timeEntries: byTable.time_entries.map((row) => ({ id: numberValue(row, "id"), staffId: text(row, "staff_id"), inAt: rowEpoch(row, "in_at"), outAt: optionalNumber(row, "out_at") })),
-      staff: byTable.staff.map(staffFrom), settings: settingsFrom(byTable.settings[0], seed.settings), restrictedLog: byTable.restricted_log.map(restrictedFrom),
-      audit: byTable.audit_log.map(auditFrom), shifts: byTable.shifts.map(shiftFrom), snapshots: byTable.snapshots.map(snapshotFrom),
+      ok: true,
+      data: {
+        products: byTable.products.map(productFrom), transactions: byTable.transactions.map(transactionFrom), prescriptions: byTable.prescriptions.map(prescriptionFrom),
+        prescribers: byTable.prescribers.map(prescriberFrom), customers: byTable.customers.map(customerFrom), transfers: byTable.transfers.map(transferFrom),
+        backorders: byTable.backorders.map(backorderFrom), rxTransfers: byTable.rx_transfers.map(rxTransferFrom), suppliers: byTable.suppliers.map(supplierFrom),
+        purchaseOrders: byTable.purchase_orders.map(purchaseOrderFrom), apInvoices: byTable.ap_invoices.map(apInvoiceFrom), expenses: byTable.expenses.map(expenseFrom),
+        deliveries: byTable.deliveries.map(deliveryFrom), webOrders: byTable.web_orders.map(webOrderFrom),
+        timeEntries: byTable.time_entries.map((row) => ({ id: numberValue(row, "id"), staffId: text(row, "staff_id"), inAt: rowEpoch(row, "in_at"), outAt: optionalNumber(row, "out_at") })),
+        staff: byTable.staff.map(staffFrom), settings: settingsFrom(byTable.settings[0], seed.settings), restrictedLog: byTable.restricted_log.map(restrictedFrom),
+        audit: byTable.audit_log.map(auditFrom), shifts: byTable.shifts.map(shiftFrom), snapshots: byTable.snapshots.map(snapshotFrom),
+      },
     };
   } catch (error) {
     warn("hydrate backend data", error);
-    return seed;
+    return { ok: false, failedTable: null };
   }
 }
 

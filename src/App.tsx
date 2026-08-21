@@ -435,6 +435,12 @@ function Shell() {
       {/* ---------- main ---------- */}
       <div className="flex-1 min-w-0 ambient flex flex-col">
         <TopBar onMenu={() => setNavOpen(true)} />
+        {state.backendOffline && (
+          <div className="flex items-center justify-center gap-2 px-3 py-1.5 bg-honey-100 border-b border-honey-300 text-honey-700 text-[11px] font-semibold shrink-0">
+            <span className="w-1.5 h-1.5 rounded-full bg-honey-600 anim-pulse-dot" />
+            Backend unavailable — showing local data
+          </div>
+        )}
         <main className="flex-1 min-h-0 min-w-0">
           {state.view === "register" && <Register />}
           {state.view === "dashboard" && <Dashboard />}
