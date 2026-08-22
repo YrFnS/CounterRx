@@ -1,0 +1,7 @@
+- generic "CounterRxT-01 · lockedWho's on the till?DWD. Whitfieldstaff since Dec 2025AdminRMR. Mensah, RPhstaff" [ref=e1] clickable [onclick]
+  - heading "CounterRx" [level=1, ref=e2]
+  - button "DW D. Whitfield staff since Dec 2025 ADMIN" [ref=e3]
+  - button "RM R. Mensah, RPh staff since Feb 2026 PHARMACIST" [ref=e4]
+  - button "AO A. Okafor staff since Apr 2026 CASHIER" [ref=e5]
+  - button "JB J. Boateng staff since Jul 2026 CASHIER" [ref=e6]
+  - button "TO T. Okoye staff since Aug 2026 SUPER ADMIN" [ref=e7]

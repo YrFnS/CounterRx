@@ -1,0 +1,647 @@
+CounterRx
+
+PHARMACY POS
+
+Register
+F1
+Dashboard
+F3
+Customers
+F7
+Inventory
+12
+F4
+Finance
+F8
+Reports
+F10
+Prescriptions
+4
+F5
+Delivery & web
+3
+Sales ledger
+F6
+Settings
+F9
+
+ON SHIFT
+
+CASHIER
+
+A. Okafor
+
+Terminal 01 · drawer synced
+
+Switch
+Backup
+Restore
+API surface
+Reset demo data
+
+v3.0 · local ledger · Branch 04
+
+Register · Terminal 01
+
+Scan, sell, dispense — one lane
+
+Online · synced
+Barcode scanner armed · F2 to scan
+16
+03:10:35 AM
+Fri, Aug 21 · open since 08:30
+SCANNER LIVE
+Sort · Name
+Sort · Price
+Sort · Stock
+All items
+40
+Antibiotics
+4
+Pain relief
+4
+Cold & flu
+7
+Vitamins
+3
+Diabetes
+5
+Cardio
+5
+Skin care
+3
+CNS & sleep
+2
+Devices
+3
+First aid
+3
+Baby care
+0
+Compounds
+1
+
+FAST MOVERS · TOP SELLERS
+
+5 sold
+
+Paracetamol 500mg
+
+$1.80
+4 sold
+
+Metformin 500mg
+
+$4.90
+3 sold
+
+Vitamin C 1000mg
+
+$7.80
+2 sold
+
+Amoxicillin 500mg
+
+$8.40
+2 sold
+
+Cetirizine 10mg
+
+$4.10
+2 sold
+
+Insulin Glargine
+
+$46.50
+BAND-AID
+
+Adhesive Bandages
+
+Sterile adhesive strips
+
+Box of 40 strips
+
+$4.20
+
+150 in stock
+
+XANAX
+℞
+C-IV
+
+Alprazolam 0.5mg
+
+Alprazolam
+
+Tablet · strip of 15
+
+$9.40
+
+34 in stock
+
+NORVASC
+℞
+
+Amlodipine 5mg
+
+Amlodipine besylate
+
+Tablet · strip of 15
+
+$5.80
+
+4 in stock
+
+GENERIC · LUPIN
+℞
+GEN
+
+Amlodipine 5mg
+
+Amlodipine besylate
+
+Tablet · strip of 15
+
+$3.40
+
+160 in stock
+
+NOVEX PHARMA
+℞
+
+Amoxicillin 250mg
+
+Amoxicillin trihydrate
+
+Capsule · strip of 10
+
+$6.20
+
+90 in stock
+
+NOVEX PHARMA
+℞
+
+Amoxicillin 500mg
+
+Amoxicillin trihydrate
+
+Capsule · strip of 10
+
+$8.40
+
+216 in stock
+
+BETADINE
+
+Antiseptic Liquid
+
+Povidone-iodine 10%
+
+Solution · 100ml
+
+$4.80
+
+84 in stock
+
+ECOSPRIN
+
+Aspirin 75mg
+
+Acetylsalicylic acid
+
+Tablet · strip of 14
+
+$2.40
+
+230 in stock
+
+LIPITOR
+℞
+
+Atorvastatin 20mg
+
+Atorvastatin calcium
+
+Tablet · strip of 15
+
+$10.20
+
+140 in stock
+
+GENERIC · TEVA
+℞
+GEN
+
+Atorvastatin 20mg
+
+Atorvastatin calcium
+
+Tablet · strip of 15
+
+$6.10
+
+180 in stock
+
+ZITHRON
+℞
+
+Azithromycin 250mg
+
+Azithromycin
+
+Tablet · strip of 6
+
+$11.90
+
+14 in stock
+
+OMRON HEM-7120
+
+BP Monitor Arm
+
+Digital sphygmomanometer
+
+Device · 1 unit
+
+$39.00
+
+16 in stock
+
+ZYRTEC
+
+Cetirizine 10mg
+
+Cetirizine HCl
+
+Tablet · strip of 10
+
+$4.10
+
+180 in stock
+
+CIPROLON
+℞
+
+Ciprofloxacin 500mg
+
+Ciprofloxacin HCl
+
+Tablet · strip of 10
+
+$9.60
+
+104 in stock
+
+CANESTEN
+
+Clotrimazole 1%
+
+Clotrimazole
+
+Cream · 20g tube
+
+$5.60
+
+58 in stock
+
+CHERATUSSIN AC
+℞
+C-V
+
+Codeine Cough Syrup
+
+Codeine phosphate 10mg/5ml
+
+Syrup · 118ml
+
+$8.90
+
+28 in stock
+
+BENYLIN
+
+Cough Syrup DM
+
+Dextromethorphan 15mg/5ml
+
+Syrup · 100ml bottle
+
+$6.50
+
+72 in stock
+
+VOLTAREN
+
+Diclofenac 50mg
+
+Diclofenac sodium
+
+Tablet · strip of 10
+
+$4.60
+
+8 in stock
+
+BEURER FT-09
+
+Digital Thermometer
+
+Oral/axillary thermometer
+
+Device · 1 unit
+
+$9.50
+
+42 in stock
+
+COUNTERRX BUNDLE
+
+Flu Relief Kit
+
+Cetirizine + cough syrup + ORS
+
+Bundle · 3 products
+
+$13.90
+
+Out of stock
+
+AMARYL
+℞
+
+Glimepiride 1mg
+
+Glimepiride
+
+Tablet · strip of 15
+
+$8.80
+
+52 in stock
+
+ACCU-CHEK
+
+Glucometer Strips
+
+Glucose test strips
+
+Strips · box of 50
+
+$24.00
+
+34 in stock
+
+BRUFEN
+
+Ibuprofen 400mg
+
+Ibuprofen
+
+Tablet · strip of 20
+
+$3.20
+
+260 in stock
+
+LANTUS
+℞
+
+Insulin Glargine
+
+Insulin glargine 100IU/ml
+
+SoloStar pen · 3ml
+
+$46.50
+
+20 in stock
+
+EXP 33d
+IN-HOUSE COMPOUND
+℞
+
+Magic Mouthwash 240ml
+
+Diphenhydramine / viscous lidocaine / antacid
+
+Suspension · 240ml bottle
+
+$18.50
+
+6 in stock
+
+EXP 40d
+GLUCOPHAGE
+℞
+
+Metformin 500mg
+
+Metformin HCl
+
+Tablet · strip of 15
+
+$4.90
+
+340 in stock
+
+GENERIC · GLENMARK
+℞
+GEN
+
+Metformin 500mg
+
+Metformin HCl
+
+Tablet · strip of 15
+
+$2.90
+
+300 in stock
+
+LOSEC
+
+Omeprazole 20mg
+
+Omeprazole
+
+Capsule · strip of 14
+
+$6.90
+
+144 in stock
+
+ELECTRAL
+
+ORS Sachets
+
+Oral rehydration salts
+
+Powder · pack of 5
+
+$3.90
+
+96 in stock
+
+CALPOL
+
+Paracetamol 500mg
+
+Acetaminophen
+
+Tablet · strip of 15
+
+$1.20$1.80LOT SALE
+
+760 in stock
+
+EXP 54d
+SUDAFED
+BTC
+
+Pseudoephedrine 30mg
+
+Pseudoephedrine HCl
+
+Tablet · strip of 12
+
+$6.80
+
+40 in stock
+
+CHOICEMMED
+
+Pulse Oximeter
+
+Fingertip SpO2 + HR
+
+Device · 1 unit
+
+$18.00
+
+3 in stock
+
+VENTOLIN
+℞
+
+Salbutamol Inhaler
+
+Salbutamol 100mcg
+
+Inhaler · 200 doses
+
+$14.80
+
+36 in stock
+
+EXP 29d
+PHOTOSTABLE
+
+Sunscreen SPF 50
+
+Broad-spectrum UV filters
+
+Lotion · 60g tube
+
+$13.90
+
+26 in stock
+
+ULTRAM
+℞
+C-IV
+
+Tramadol 50mg
+
+Tramadol HCl
+
+Tablet · strip of 10
+
+$7.20
+
+46 in stock
+
+COUNTERRX BUNDLE
+
+Travel First-Aid Kit
+
+Bandages + antiseptic
+
+Bundle · 2 products
+
+$8.50
+
+Out of stock
+
+CEVIT
+
+Vitamin C 1000mg
+
+Ascorbic acid
+
+Effervescent · 20 tabs
+
+$7.80
+
+6 in stock
+
+EXP 53d
+D-SUN
+
+Vitamin D3 1000IU
+
+Cholecalciferol
+
+Softgel · bottle of 60
+
+$12.50
+
+74 in stock
+
+ZINCOVIT
+
+Zinc + Multivitamin
+
+Zinc sulfate + B-complex
+
+Tablet · strip of 15
+
+$5.40
+
+118 in stock
+
+AMBIEN
+℞
+C-IV
+
+Zolpidem 5mg
+
+Zolpidem tartrate
+
+Tablet · strip of 10
+
+$11.60
+
+18 in stock
+
+Current sale
+
+0 items · no ℞ items
+
+Walk-in customer
+TAP TO ATTACH · EARN PTS
+
+Cart is empty
+
+Tap a product or scan its barcode. Press F2 to jump to search, F8 to take payment.
+
+Subtotal
+$0.00
+Tax 8%
+$0.00
+Total
+$0.00
+Hold
+Charge $0.00
+F8
+Signed in — A. Okafor (Cashier)
