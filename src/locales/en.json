@@ -768,6 +768,10 @@
     "anomalyTypeOther": "Other pattern",
     "usageLabel": "AI activity · {{count}} calls logged"
   },
+  "discounts": {
+    "pctRow": "Discount (%)",
+    "invoiceRow": "Invoice discount"
+  },
   "analytics": {
     "title": "Analytics",
     "ltv": "Ltv",
