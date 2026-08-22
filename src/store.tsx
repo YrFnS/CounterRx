@@ -175,7 +175,6 @@ type Action =
   | { type: "VOID_TX"; txId: string; reason: string; approvedBy?: string }
   | { type: "GENERATE_X_REPORT"; shiftId: string }
   | { type: "GENERATE_Z_REPORT"; shiftId: string }
-  | { type: "RESET" }
   | { type: "HYDRATE_BACKEND"; data: BackendData }
   | { type: "BACKEND_OFFLINE" };
 
@@ -1537,14 +1536,6 @@ export function reducer(state: State, a: Action): State {
       return withToast(
         withAudit({ ...state, customers }, "rx", `Patient profile updated — ${c.name}`),
         "success", `${c.name}'s profile saved`);
-    }
-
-    case "RESET": {
-      localStorage.removeItem(LS_KEY);
-      return {
-        ...state, ...seed(), cart: [], held: [], receipt: null, payOpen: false,
-        saleCustomerId: null, redeemPoints: 0, currentShift: null,
-      };
     }
 
     case "HYDRATE_BACKEND": {

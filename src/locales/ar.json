@@ -529,6 +529,8 @@
     "apiSurfaceDesc": "نقاط نهاية تبادل البيانات المحلية للتكامل الخارجي",
     "resetDemoData": "إعادة تعيين البيانات التجريبية",
     "versionLedger": "الإصدار {{version}} · السجل المحلي",
+    "backendConnected": "Supabase · متصل",
+    "backendReconnecting": "إعادة الاتصال بقاعدة بيانات الصيدلية…",
     "delete": "حذف",
     "edit": "تعديل",
     "add": "إضافة",

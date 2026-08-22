@@ -227,7 +227,7 @@ export default function Register() {
                 className="w-full ps-9 pe-20 py-2.5 rounded-lg bg-card border border-mist text-sm text-ink placeholder:text-inksoft/70 focus:border-pine-500 focus:outline-none focus:ring-2 focus:ring-pine-200 transition"
               />
               <span className="scan-chip absolute right-2 top-1/2 -translate-y-1/2 hidden sm:flex items-center gap-1.5 px-2 py-1 rounded-md bg-pine-800 text-pine-100 text-[10px] font-semibold tracking-wide">
-                <IScan size={12} /> SCANNER LIVE
+                <IScan size={12} />
               </span>
             </div>
             <div className="relative">

@@ -63,7 +63,7 @@ function ToastItem({ t: toast }: { t: Toast }) {
   const { t } = useTranslation();
   const { dispatch } = usePos();
   useEffect(() => {
-    const id = setTimeout(() => dispatch({ type: "DISMISS_TOAST", id: toast.id }), 3400);
+    const id = setTimeout(() => dispatch({ type: "DISMISS_TOAST", id: toast.id }), toast.kind === "error" ? 6000 : 3400);
     return () => clearTimeout(id);
   }, [toast.id, dispatch]);
   const icon =
@@ -93,8 +93,9 @@ function ToastItem({ t: toast }: { t: Toast }) {
 
 export function ToastHost() {
   const { state } = usePos();
+  /* Top-center under the TopBar — never covers the Register action bar. */
   return (
-    <div className="fixed bottom-5 right-5 z-[70] flex flex-col gap-2 pointer-events-none">
+    <div className="fixed top-14 left-1/2 -translate-x-1/2 z-[70] flex flex-col items-center gap-2 pointer-events-none">
       {state.toasts.map((t) => <ToastItem key={t.id} t={t} />)}
     </div>
   );

@@ -16,7 +16,7 @@ import Inventory from "./views/Inventory";
 import Prescriptions from "./views/Prescriptions";
 import History from "./views/History";
 import {
-  ICross, IRegister, IDash, IBox, IRx, IHistory, IBell, IAlert, IChevD, IRecall, IScan, IDownload, IUpload, IUsers, IWifi, IWifiOff, ICode, IMenu, IX, IGear, ILedger, ITrendUp, ITruck,
+  ICross, IRegister, IDash, IBox, IRx, IHistory, IBell, IAlert, IChevD, IScan, IDownload, IUpload, IUsers, IWifi, IWifiOff, ICode, IMenu, IX, IGear, ILedger, ITrendUp, ITruck,
 } from "./icons";
 import Customers from "./views/Customers";
 import Settings from "./views/Settings";
@@ -318,11 +318,10 @@ function Shell() {
             title={t('common.apiSurfaceDesc')}>
             <ICode size={12} /> {t('common.apiSurface')}
           </button>
-          <button onClick={() => dispatch({ type: "RESET" })}
-            className="w-full flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg border border-pine-800 text-pine-300 text-[11px] font-semibold hover:border-pine-600 hover:text-paper transition">
-            <IRecall size={12} /> {t('common.resetDemoData')}
-          </button>
-          <p className="text-center text-[9px] text-pine-200/40 num">{t('common.versionLedger', { version: '3.0', branch: state.settings.branch.split("—")[0] })}</p>
+          <p className={cx("text-center text-[9px] num flex items-center justify-center gap-1.5 font-semibold", state.backendOffline ? "text-honey-400" : "text-pine-300")}>
+            <span className={cx("w-1.5 h-1.5 rounded-full", state.backendOffline ? "bg-honey-500 anim-pulse-dot" : "bg-pine-400")} />
+            {state.backendOffline ? t('common.backendReconnecting') : t('common.backendConnected')}
+          </p>
         </div>
       </aside>
 

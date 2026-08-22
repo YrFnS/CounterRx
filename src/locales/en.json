@@ -529,6 +529,8 @@
     "apiSurfaceDesc": "Local data-exchange endpoints for external integration",
     "resetDemoData": "Reset demo data",
     "versionLedger": "v{{version}} · local ledger",
+    "backendConnected": "Supabase · connected",
+    "backendReconnecting": "Reconnecting to pharmacy database…",
     "delete": "Delete",
     "edit": "Edit",
     "add": "Add",
