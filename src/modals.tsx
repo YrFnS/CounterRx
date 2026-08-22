@@ -205,21 +205,27 @@ export function PaymentModal() {
               <span className="text-inksoft">Discount</span>
               <span className="flex items-center gap-1">
                 {[0, 5, 10].map((d) => (
-                  <button key={d} onClick={() => { setDiscMode("pct"); setDiscountPct(d); }}
+                  <button key={d} onClick={() => { setDiscMode("pct"); setDiscountPct(d); setDiscVal(""); }}
                     className={cx("num px-2 py-0.5 rounded-md text-xs border transition",
                       discMode === "pct" && discountPct === d ? "bg-pine-700 text-pine-50 border-pine-700" : "bg-card border-mist text-inksoft hover:border-pine-400")}>
                     {d}%
                   </button>
                 ))}
-                <input value={discMode === "amt" ? discVal : ""} onChange={(e) => setDiscVal(e.target.value.replace(/[^\d.]/g, ""))}
-                  onFocus={() => { if (discMode !== "amt") { setDiscMode("amt"); setDiscountPct(0); } }}
+                <input value={discVal} onChange={(e) => {
+                    const v = e.target.value.replace(/[^\d.]/g, "");
+                    setDiscVal(v);
+                    if (v) { setDiscMode("amt"); setDiscountPct(0); }
+                  }}
                   placeholder="$ off" inputMode="decimal"
                   className="num w-16 px-1.5 py-0.5 rounded-md text-xs border border-mist bg-card text-ink focus:border-pine-500 focus:outline-none placeholder:text-inksoft/60" />
-                <span className="num text-brick-700 font-semibold ms-1">
-                  −{money(discMode === "pct" ? round2((t.subtotal * discountPct) / 100) : t.invoiceAmt)}
-                </span>
               </span>
             </div>
+            {discountPct > 0 && (
+              <Row k={tr("discounts.pctRow")} v={<span className="text-brick-700">−{money(round2((t.subtotal * discountPct) / 100))}</span>} />
+            )}
+            {t.invoiceAmt > 0 && (
+              <Row k={tr("discounts.invoiceRow")} v={<span className="text-brick-700">−{money(t.invoiceAmt)}</span>} />
+            )}
             {t.loyaltyDeduct > 0 && <Row k={<span className="text-pine-700 font-semibold">Points redeemed · {state.redeemPoints} pts</span>} v={<span className="text-pine-700">−{money(t.loyaltyDeduct)}</span>} />}
             <div className="receipt-dash pt-2 mt-2">
               <Row k={<span className="font-semibold text-ink">Total</span>} v={<span className="font-bold text-pine-800">{money(t.total)}</span>} />
@@ -483,6 +489,7 @@ function Row({ k, v }: { k: ReactNode; v: ReactNode }) {
 /* ---------------- Receipt ---------------- */
 
 function ReceiptBody({ tx }: { tx: Transaction }) {
+  const { t: tr } = useTranslation();
   const { state } = usePos();
   const customerName = state.customers.find((c) => c.id === tx.customerId)?.name;
   return (
@@ -529,7 +536,15 @@ function ReceiptBody({ tx }: { tx: Transaction }) {
       <div className="receipt-dash my-3" />
       <div className="flex justify-between"><span>Subtotal</span><span>{money(tx.subtotal)}</span></div>
       {tx.bulkSavings && tx.bulkSavings > 0 && <div className="flex justify-between"><span>Bulk-tier savings</span><span>−{money(tx.bulkSavings)}</span></div>}
-      {tx.discount > 0 && <div className="flex justify-between"><span>Discount</span><span>−{money(tx.discount)}</span></div>}
+      {tx.discount > 0 && (tx.invoiceDiscountAmt ?? 0) <= 0 && <div className="flex justify-between"><span>Discount</span><span>−{money(tx.discount)}</span></div>}
+      {tx.invoiceDiscountAmt && tx.invoiceDiscountAmt > 0 && (
+        <>
+          <div className="flex justify-between"><span>{tr("discounts.invoiceRow")}</span><span>−{money(tx.invoiceDiscountAmt)}</span></div>
+          {(tx.discount - tx.invoiceDiscountAmt) > 0 && (
+            <div className="flex justify-between"><span>Discount</span><span>−{money(tx.discount - tx.invoiceDiscountAmt)}</span></div>
+          )}
+        </>
+      )}
       {tx.loyaltyDeduct && tx.loyaltyDeduct > 0 && <div className="flex justify-between"><span>Points · {tx.pointsRedeemed} pts</span><span>−{money(tx.loyaltyDeduct)}</span></div>}
       <div className="flex justify-between font-bold text-[14px] mt-1"><span>TOTAL</span><span>{money(tx.total)}</span></div>
       <div className="receipt-dash my-3" />

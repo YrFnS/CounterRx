@@ -785,6 +785,10 @@
     "anomalyTypeOther": "نمط آخر",
     "usageLabel": "نشاط الذكاء الاصطناعي · {{count}} استدعاء مسجل"
   },
+  "discounts": {
+    "pctRow": "خصم (%)",
+    "invoiceRow": "خصم الفاتورة"
+  },
   "analytics": {
     "title": "التحليلات",
     "ltv": "القيمة الدائمة",
