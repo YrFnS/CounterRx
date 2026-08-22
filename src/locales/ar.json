@@ -80,7 +80,6 @@
     "cartHint": "امسح الرمز أو ابحث لإضافة أصناف",
     "outOfStock": "نفذ المخزون",
     "available": "متوفر",
-    "inStock": "متوفر",
     "searchCustomer": "بحث عن عميل",
     "decrease": "تقليل",
     "increase": "زيادة",
@@ -405,24 +404,7 @@
     "categoryNamePh": "مثال: مستحضرات التجميل",
     "categoryColor": "اللون",
     "categoryGroup": "المجموعة",
-    "categoryArchived": "مؤرشفة — مخفية من القوائم، محفوظة للسجل",
-    "setPassword": "تعيين كلمة مرور",
-    "setPasswordTitle": "تعيين كلمة مرور جديدة لـ {{name}}",
-    "setPasswordDesc": "إنشاء كلمة مرور مؤقتة قوية لـ {{name}}. شاركها مرة واحدة، شخصياً.",
-    "generateTempPassword": "إنشاء كلمة مرور مؤقتة",
-    "generating": "جاري الإنشاء…",
-    "tempPasswordLabel": "كلمة مرور مؤقتة",
-    "passwordShownOnce": "يتم عرض كلمة المرور هذه مرة واحدة فقط — انسخها الآن.",
-    "doneShared": "تم — لقد شاركتها",
-    "copyPassword": "نسخ كلمة المرور",
-    "passwordResetFailed": "فشل إعادة تعيين كلمة المرور. يرجى المحاولة مرة أخرى.",
-    "noSession": "لا توجد جلسة نشطة — يرجى تسجيل الدخول مرة أخرى.",
-    "unexpectedError": "حدث خطأ غير متوقع.",
-    "functionNotDeployed": "دالة إعادة تعيين كلمة المرور غير مُنَصّبة. استخدم إعادة التعيين عبر البريد الإلكتروني بدلاً من ذلك.",
-    "sendResetLink": "إرسال رابط إعادة التعيين عبر البريد الإلكتروني",
-    "sending": "جاري الإرسال…",
-    "resetEmailSent": "تم إرسال رابط إعادة تعيين كلمة المرور إلى {{email}}",
-    "tryAgain": "حاول مرة أخرى"
+    "categoryArchived": "مؤرشفة — مخفية من القوائم، محفوظة للسجل"
   },
   "shift": {
     "title": "إدارة الورديات",
@@ -646,23 +628,6 @@
     "storeCredit": "رصيد المتجر",
     "remainingDue": "المتبقي"
   },
-  "till": {
-    "cashInOut": "إيداع/سحب نقدي",
-    "cashIn": "إيداع نقدي",
-    "cashOut": "سحب نقدي",
-    "needManager": "مطلوب موافقة المدير",
-    "managerApproval": "مطلوب موافقة المدير",
-    "reason": "السبب",
-    "record": "تسجيل",
-    "viewReports": "عرض التقارير",
-    "issueCredit": "إصدار رصيد متجر",
-    "creditAmount": "مبلغ الرصيد",
-    "creditCode": "كود الرصيد",
-    "giftCardCode": "كود بطاقة الهدايا",
-    "optional": "اختياري",
-    "note": "ملاحظة",
-    "issue": "إصدار"
-  },
   "toast": {
     "signedIn": "تم تسجيل الدخول — {{name}} ({{role}})",
     "staffAdded": "تمت إضافة الموظف",
@@ -675,10 +640,7 @@
     "lowUnits": "وحدات منخفضة",
     "paApproved": "تمت الموافقة على الطلب المسبق",
     "paRejected": "تم رفض الطلب المسبق",
-    "dupeBackorder": "طلب مؤجل مكرر",
-    "couponCreated": "تم إنشاء القسيمة",
-    "couponUpdated": "تم تحديث القسيمة",
-    "couponDeleted": "تم حذف القسيمة"
+    "dupeBackorder": "طلب مؤجل مكرر"
   },
   "history": {
     "customerReturn": "إرجاع عميل",
@@ -806,11 +768,6 @@
     "anomalyTypeOther": "نمط آخر",
     "usageLabel": "نشاط الذكاء الاصطناعي · {{count}} استدعاء مسجل"
   },
-<<<<<<< HEAD
-  "discounts": {
-    "pctRow": "خصم (%)",
-    "invoiceRow": "خصم الفاتورة"
-=======
   "suppliers": {
     "title": "الموردون",
     "subtitle": "الموردون الذين تطلب منهم — إدارة الشروط ومدة التسليم والحد الأدنى.",
@@ -831,7 +788,6 @@
     "deleteBlocked": "المورد عليه منتجات أو طلبات — عطّله بدلاً من الحذف",
     "empty": "لا يوجد موردون بعد — أضف واحداً أعلاه.",
     "readOnly": "يلزم دور المدير لإدارة الموردين."
->>>>>>> feat/suppliers-crud
   },
   "analytics": {
     "title": "التحليلات",
@@ -870,5 +826,9 @@
     "couponInactive": "هذه القسيمة غير نشطة",
     "couponExpired": "انتهت صلاحية هذه القسيمة",
     "couponScope": "القسيمة مخصصة لعميل آخر"
+  },
+  "discounts": {
+    "pctRow": "خصم (٪)",
+    "invoiceRow": "خصم على الفاتورة"
   }
 }

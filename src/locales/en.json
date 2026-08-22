@@ -80,7 +80,6 @@
     "cartHint": "Tap a product or scan its barcode.",
     "outOfStock": "Out of stock",
     "available": "{{count}} in stock",
-    "inStock": "in stock",
     "searchCustomer": "Search name or phone…",
     "decrease": "Decrease",
     "increase": "Increase",
@@ -405,24 +404,7 @@
     "categoryNamePh": "e.g. Cosmetics",
     "categoryColor": "Color",
     "categoryGroup": "Group",
-    "categoryArchived": "Archived — hidden from pickers, kept for history",
-    "setPassword": "Set password",
-    "setPasswordTitle": "Set new password for {{name}}",
-    "setPasswordDesc": "Generate a strong temporary password for {{name}}. Share it once, in person.",
-    "generateTempPassword": "Generate temporary password",
-    "generating": "Generating…",
-    "tempPasswordLabel": "Temporary password",
-    "passwordShownOnce": "This password is shown only once — copy it now.",
-    "doneShared": "Done — I've shared it",
-    "copyPassword": "Copy password",
-    "passwordResetFailed": "Failed to reset password. Please try again.",
-    "noSession": "No active session — please sign in again.",
-    "unexpectedError": "An unexpected error occurred.",
-    "functionNotDeployed": "Password reset function is not deployed. Use email reset instead.",
-    "sendResetLink": "Send reset link via email",
-    "sending": "Sending…",
-    "resetEmailSent": "Password reset link sent to {{email}}",
-    "tryAgain": "Try again"
+    "categoryArchived": "Archived — hidden from pickers, kept for history"
   },
   "shift": {
     "title": "Shift Management",
@@ -646,23 +628,6 @@
     "storeCredit": "Store credit",
     "remainingDue": "remaining due"
   },
-  "till": {
-    "cashInOut": "Cash In/Out",
-    "cashIn": "Cash In",
-    "cashOut": "Cash Out",
-    "needManager": "Manager approval required",
-    "managerApproval": "Manager Approval Required",
-    "reason": "Reason",
-    "record": "Record",
-    "viewReports": "View Reports",
-    "issueCredit": "Issue Store Credit",
-    "creditAmount": "Credit Amount",
-    "creditCode": "Credit Code",
-    "giftCardCode": "Gift Card Code",
-    "optional": "optional",
-    "note": "Note",
-    "issue": "Issue"
-  },
   "toast": {
     "signedIn": "Signed in — {{name}} ({{role}})",
     "staffAdded": "{{name}} added as {{role}} · PIN set",
@@ -675,10 +640,7 @@
     "lowUnits": "Only {{avail}} base units of {{name}} on the shelf",
     "paApproved": "{{id}} prior auth APPROVED — safe to fill",
     "paRejected": "{{id}} prior auth REJECTED — {{note}}",
-    "dupeBackorder": "{{patient}} already has an open back-order for {{name}}",
-    "couponCreated": "Coupon created",
-    "couponUpdated": "Coupon updated",
-    "couponDeleted": "Coupon deleted"
+    "dupeBackorder": "{{patient}} already has an open back-order for {{name}}"
   },
   "history": {
     "customerReturn": "Customer return",
@@ -806,11 +768,6 @@
     "anomalyTypeOther": "Other pattern",
     "usageLabel": "AI activity · {{count}} calls logged"
   },
-<<<<<<< HEAD
-  "discounts": {
-    "pctRow": "Discount (%)",
-    "invoiceRow": "Invoice discount"
-=======
   "suppliers": {
     "title": "Suppliers",
     "subtitle": "Vendors you order from — manage terms, lead time and minimums.",
@@ -831,7 +788,6 @@
     "deleteBlocked": "Supplier has products or orders — deactivate instead",
     "empty": "No suppliers yet — add one above.",
     "readOnly": "Admin role required to manage suppliers."
->>>>>>> feat/suppliers-crud
   },
   "analytics": {
     "title": "Analytics",
@@ -870,5 +826,9 @@
     "couponInactive": "This coupon is inactive",
     "couponExpired": "This coupon has expired",
     "couponScope": "Coupon is for another customer"
+  },
+  "discounts": {
+    "pctRow": "Discount (%)",
+    "invoiceRow": "Invoice discount"
   }
 }
