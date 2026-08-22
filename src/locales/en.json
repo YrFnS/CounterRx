@@ -127,7 +127,8 @@
     "printDeviceHint": "Send the current sale to a connected ESC/POS printer",
     "printSent": "Receipt sent to the connected printer",
     "printDisabled": "Hardware is disabled in organization settings",
-    "printFailed": "Couldn't print — check the printer connection"
+    "printFailed": "Couldn't print — check the printer connection",
+    "inStock": "in stock"
   },
   "prescriptions": {
     "title": "Prescriptions",
@@ -404,7 +405,24 @@
     "categoryNamePh": "e.g. Cosmetics",
     "categoryColor": "Color",
     "categoryGroup": "Group",
-    "categoryArchived": "Archived — hidden from pickers, kept for history"
+    "categoryArchived": "Archived — hidden from pickers, kept for history",
+    "copyPassword": "Copy password",
+    "doneShared": "Done — I've shared it",
+    "functionNotDeployed": "Password reset function is not deployed. Use email reset instead.",
+    "generateTempPassword": "Generate temporary password",
+    "generating": "Generating…",
+    "noSession": "No active session — please sign in again.",
+    "passwordResetFailed": "Failed to reset password. Please try again.",
+    "passwordShownOnce": "This password is shown only once — copy it now.",
+    "resetEmailSent": "Password reset link sent to {{email}}",
+    "sendResetLink": "Send reset link via email",
+    "sending": "Sending…",
+    "setPassword": "Set password",
+    "setPasswordDesc": "Generate a strong temporary password for {{name}}. Share it once, in person.",
+    "setPasswordTitle": "Set new password for {{name}}",
+    "tempPasswordLabel": "Temporary password",
+    "tryAgain": "Try again",
+    "unexpectedError": "An unexpected error occurred."
   },
   "shift": {
     "title": "Shift Management",
@@ -640,7 +658,10 @@
     "lowUnits": "Only {{avail}} base units of {{name}} on the shelf",
     "paApproved": "{{id}} prior auth APPROVED — safe to fill",
     "paRejected": "{{id}} prior auth REJECTED — {{note}}",
-    "dupeBackorder": "{{patient}} already has an open back-order for {{name}}"
+    "dupeBackorder": "{{patient}} already has an open back-order for {{name}}",
+    "couponCreated": "Coupon created",
+    "couponUpdated": "Coupon updated",
+    "couponDeleted": "Coupon deleted"
   },
   "history": {
     "customerReturn": "Customer return",

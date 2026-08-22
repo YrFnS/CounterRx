@@ -127,7 +127,8 @@
     "printDeviceHint": "إرسال البيع الحالي إلى طابعة ESC/POS متصلة",
     "printSent": "تم إرسال الإيصال إلى الطابعة المتصلة",
     "printDisabled": "الأجهزة معطلة في إعدادات المؤسسة",
-    "printFailed": "تعذر الطباعة — تحقق من اتصال الطابعة"
+    "printFailed": "تعذر الطباعة — تحقق من اتصال الطابعة",
+    "inStock": "in stock"
   },
   "prescriptions": {
     "title": "الوصفات",
@@ -404,7 +405,24 @@
     "categoryNamePh": "مثال: مستحضرات التجميل",
     "categoryColor": "اللون",
     "categoryGroup": "المجموعة",
-    "categoryArchived": "مؤرشفة — مخفية من القوائم، محفوظة للسجل"
+    "categoryArchived": "مؤرشفة — مخفية من القوائم، محفوظة للسجل",
+    "copyPassword": "نسخ كلمة المرور",
+    "doneShared": "تم — لقد شاركتها",
+    "functionNotDeployed": "دالة إعادة تعيين كلمة المرور غير مُنَصّبة. استخدم إعادة التعيين عبر البريد الإلكتروني بدلاً من ذلك.",
+    "generateTempPassword": "إنشاء كلمة مرور مؤقتة",
+    "generating": "جاري الإنشاء…",
+    "noSession": "لا توجد جلسة نشطة — يرجى تسجيل الدخول مرة أخرى.",
+    "passwordResetFailed": "فشل إعادة تعيين كلمة المرور. يرجى المحاولة مرة أخرى.",
+    "passwordShownOnce": "يتم عرض كلمة المرور هذه مرة واحدة فقط — انسخها الآن.",
+    "resetEmailSent": "تم إرسال رابط إعادة تعيين كلمة المرور إلى {{email}}",
+    "sendResetLink": "إرسال رابط إعادة التعيين عبر البريد الإلكتروني",
+    "sending": "جاري الإرسال…",
+    "setPassword": "تعيين كلمة مرور",
+    "setPasswordDesc": "إنشاء كلمة مرور مؤقتة قوية لـ {{name}}. شاركها مرة واحدة، شخصياً.",
+    "setPasswordTitle": "تعيين كلمة مرور جديدة لـ {{name}}",
+    "tempPasswordLabel": "كلمة مرور مؤقتة",
+    "tryAgain": "حاول مرة أخرى",
+    "unexpectedError": "حدث خطأ غير متوقع."
   },
   "shift": {
     "title": "إدارة الورديات",
@@ -640,7 +658,10 @@
     "lowUnits": "وحدات منخفضة",
     "paApproved": "تمت الموافقة على الطلب المسبق",
     "paRejected": "تم رفض الطلب المسبق",
-    "dupeBackorder": "طلب مؤجل مكرر"
+    "dupeBackorder": "طلب مؤجل مكرر",
+    "couponCreated": "تم إنشاء القسيمة",
+    "couponUpdated": "تم تحديث القسيمة",
+    "couponDeleted": "تم حذف القسيمة"
   },
   "history": {
     "customerReturn": "إرجاع عميل",
