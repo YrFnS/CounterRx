@@ -178,8 +178,7 @@ function ReceiptTab({ admin }: { admin: boolean }) {
           <div className="flex justify-between"><span>Cashier</span><span>{state.user?.name ?? "—"}</span></div>
           <div className="receipt-dash my-2.5" />
           <div className="flex justify-between"><span>1 × Paracetamol 500mg</span><span>{money(1.8)}</span></div>
-          <div className="flex justify-between"><span>Tax 8%</span><span>{money(0.14)}</span></div>
-          <div className="flex justify-between font-bold"><span>TOTAL</span><span>{money(1.94)}</span></div>
+          <div className="flex justify-between font-bold"><span>TOTAL</span><span>{money(1.8)}</span></div>
           <div className="receipt-dash my-2.5" />
           <p className="text-center text-inksoft">{s.receiptTerms}</p>
           {s.showBarcode && <><div className="mt-2.5 h-6 barcode-stripes opacity-90" />
