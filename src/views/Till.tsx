@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { usePos, money } from "../store";
-import { can } from "../data";
+import { can, VIEW_ROLES } from "../data";
 import type { StoreCredit } from "../data";
 import { useTranslation } from "react-i18next";
 import { Modal, Badge } from "../ui";
@@ -13,6 +13,7 @@ export default function ShiftBar() {
   const shift = state.currentShift;
   const [cashOpen, setCashOpen] = useState(false);
   const [creditOpen, setCreditOpen] = useState(false);
+  const canViewReports = !!state.user?.role && (VIEW_ROLES.reports?.includes(state.user.role) ?? false);
 
   return (
     <div className="flex items-center gap-2 flex-wrap">
@@ -35,10 +36,13 @@ export default function ShiftBar() {
         <ICard size={14} /> {t("till.issueCredit")}
       </button>
 
+      {/* only offer the jump when this role may actually open Reports (route guard) */}
+      {canViewReports && (
       <button onClick={() => dispatch({ type: "GO", view: "reports" })}
         className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-pine-700 text-pine-50 text-xs font-bold hover:bg-pine-600 transition active:scale-95">
         {t("till.viewReports")}
       </button>
+      )}
 
       {cashOpen && <CashMovementDialog onClose={() => setCashOpen(false)} />}
       {creditOpen && <IssueCreditDialog onClose={() => setCreditOpen(false)} />}

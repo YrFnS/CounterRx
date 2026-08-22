@@ -5,8 +5,8 @@ import i18n from "./i18n";
 import { PosProvider, usePos } from "./store";
 import { signInStaffByEmail } from "./lib/sync";
 import type { View } from "./store";
-import { CASHIER, daysUntil, nearestExpiry, stockOf, ROLE_LABEL } from "./data";
-import type { Product, Transaction, Prescription, Role } from "./data";
+import { CASHIER, daysUntil, nearestExpiry, stockOf, ROLE_LABEL, VIEW_ROLES } from "./data";
+import type { Product, Transaction, Prescription } from "./data";
 import { cx } from "./ui";
 import { PaymentModal, ReceiptModal, DataExchangeModal } from "./modals";
 import { ToastHost } from "./ui";
@@ -50,21 +50,7 @@ const NAV: { id: View; label: string; icon: ReactNode; key: string }[] = [
   { id: "settings", label: "nav.settings", icon: <IGear size={17} />, key: "F9" },
 ];
 
-/* role-based route guards (F7): which roles may open each view. Mirrors PERMS intent:
-   settings/reports/finance/prescriptions are not cashier surfaces; super_admin is implicit. */
-const VIEW_ROLES: Record<View, Role[]> = {
-  register: ["super_admin", "pharmacy_admin", "pharmacist", "manager", "cashier"],
-  dashboard: ["super_admin", "pharmacy_admin", "pharmacist", "manager", "cashier"],
-  customers: ["super_admin", "pharmacy_admin", "pharmacist", "manager", "cashier"],
-  inventory: ["super_admin", "pharmacy_admin", "pharmacist", "manager", "cashier"],
-  deliveries: ["super_admin", "pharmacy_admin", "pharmacist", "manager", "cashier"],
-  history: ["super_admin", "pharmacy_admin", "pharmacist", "manager", "cashier"],
-  finance: ["super_admin", "pharmacy_admin", "manager"],
-  reports: ["super_admin", "pharmacy_admin", "pharmacist", "manager"],
-  prescriptions: ["super_admin", "pharmacy_admin", "pharmacist"],
-  settings: ["super_admin", "pharmacy_admin"],
-};
-
+/* role-based route guards live in data.ts (VIEW_ROLES) — shared with in-page nav buttons */
 
 export default function App() {
   return (

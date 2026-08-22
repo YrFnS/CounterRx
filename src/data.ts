@@ -497,6 +497,22 @@ export const PERMS: Record<Perm, Role[]> = {
 export const can = (role: Role | undefined, perm: Perm): boolean =>
   !!role && PERMS[perm].includes(role);
 
+/** Role-based route guards (F7): which roles may open each view. Single source of
+ *  truth — consumed by the shell nav AND in-page buttons that navigate (e.g.
+ *  Till "view reports"), so UI never points somewhere the guard will block. */
+export const VIEW_ROLES: Record<string, Role[]> = {
+  register: ["super_admin", "pharmacy_admin", "pharmacist", "manager", "cashier"],
+  dashboard: ["super_admin", "pharmacy_admin", "pharmacist", "manager", "cashier"],
+  customers: ["super_admin", "pharmacy_admin", "pharmacist", "manager", "cashier"],
+  inventory: ["super_admin", "pharmacy_admin", "pharmacist", "manager", "cashier"],
+  deliveries: ["super_admin", "pharmacy_admin", "pharmacist", "manager", "cashier"],
+  history: ["super_admin", "pharmacy_admin", "pharmacist", "manager", "cashier"],
+  finance: ["super_admin", "pharmacy_admin", "manager"],
+  reports: ["super_admin", "pharmacy_admin", "pharmacist", "manager"],
+  prescriptions: ["super_admin", "pharmacy_admin", "pharmacist"],
+  settings: ["super_admin", "pharmacy_admin"],
+};
+
 /* ------------------------------------------------------------------ */
 /*  Clinical decision support — drug–drug interactions (§3/§4)         */
 /* ------------------------------------------------------------------ */
