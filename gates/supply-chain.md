@@ -19,7 +19,7 @@
 - [x] Expiry write-off removes lot with manager approval.
   CHECK: `grep -n 'WRITE_OFF' src/store.tsx src/views/Inventory.tsx`
   EXPECT: `WRITE_OFF` rejects for cashiers, removes the lot with a valid manager PIN, and audit-logs `WRITE-OFF` with reason + approver.
-  EVIDENCE: `WriteOffModal` in Inventory (PIN gate mirroring Phase A void); `supply-chain.test.ts` asserts both reject and approve paths.
+  EVIDENCE: `WriteOffModal` in Inventory (manager-PIN gate mirroring Phase A void — in-app authorization, unrelated to the email/password login); `supply-chain.test.ts` asserts both reject and approve paths.
 - [x] Cold-chain flag + temperature log.
   CHECK: `grep -n 'cold_chain\|cold_chain_log\|COLD_CHAIN_LOG' src/store.tsx src/lib/sync.ts supabase/migrations/20260821000011_lot_costing.sql src/views/Inventory.tsx`
   EXPECT: `products.cold_chain` boolean; `cold_chain_log` table org-scoped with RLS; `COLD_CHAIN_LOG` action appends a reading with `inRange` (2–8 °C); Inventory shows the ❄ badge and log modal.

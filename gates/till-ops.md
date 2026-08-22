@@ -7,7 +7,7 @@
 - [x] Void requires manager approval and logs an audit entry.
   CHECK: `grep -n 'VOID_TX' src/store.tsx src/views/History.tsx`
   EXPECT: reducer rejects voids without `can(role,"refund")`; UI requests manager PIN; `withAudit(newState,"void",...)` records the void; `voidedAt/voidReason/voidedBy` set on the transaction.
-  EVIDENCE: `store.tsx` VOID_TX case + `History.tsx` VoidModal (PIN gate, reason ≥ 3 chars, `!tx.voidedAt` guard).
+  EVIDENCE: `store.tsx` VOID_TX case + `History.tsx` VoidModal (PIN gate — manager PIN verified via `hashPin` against the target staff record, reason ≥ 3 chars, `!tx.voidedAt` guard). Note: this is an in-app authorization prompt, not the login flow; login itself is now email+password (`4d220b5`).
 - [x] Paid in / paid out appears in History and X/Z.
   CHECK: `grep -n 'recordCashMovement\|paid_in\|paid_out' src/data.ts src/store.tsx src/views/History.tsx`
   EXPECT: `recordCashMovement` appends `CashMovement` and adjusts `expectedCash`/`paidInTotal`/`paidOutTotal`; History lists them; X report shows movements.

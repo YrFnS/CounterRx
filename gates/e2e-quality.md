@@ -14,4 +14,4 @@ Manager coverage:
 - [x] Manager account S-006 signs in via Supabase Auth (HTTP 200, access_token issued).
   EVIDENCE: curl to hosted Supabase Auth with `s006@counterrx.local` / `CRxS0066666` returned 200 and access_token.
 - [x] Manager tile appears on LockScreen (role badge shows Manager in brick tone).
-  EVIDENCE: local `npm run dev` shows sixth tile; PIN 6666 accepted; Supabase `signInStaff('S-006','6666')` resolves true.
+  EVIDENCE: local `npm run dev` shows sixth tile; PIN 6666 accepted (pre-email-login run, `signInStaff('S-006','6666')` resolved true). Post-login-change re-verification in `outputs/e2e/login-change-REPORT.md`.
