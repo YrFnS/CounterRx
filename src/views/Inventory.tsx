@@ -2,12 +2,12 @@ import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { usePos, money, relTime, clockTime } from "../store";
 import { daysUntil, fefoBatches, stockOf, nearestExpiry, newBatchCode, FIELD_SUGGESTIONS, BRANCHES, can, ndcLookup, hashPin, tempInRange, patientsForLot } from "../data";
-import type { Product, Batch, TransferStatus, Uom, Transaction } from "../data";
+import type { Product, Batch, TransferStatus, Uom, Transaction, Supplier } from "../data";
 import { aiForecast } from "../lib/ai";
 import type { ForecastRow } from "../lib/ai";
 import { buildForecastPayload, historyFromTransactions } from "../lib/ai-ui";
 import { cx, Badge, Modal, StockBar, Empty, CustomFieldsBlock } from "../ui";
-import { ISearch, IPlus, IBox, IAlert, IDownload, IEdit, IX, ICheck, IReport, ICalendar, IClipboard, ITag, ISwap, IScan, IUsers, IFlask, ICold, ITrendUp, IClock } from "../icons";
+import { ISearch, IPlus, IBox, IAlert, IDownload, IEdit, IX, ICheck, IReport, ICalendar, IClipboard, ITag, ISwap, IScan, IUsers, IFlask, ICold, ITrendUp, IClock, IArchive, ITrash } from "../icons";
 
 type Filter = "all" | "low" | "expiring" | "rx" | "controlled";
 
@@ -24,6 +24,7 @@ export default function Inventory() {
   const [adding, setAdding] = useState(false);
   const [counting, setCounting] = useState(false);
   const [compounding, setCompounding] = useState(false);
+  const [suppliersOpen, setSuppliersOpen] = useState(false);
   const mayAdjust = can(state.user?.role, "adjust_stock");
   const mayCompound = can(state.user?.role, "verify_rx"); /* pharmacists + admins compound */
   const [report, setReport] = useState<"low" | "expiry" | null>(null);
@@ -152,6 +153,10 @@ export default function Inventory() {
           className={cx("flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-bold transition active:scale-95",
             mayCompound ? "bg-[#8a6fae] text-paper hover:brightness-110 shadow-lift" : "bg-mist text-inksoft/50 cursor-not-allowed")}>
           <IFlask size={14} /> Compound
+        </button>
+        <button onClick={() => setSuppliersOpen(true)}
+          className="flex items-center gap-1.5 px-3 py-2 rounded-lg border border-mist bg-card text-xs font-semibold text-ink hover:border-pine-400 hover:bg-pine-50 transition active:scale-95">
+          <IUsers size={14} /> {t("suppliers.title")}
         </button>
         <button onClick={exportCsv}
           className="flex items-center gap-1.5 px-3 py-2 rounded-lg border border-mist bg-card text-xs font-semibold text-ink hover:border-pine-400 hover:bg-pine-50 transition active:scale-95">
@@ -308,7 +313,158 @@ export default function Inventory() {
       {uomFor && <UomModal p={uomFor} onClose={() => setUomFor(null)} />}
       {forecasting && <ForecastModal p={forecasting} onClose={() => setForecasting(null)} />}
       {coldFor && <ColdChainModal p={coldFor} onClose={() => setColdFor(null)} />}
-    </div>
+      {suppliersOpen && <SuppliersManager onClose={() => setSuppliersOpen(false)} />}
+      </div>
+  );
+}
+
+/* Suppliers manager (R5) — admin-gated CRUD with archive + delete guards */
+function SuppliersManager({ onClose }: { onClose: () => void }) {
+  const { t } = useTranslation();
+  const { state, dispatch } = usePos();
+  const admin = can(state.user?.role, "manage_settings");
+  const suppliers = useMemo(() => [...state.suppliers].sort((a, b) => a.name.localeCompare(b.name)), [state.suppliers]);
+
+  const [editing, setEditing] = useState<Supplier | null>(null);
+  const [name, setName] = useState("");
+  const [contact, setContact] = useState("");
+  const [phone, setPhone] = useState("");
+  const [email, setEmail] = useState("");
+  const [terms, setTerms] = useState("");
+  const [leadDays, setLeadDays] = useState("");
+  const [minOrder, setMinOrder] = useState("");
+  const [archived, setArchived] = useState(false);
+
+  const productsSupplied = (s: Supplier) => state.products.filter((p) => p.supplier === s.name).length;
+
+  const openEdit = (s: Supplier) => {
+    setEditing(s); setName(s.name); setContact(s.contact ?? ""); setPhone(s.phone ?? ""); setEmail(s.email ?? "");
+    setTerms(String(s.terms)); setLeadDays(String(s.leadDays)); setMinOrder(String(s.minOrder)); setArchived(!!s.archived);
+  };
+  const reset = () => { setEditing(null); setName(""); setContact(""); setPhone(""); setEmail(""); setTerms(""); setLeadDays(""); setMinOrder(""); setArchived(false); };
+
+  const save = () => {
+    if (!admin || !name.trim()) return;
+    const num = (v: string) => Math.max(0, parseInt(v) || 0);
+    dispatch({
+      type: "SUPPLIER_SAVE",
+      supplier: {
+        id: editing?.id ?? "",
+        name: name.trim(),
+        contact: contact.trim(),
+        phone: phone.trim(),
+        email: email.trim() || undefined,
+        terms: num(terms),
+        leadDays: num(leadDays),
+        minOrder: num(minOrder),
+        priceBook: editing?.priceBook ?? [],
+        archived,
+      },
+    });
+    reset();
+  };
+
+  return (
+    <Modal onClose={onClose} width={720} labelledBy="sup-title">
+      <div className="px-5 py-4 border-b border-mist flex items-start justify-between">
+        <div>
+          <h2 id="sup-title" className="font-display font-bold text-ink flex items-center gap-2">
+            <IUsers size={17} className="text-pine-700" /> {t("suppliers.title")}
+          </h2>
+          <p className="text-xs text-inksoft mt-0.5">{t("suppliers.subtitle")}</p>
+        </div>
+        <button onClick={onClose} className="p-1.5 rounded-md hover:bg-mist/60 text-inksoft" aria-label="Close"><IX size={14} /></button>
+      </div>
+
+      <div className="p-5 space-y-4">
+        <div className="rounded-xl border border-mist bg-card shadow-lift p-4 space-y-3">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            <label className="block text-[11px] font-bold text-inksoft">{t("suppliers.name")} *
+              <input value={name} onChange={(e) => setName(e.target.value)} disabled={!admin} placeholder={t("suppliers.namePh")}
+                className="mt-1 w-full px-2.5 py-1.5 rounded-lg border border-mist bg-card text-sm font-bold focus:border-pine-500 focus:outline-none disabled:bg-mist/40" />
+            </label>
+            <label className="block text-[11px] font-bold text-inksoft">{t("suppliers.contact")}
+              <input value={contact} onChange={(e) => setContact(e.target.value)} disabled={!admin}
+                className="mt-1 w-full px-2.5 py-1.5 rounded-lg border border-mist bg-card text-sm font-bold focus:border-pine-500 focus:outline-none disabled:bg-mist/40" />
+            </label>
+            <label className="block text-[11px] font-bold text-inksoft">{t("suppliers.phone")}
+              <input value={phone} onChange={(e) => setPhone(e.target.value)} disabled={!admin}
+                className="mt-1 w-full px-2.5 py-1.5 rounded-lg border border-mist bg-card text-sm font-bold focus:border-pine-500 focus:outline-none disabled:bg-mist/40" />
+            </label>
+            <label className="block text-[11px] font-bold text-inksoft">{t("suppliers.email")}
+              <input value={email} onChange={(e) => setEmail(e.target.value)} disabled={!admin}
+                className="mt-1 w-full px-2.5 py-1.5 rounded-lg border border-mist bg-card text-sm font-bold focus:border-pine-500 focus:outline-none disabled:bg-mist/40" />
+            </label>
+            <label className="block text-[11px] font-bold text-inksoft">{t("suppliers.terms")}
+              <input value={terms} onChange={(e) => setTerms(e.target.value.replace(/\D/g, ""))} inputMode="numeric" disabled={!admin}
+                className="mt-1 w-full px-2.5 py-1.5 rounded-lg border border-mist bg-card text-sm font-bold focus:border-pine-500 focus:outline-none disabled:bg-mist/40" />
+            </label>
+            <label className="block text-[11px] font-bold text-inksoft">{t("suppliers.leadDays")}
+              <input value={leadDays} onChange={(e) => setLeadDays(e.target.value.replace(/\D/g, ""))} inputMode="numeric" disabled={!admin}
+                className="mt-1 w-full px-2.5 py-1.5 rounded-lg border border-mist bg-card text-sm font-bold focus:border-pine-500 focus:outline-none disabled:bg-mist/40" />
+            </label>
+            <label className="block text-[11px] font-bold text-inksoft">{t("suppliers.minOrder")}
+              <input value={minOrder} onChange={(e) => setMinOrder(e.target.value.replace(/\D/g, ""))} inputMode="numeric" disabled={!admin}
+                className="mt-1 w-full px-2.5 py-1.5 rounded-lg border border-mist bg-card text-sm font-bold focus:border-pine-500 focus:outline-none disabled:bg-mist/40" />
+            </label>
+            {editing && (
+              <label className="flex items-end gap-2 text-xs font-semibold text-inksoft pb-2">
+                <input type="checkbox" checked={archived} onChange={(e) => setArchived(e.target.checked)} disabled={!admin} />
+                {t("suppliers.archived")}
+              </label>
+            )}
+          </div>
+          <div className="flex justify-end">
+            <button onClick={save} disabled={!admin || !name.trim()}
+              className="px-4 py-1.5 rounded-lg bg-pine-700 text-pine-50 text-xs font-bold hover:bg-pine-600 transition disabled:opacity-50">
+              {editing ? t("suppliers.save") : t("suppliers.create")}
+            </button>
+          </div>
+        </div>
+
+        <div className="max-h-80 overflow-auto scroll-slim rounded-lg border border-mist">
+          <table className="w-full text-xs border-collapse">
+            <thead className="sticky top-0 bg-pine-900 text-pine-100 text-[10px] uppercase tracking-[0.14em]">
+              <tr>
+                <th className="px-2 py-2 font-bold text-start">{t("suppliers.name")}</th>
+                <th className="px-2 py-2 font-bold text-start">{t("suppliers.contact")}</th>
+                <th className="px-2 py-2 font-bold text-start">{t("suppliers.terms")}</th>
+                <th className="px-2 py-2 font-bold text-start">{t("suppliers.leadDays")}</th>
+                <th className="px-2 py-2 font-bold text-start">{t("suppliers.minOrder")}</th>
+                <th className="px-2 py-2 font-bold text-start">#</th>
+                <th className="px-2 py-2 font-bold text-end"></th>
+              </tr>
+            </thead>
+            <tbody>
+              {suppliers.map((s) => (
+                <tr key={s.id} className={cx("border-t border-mist/60", s.archived && "opacity-45")}>
+                  <td className="px-2 py-2 font-semibold text-ink">{s.name}{s.archived && <span className="ms-1 text-[9px] font-bold uppercase text-inksoft">archived</span>}</td>
+                  <td className="px-2 py-2 text-inksoft">{s.contact || "—"}<br /><span className="num">{s.phone}{s.email ? ` · ${s.email}` : ""}</span></td>
+                  <td className="px-2 py-2 num text-inksoft">net {s.terms}d</td>
+                  <td className="px-2 py-2 num text-inksoft">{s.leadDays}d</td>
+                  <td className="px-2 py-2 num text-inksoft">{s.minOrder}</td>
+                  <td className="px-2 py-2 num text-inksoft">{productsSupplied(s)}</td>
+                  <td className="px-2 py-2 text-end whitespace-nowrap">
+                    <button onClick={() => openEdit(s)} disabled={!admin}
+                      className="p-1 rounded-md hover:bg-mist/60 text-inksoft disabled:opacity-40" aria-label="Edit"><IEdit size={13} /></button>
+                    <button onClick={() => dispatch({ type: "SUPPLIER_SAVE", supplier: { ...s, archived: !s.archived } })} disabled={!admin}
+                      className="p-1 rounded-md hover:bg-mist/60 text-inksoft disabled:opacity-40" aria-label="Archive"><IArchive size={13} /></button>
+                    <button onClick={() => dispatch({ type: "SUPPLIER_DELETE", id: s.id })} disabled={!admin}
+                      className="p-1 rounded-md hover:bg-brick-100 text-brick-700 disabled:opacity-40" aria-label="Delete"><ITrash size={13} /></button>
+                  </td>
+                </tr>
+              ))}
+              {suppliers.length === 0 && (
+                <tr><td colSpan={7} className="px-2 py-6 text-center text-inksoft">{t("suppliers.empty")}</td></tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+        {!admin && (
+          <p className="text-[11px] text-inksoft text-center">{t("suppliers.readOnly")}</p>
+        )}
+      </div>
+    </Modal>
   );
 }
 
@@ -1014,15 +1170,17 @@ function ReportModal({ mode, onClose }: { mode: "low" | "expiry"; onClose: () =>
   const isLow = mode === "low";
 
   /* --- reorder report: everything at/below par, with suggested order qty --- */
-  const lowRows = useMemo(() => state.products
-    .filter((p) => stockOf(p) <= p.reorderLevel)
-    .map((p) => {
-      const onHand = stockOf(p);
-      const suggest = Math.max(0, p.reorderLevel * 2 - onHand);
-      return { p, onHand, suggest, orderCost: suggest * p.cost };
-    })
-    .sort((a, b) => (a.onHand / Math.max(1, a.p.reorderLevel)) - (b.onHand / Math.max(1, b.p.reorderLevel))),
-  [state.products]);
+  const lowRows = useMemo(() => {
+    const archivedNames = new Set(state.suppliers.filter((s) => s.archived).map((s) => s.name));
+    return state.products
+      .filter((p) => stockOf(p) <= p.reorderLevel && !archivedNames.has(p.supplier))
+      .map((p) => {
+        const onHand = stockOf(p);
+        const suggest = Math.max(0, p.reorderLevel * 2 - onHand);
+        return { p, onHand, suggest, orderCost: suggest * p.cost };
+      })
+      .sort((a, b) => (a.onHand / Math.max(1, a.p.reorderLevel)) - (b.onHand / Math.max(1, b.p.reorderLevel)));
+  }, [state.products, state.suppliers]);
   const poTotal = lowRows.reduce((s, r) => s + r.orderCost, 0);
 
   /* --- expiry report: every lot due within 90 days (incl. expired) --- */

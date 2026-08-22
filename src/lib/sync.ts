@@ -203,6 +203,7 @@ function supplierFrom(row: Row): Supplier {
     id: text(row, "id"), name: text(row, "name"), contact: text(row, "contact"), phone: text(row, "phone"), email: optionalText(row, "email"),
     terms: numberValue(row, "terms", 30), leadDays: numberValue(row, "lead_days", 7), minOrder: numberValue(row, "min_order"),
     priceBook: jsonValue(row, "price_book", []),
+    archived: booleanValue(row, "archived", false),
   };
 }
 
@@ -367,7 +368,7 @@ function rowsFor(data: BackendData): Record<TableName, Row[]> {
     transfers: data.transfers.map((t) => ({ id: t.id, product_id: t.productId, qty: t.qty, to_branch: t.toBranch, status: t.status, created_at: t.createdAt, requested_by: t.requestedBy, note: nullable(t.note) })),
     backorders: data.backorders.map((b) => ({ id: b.id, patient: b.patient, phone: nullable(b.phone), product_id: b.productId, qty: b.qty, created_at: b.createdAt, status: b.status, eta_days: b.etaDays, supplier: b.supplier, arrived_at: nullable(b.arrivedAt), notified_at: nullable(b.notifiedAt) })),
     rx_transfers: data.rxTransfers.map((r) => ({ id: r.id, transfer_no: r.transferNo, direction: r.direction, prescription_id: nullable(r.prescriptionId), patient: r.patient, drug: r.drug, qty: r.qty, other_pharmacy: r.otherPharmacy, other_phone: nullable(r.otherPhone), prescriber: r.prescriber, refills_remaining: r.refillsRemaining, pharmacist: r.pharmacist, at: r.at, note: nullable(r.note) })),
-    suppliers: data.suppliers.map((s) => ({ id: s.id, name: s.name, contact: nullable(s.contact), phone: nullable(s.phone), email: nullable(s.email), terms: s.terms, lead_days: s.leadDays, min_order: s.minOrder, price_book: s.priceBook ?? [] })),
+    suppliers: data.suppliers.map((s) => ({ id: s.id, name: s.name, contact: nullable(s.contact), phone: nullable(s.phone), email: nullable(s.email), terms: s.terms, lead_days: s.leadDays, min_order: s.minOrder, price_book: s.priceBook ?? [], archived: s.archived ?? false })),
     purchase_orders: data.purchaseOrders.map((p) => ({ id: p.id, supplier_id: nullable(p.supplierId), lines: p.lines, status: p.status, created_at: p.createdAt, expected_at: p.expectedAt, received_at: nullable(p.receivedAt), invoice_id: nullable(p.invoiceId), note: nullable(p.note) })),
     ap_invoices: data.apInvoices.map((i) => ({ id: i.id, number: i.number, supplier_id: nullable(i.supplierId), po_id: nullable(i.poId), date: i.date, due_days: i.dueDays, total: i.total, payments: i.payments, credits: i.credits })),
     expenses: data.expenses.map((e) => ({ id: e.id, category: e.category, amount: e.amount, date: e.date, payee: e.payee, note: nullable(e.note), recurring: e.recurring ?? false })),

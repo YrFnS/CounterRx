@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { reducer, seed } from "../store";
 import { makeProducts, makeStaff, makeSettings } from "../data";
-import type { Shift } from "../data";
+import type { Shift, Supplier, Role } from "../data";
 import type { BackendData } from "../lib/sync";
 
 // reducer state/action types aren't exported from store.tsx; derive them from the reducer signature
@@ -281,5 +281,70 @@ describe("reducer - LOGOUT", () => {
     expect(result.currentShift).toBeNull();
     expect(result.saleCustomerId).toBeNull();
     expect(result.redeemPoints).toBe(0);
+  });
+});
+
+describe("reducer - SUPPLIER CRUD (R5)", () => {
+  const admin = makeTestState({ user: { id: "S-001", name: "Admin", role: "pharmacy_admin" as Role, pinHash: "h", initials: "A", active: true, createdAt: Date.now() } });
+  const cashier = makeTestState({ user: { id: "S-002", name: "Cashier", role: "cashier" as Role, pinHash: "h", initials: "C", active: true, createdAt: Date.now() } });
+  const seedSuppliers = (): Supplier[] => [
+    { id: "SUP-01", name: "MediSource Ltd", contact: "K. Adjei", phone: "(555) 210-4471", terms: 30, leadDays: 5, minOrder: 50 },
+    { id: "SUP-02", name: "PharmaLine Co", contact: "S. Whitmore", phone: "(555) 318-9902", terms: 30, leadDays: 4, minOrder: 40 },
+  ];
+  const newSupplier = (): Supplier => ({ id: "", name: "New Vendor", contact: "J. Doe", phone: "123", terms: 14, leadDays: 3, minOrder: 10 });
+
+  it("creates a supplier with a generated SUP-NN id", () => {
+    const initial = makeTestState({ suppliers: seedSuppliers(), user: admin.user! });
+    const result = reducer(initial, { type: "SUPPLIER_SAVE", supplier: newSupplier() });
+    expect(result.suppliers).toHaveLength(3);
+    const created = result.suppliers.find((s) => s.name === "New Vendor")!;
+    expect(created.id).toBe("SUP-03");
+    expect(result.audit[0]?.detail).toContain("New Vendor created");
+    expect(result.toasts.some((t) => t.kind === "success" && t.msg.includes("New Vendor"))).toBe(true);
+  });
+
+  it("updates an existing supplier by id", () => {
+    const initial = makeTestState({ suppliers: seedSuppliers(), user: admin.user! });
+    const updated: Supplier = { ...seedSuppliers()[0], name: "MediSource Updated", terms: 45 };
+    const result = reducer(initial, { type: "SUPPLIER_SAVE", supplier: updated });
+    expect(result.suppliers).toHaveLength(2);
+    expect(result.suppliers[0].name).toBe("MediSource Updated");
+    expect(result.suppliers[0].terms).toBe(45);
+    expect(result.audit[0]?.detail).toContain("MediSource Updated updated");
+  });
+
+  it("deletes an unreferenced supplier", () => {
+    const initial = makeTestState({ suppliers: seedSuppliers(), products: [], purchaseOrders: [], user: admin.user! });
+    const result = reducer(initial, { type: "SUPPLIER_DELETE", id: "SUP-02" });
+    expect(result.suppliers).toHaveLength(1);
+    expect(result.suppliers[0].id).toBe("SUP-01");
+    expect(result.audit[0]?.detail).toContain("PharmaLine Co deleted");
+  });
+
+  it("blocks delete when a product references the supplier name", () => {
+    const products = makeProducts(Date.now());
+    products.forEach((p) => { if (p.id === "amx500") p.supplier = "MediSource Ltd"; });
+    const initial = makeTestState({ suppliers: seedSuppliers(), products, user: admin.user! });
+    const result = reducer(initial, { type: "SUPPLIER_DELETE", id: "SUP-01" });
+    expect(result.suppliers).toHaveLength(2); // unchanged
+    expect(result.toasts.some((t) => t.kind === "error" && t.msg.includes("deactivate"))).toBe(true);
+  });
+
+  it("blocks delete when a purchase order references the supplier", () => {
+    const pos = [{ id: "PO-1", supplierId: "SUP-02", lines: [], status: "ordered" as const, createdAt: Date.now(), expectedAt: Date.now() } as any];
+    const initial = makeTestState({ suppliers: seedSuppliers(), purchaseOrders: pos, user: admin.user! });
+    const result = reducer(initial, { type: "SUPPLIER_DELETE", id: "SUP-02" });
+    expect(result.suppliers).toHaveLength(2);
+    expect(result.toasts.some((t) => t.kind === "error" && t.msg.includes("deactivate"))).toBe(true);
+  });
+
+  it("rejects save/delete without manage_settings permission", () => {
+    const initial = makeTestState({ suppliers: seedSuppliers(), user: cashier.user! });
+    const saveResult = reducer(initial, { type: "SUPPLIER_SAVE", supplier: newSupplier() });
+    expect(saveResult.suppliers).toHaveLength(2); // unchanged
+    expect(saveResult.toasts.some((t) => t.kind === "error")).toBe(true);
+    const delResult = reducer(initial, { type: "SUPPLIER_DELETE", id: "SUP-01" });
+    expect(delResult.suppliers).toHaveLength(2);
+    expect(delResult.toasts.some((t) => t.kind === "error")).toBe(true);
   });
 });

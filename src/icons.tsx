@@ -46,6 +46,9 @@ export const IMinus = (p: P) => (<Base {...p}><path d="M5 12h14" /></Base>);
 export const ITrash = (p: P) => (
   <Base {...p}><path d="M4 7h16M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" /><path d="M6.5 7 7.5 20h9L17.5 7" /><path d="M10 11v5M14 11v5" /></Base>
 );
+export const IArchive = (p: P) => (
+  <Base {...p}><rect x="3" y="4" width="18" height="4" rx="1" /><path d="M5 8v11a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8" /><path d="M10 12v4M14 12v4" /></Base>
+);
 export const IX = (p: P) => (<Base {...p}><path d="m6 6 12 12M18 6 6 18" /></Base>);
 export const IAlert = (p: P) => (
   <Base {...p}><path d="M12 3.5 22 20H2z" /><path d="M12 10v4M12 17v.01" /></Base>
