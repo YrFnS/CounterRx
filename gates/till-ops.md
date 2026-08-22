@@ -30,3 +30,15 @@
 - [x] i18n parity + full gate green.
   CHECK: `npm run typecheck && npm run test && npm run build`
   EVIDENCE: typecheck clean, 33 tests pass (incl. till-ops suite), build OK.
+
+## Discount & tax gate (P2/P3 — added 2026-08-22)
+
+- [x] Tax removed: no UI surface renders tax; `Transaction.tax` persists as 0 for shape stability.
+  CHECK: `grep -rn "TAX_RATE\|Tax 8%" src/ --include=*.tsx | grep -v test` returns nothing; totals = subtotal − discounts.
+  EVIDENCE: commit "feat(sales): remove tax computation and rendering across the POS".
+- [x] Per-line discounts ($ or %) and fixed-amount invoice discounts work and persist on JSONB transaction lines.
+  CHECK: unit tests in `src/__tests__/discounts.test.ts` (line %/amt, cap at line gross, stacked with invoice %/$, tax stays 0).
+  EXPECT: all pass; sale rows show `lines[].lineDiscount` and `invoiceDiscountAmt` in Supabase.
+- [x] Large discounts require approval: line ≥10%, invoice ≥20% or ≥$50 needs the `approve_discount` perm or manager PIN; every applied discount is audit-logged with approver.
+  CHECK: cashier applies 15% line discount → blocked without PIN; manager approves → audit entry records it.
+  EVIDENCE: `SET_LINE_DISCOUNT` case + `LINE_DISCOUNT_PIN_THRESHOLD` / invoice thresholds in `src/data.ts`.
