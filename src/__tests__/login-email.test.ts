@@ -37,3 +37,16 @@ describe("reducer - LOGIN (email/password flow)", () => {
     expect(result.user).toBeNull();
   });
 });
+
+describe("withAudit id minting (audit_log 21000 regression)", () => {
+  it("never reuses an id already present in the hydrated ledger", () => {
+    let state = makeTestState();
+    // simulate hydration: ledger holds ids far above the per-session auditSeq (starts at 100)
+    state = { ...state, audit: [{ id: 5000, at: Date.now(), actor: "seed", kind: "system", detail: "old" }, ...state.audit] } as State;
+    const result = reducer(state, { type: "LOGIN", staffId: "S-001" });
+    const top = result.audit[0];
+    expect(top.id).toBeGreaterThan(5000);
+    const ids = result.audit.map((a: { id: number }) => a.id);
+    expect(new Set(ids).size).toBe(ids.length); // no duplicates in the batch
+  });
+});

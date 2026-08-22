@@ -327,8 +327,12 @@ function withToast(s: State, kind: Toast["kind"], msg: string): State {
 
 function withAudit(s: State, kind: AuditKind, detail: string): State {
   // actor comes from the session staff (F9); the DB trigger stamps it server-side,
-  // so a client-supplied value can never falsify it.
-  return { ...s, audit: [{ id: auditSeq++, at: Date.now(), actor: s.user?.name ?? "", kind, detail }, ...s.audit].slice(0, 250) };
+  // so a client-supplied value can never falsify it. Never mint an id that already
+  // exists in the (hydrated) ledger either: auditSeq resets per session, and a
+  // duplicate id inside one upsert batch makes Postgres fail with 21000.
+  const nextId = Math.max(auditSeq, (s.audit[0]?.id ?? 0) + 1);
+  auditSeq = nextId + 1;
+  return { ...s, audit: [{ id: nextId, at: Date.now(), actor: s.user?.name ?? "", kind, detail }, ...s.audit].slice(0, 250) };
 }
 
 /* ---------------- snapshot persistence (§9 automated backups) ---------------- */
