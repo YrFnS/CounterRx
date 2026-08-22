@@ -531,6 +531,8 @@
     "versionLedger": "v{{version}} · local ledger",
     "backendConnected": "Supabase · connected",
     "backendReconnecting": "Reconnecting to pharmacy database…",
+    "dbUnreachable": "Can’t reach the pharmacy database — showing your last synced data.",
+    "retryConnection": "Retry connection",
     "delete": "Delete",
     "edit": "Edit",
     "add": "Add",

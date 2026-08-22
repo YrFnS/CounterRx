@@ -531,6 +531,8 @@
     "versionLedger": "الإصدار {{version}} · السجل المحلي",
     "backendConnected": "Supabase · متصل",
     "backendReconnecting": "إعادة الاتصال بقاعدة بيانات الصيدلية…",
+    "dbUnreachable": "لا يمكن الوصول إلى قاعدة بيانات الصيدلية — يتم عرض آخر بيانات متزامنة.",
+    "retryConnection": "إعادة محاولة الاتصال",
     "delete": "حذف",
     "edit": "تعديل",
     "add": "إضافة",
