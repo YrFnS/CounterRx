@@ -18,6 +18,8 @@ export function PaymentModal() {
   const [split, setSplit] = useState(false);
   const [leg1Amt, setLeg1Amt] = useState("");
   const [discountPct, setDiscountPct] = useState(0);
+  const [discMode, setDiscMode] = useState<"pct" | "amt">("pct");
+  const [discVal, setDiscVal] = useState("");
   const [tendered, setTendered] = useState("");
   const [idChecked, setIdChecked] = useState(false);
   const [overrideAck, setOverrideAck] = useState(false);
@@ -70,7 +72,8 @@ export function PaymentModal() {
       ? round2((preCouponSubtotal * couponMatch!.value) / 100)
       : Math.min(couponMatch!.value, preCouponSubtotal)
     : 0;
-  const t = useMemo(() => cartTotals(state, discountPct, taxExempt, couponDiscount), [state, discountPct, taxExempt, couponDiscount]);
+  const invoiceAmtInput = discMode === "amt" ? round2(Math.max(0, parseFloat(discVal) || 0)) : 0;
+  const t = useMemo(() => cartTotals(state, discountPct, taxExempt, couponDiscount, invoiceAmtInput), [state, discountPct, taxExempt, couponDiscount, invoiceAmtInput]);
   const hasControlled = state.cart.some((c) => product(c.productId)?.controlled);
   /* redeemable chunks: 100 pts = $5, capped by payable balance */
   const payableNow = Math.max(0, t.subtotal - t.bulkSavings - t.discount - t.coupon);
@@ -118,6 +121,7 @@ export function PaymentModal() {
     dispatch({
       type: "COMPLETE_SALE", payments, discountPct, taxExempt, idChecked,
       couponDiscount: couponDiscount > 0 ? couponDiscount : undefined,
+      invoiceDiscountAmt: invoiceAmtInput > 0 ? invoiceAmtInput : undefined,
       tendered: !split && leg1 === "cash" ? tenderedNum : undefined,
       restricted: restrictedLines.length > 0
         ? { purchaser: rPurchaser, idType: rIdType, idLast4: rIdLast4 }
@@ -201,13 +205,19 @@ export function PaymentModal() {
               <span className="text-inksoft">Discount</span>
               <span className="flex items-center gap-1">
                 {[0, 5, 10].map((d) => (
-                  <button key={d} onClick={() => setDiscountPct(d)}
+                  <button key={d} onClick={() => { setDiscMode("pct"); setDiscountPct(d); }}
                     className={cx("num px-2 py-0.5 rounded-md text-xs border transition",
-                      discountPct === d ? "bg-pine-700 text-pine-50 border-pine-700" : "bg-card border-mist text-inksoft hover:border-pine-400")}>
+                      discMode === "pct" && discountPct === d ? "bg-pine-700 text-pine-50 border-pine-700" : "bg-card border-mist text-inksoft hover:border-pine-400")}>
                     {d}%
                   </button>
                 ))}
-                <span className="num text-brick-700 font-semibold ms-1">−{money(t.discount)}</span>
+                <input value={discMode === "amt" ? discVal : ""} onChange={(e) => setDiscVal(e.target.value.replace(/[^\d.]/g, ""))}
+                  onFocus={() => { if (discMode !== "amt") { setDiscMode("amt"); setDiscountPct(0); } }}
+                  placeholder="$ off" inputMode="decimal"
+                  className="num w-16 px-1.5 py-0.5 rounded-md text-xs border border-mist bg-card text-ink focus:border-pine-500 focus:outline-none placeholder:text-inksoft/60" />
+                <span className="num text-brick-700 font-semibold ms-1">
+                  −{money(discMode === "pct" ? round2((t.subtotal * discountPct) / 100) : t.invoiceAmt)}
+                </span>
               </span>
             </div>
             {t.loyaltyDeduct > 0 && <Row k={<span className="text-pine-700 font-semibold">Points redeemed · {state.redeemPoints} pts</span>} v={<span className="text-pine-700">−{money(t.loyaltyDeduct)}</span>} />}

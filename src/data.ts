@@ -189,7 +189,12 @@ export interface TxLine {
   uom?: string;                             // UOM label, e.g. "Box of 10 strips" (§5)
   uomFactor?: number;                       // base units per UOM, for stock deduction (§5)
   kitComponents?: string;                   // kit contents summary (§5)
+  lineDiscount?: { mode: "amt" | "pct"; value: number }; // per-line discount (JSONB — no migration)
 }
+/** Discounts at or above these fractions need manager PIN approval. */
+export const LINE_DISCOUNT_PIN_THRESHOLD = 0.1;   // 10% off a single line
+export const INVOICE_DISCOUNT_PCT_PIN_THRESHOLD = 20; // percent off the invoice
+export const INVOICE_DISCOUNT_AMT_PIN_THRESHOLD = 50; // currency amount off the invoice
 export type PayMethod = "cash" | "card" | "insurance" | "store_credit";
 export interface PaymentLeg { method: PayMethod; amount: number; ref?: string; }
 export interface Transaction {
@@ -208,6 +213,7 @@ export interface Transaction {
   bulkSavings?: number;      // quantity-tier savings across lines
   loyaltyDeduct?: number;    // value of redeemed points
   couponDiscount?: number;    // coupon applied (Phase F)
+  invoiceDiscountAmt?: number; // fixed-amount invoice discount (on top of % discount)
   pointsEarned?: number;
   pointsRedeemed?: number;
 }
@@ -474,11 +480,12 @@ export const ROLE_LABEL: Record<Role, string> = {
 export type Perm =
   | "refund" | "approve_transfer" | "adjust_stock" | "apply_count"
   | "edit_settings" | "manage_settings" | "manage_staff" | "restore_snapshot" | "verify_rx" | "transfer_rx"
-  | "create_po" | "receive_po" | "pay_invoice" | "add_expense";
+  | "create_po" | "receive_po" | "pay_invoice" | "add_expense" | "approve_discount";
 
 /* Permission matrix — enforced in the UI layer now, mirrors the future RLS checks */
 export const PERMS: Record<Perm, Role[]> = {
   refund: ["manager", "pharmacy_admin"],
+  approve_discount: ["manager", "pharmacy_admin"],
   approve_transfer: ["manager", "pharmacy_admin"],
   adjust_stock: ["pharmacist", "manager", "pharmacy_admin"],
   apply_count: ["manager", "pharmacy_admin"],

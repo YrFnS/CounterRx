@@ -66,6 +66,9 @@ export default function Register() {
   const [noteFor, setNoteFor] = useState<string | null>(null);
   const [priceFor, setPriceFor] = useState<string | null>(null);
   const [priceVal, setPriceVal] = useState("");
+  const [discFor, setDiscFor] = useState<string | null>(null);
+  const [discVal, setDiscVal] = useState("");
+  const [discMode, setDiscMode] = useState<"amt" | "pct">("pct");
   const [scanMiss, setScanMiss] = useState(0);
   const searchRef = useRef<HTMLInputElement>(null);
 
@@ -180,6 +183,20 @@ export default function Register() {
   /* single source of truth — matches the payment modal exactly */
   const attachedCustomer = state.customers.find((c) => c.id === state.saleCustomerId) ?? null;
   const totals = cartTotals(state, 0, !!attachedCustomer?.taxExempt);
+
+  const lineDiscountValue = (price: number, qty: number, disc?: { mode: "amt" | "pct"; value: number }): number => {
+    if (!disc || disc.value <= 0) return 0;
+    const gross = price * qty;
+    return disc.mode === "pct"
+      ? Math.round((gross * Math.min(100, disc.value)) / 100 * 100) / 100
+      : Math.round(Math.min(disc.value, gross) * 100) / 100;
+  };
+  const applyLineDiscount = (productId: string, uom?: string) => {
+    const v = parseFloat(discVal);
+    const discount = !v || v <= 0 ? undefined : { mode: discMode, value: v } as const;
+    dispatch({ type: "SET_LINE_DISCOUNT", productId, uom, discount });
+    setDiscFor(null);
+  };
   const { subtotal, tax, total } = totals;
   const itemCount = state.cart.reduce((s, c) => s + c.qty, 0);
   const hasRx = cartLines.some((x) => x.p.rx);
@@ -481,6 +498,38 @@ export default function Register() {
                   <ITag size={9} /> Override price
                 </button>
               )}
+              {discFor === p.id ? (
+                <div className="anim-fade-up mt-1.5 flex items-center gap-1.5">
+                  <div className="flex rounded-md overflow-hidden border border-pine-300">
+                    <button onClick={() => setDiscMode("pct")}
+                      className={cx("px-2 py-1 text-[10px] font-bold transition", discMode === "pct" ? "bg-pine-700 text-pine-50" : "bg-card text-inksoft hover:bg-mist")}>%</button>
+                    <button onClick={() => setDiscMode("amt")}
+                      className={cx("px-2 py-1 text-[10px] font-bold transition", discMode === "amt" ? "bg-pine-700 text-pine-50" : "bg-card text-inksoft hover:bg-mist")}>$</button>
+                  </div>
+                  <input autoFocus value={discVal} onChange={(e) => setDiscVal(e.target.value.replace(/[^\d.]/g, ""))}
+                    placeholder={discMode === "pct" ? "10" : "5.00"} inputMode="decimal"
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") { applyLineDiscount(p.id, line.uom); }
+                      if (e.key === "Escape") setDiscFor(null);
+                    }}
+                    onBlur={() => applyLineDiscount(p.id, line.uom)}
+                    className="num flex-1 min-w-0 text-[11px] px-2 py-1.5 rounded-md border border-pine-300 bg-card text-ink focus:outline-none focus:border-pine-500 focus:ring-2 focus:ring-pine-200 transition" />
+                </div>
+              ) : line.lineDiscount ? (
+                <p className="mt-1.5 flex items-center gap-1.5 text-[10px] font-semibold text-brick-700 bg-brick-100/70 border border-brick-300/50 rounded-md px-2 py-1 num">
+                  <ITag size={9} className="shrink-0" />
+                  <span>discount −{money(lineDiscountValue(line.priceOverride ?? unitPrice(state, p.id, line.uom), line.qty, line.lineDiscount))}</span>
+                  <button onClick={() => dispatch({ type: "SET_LINE_DISCOUNT", productId: p.id, uom: line.uom })}
+                    className="ml-auto shrink-0 p-0.5 rounded text-inksoft hover:text-brick-700 transition" aria-label="Remove line discount">
+                    <IX size={9} />
+                  </button>
+                </p>
+              ) : (
+                <button onClick={() => { setDiscFor(p.id); setDiscVal(""); setDiscMode("pct"); }}
+                  className="mt-1.5 mr-3 flex items-center gap-1 text-[10px] font-semibold text-inksoft/60 hover:text-brick-700 opacity-0 group-hover:opacity-100 transition-all duration-200">
+                  <ITag size={9} /> Line discount
+                </button>
+              )}
             </div>
           ))}
         </div>
@@ -488,6 +537,9 @@ export default function Register() {
         <div className="border-t border-mist px-4 py-4 bg-card">
           <div className="space-y-1 text-sm">
             <div className="flex justify-between text-inksoft"><span>Subtotal</span><span className="num">{money(subtotal)}</span></div>
+            {totals.lineDiscounts > 0 && (
+              <div className="flex justify-between text-brick-700 font-semibold anim-fade-up"><span>Line discounts</span><span className="num">−{money(totals.lineDiscounts)}</span></div>
+            )}
             {totals.bulkSavings > 0 && (
               <div className="flex justify-between text-honey-700 font-semibold anim-fade-up"><span>Bulk-tier savings</span><span className="num">−{money(totals.bulkSavings)}</span></div>
             )}
