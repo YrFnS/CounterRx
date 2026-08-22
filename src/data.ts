@@ -664,7 +664,7 @@ export function makeStaff(now: number): Staff[] {
   return [
     mk("S-001", "D. Whitfield", "pharmacy_admin", "3333", 240),
     mk("S-002", "R. Mensah, RPh", "pharmacist", "2222", 180),
-    mk("S-003", "A. Okafor", "cashier", "1111", 120),
+    mk("S-003", "S-003", "cashier", "1111", 120),
     mk("S-004", "J. Boateng", "cashier", "4444", 45),
     mk("S-005", "T. Okoye", "super_admin", "5555", 20),
     mk("S-006", "K. Asante", "manager", "6666", 90),
@@ -705,7 +705,7 @@ export const CURRENCIES = ["USD", "EUR", "GBP", "NGN", "KES", "ZAR", "GHS", "INR
 
 export function makeSettings(): OrgSettings {
   return {
-    orgName: STORE.name, branch: STORE.branch, address: STORE.address, phone: STORE.phone, license: STORE.gstin,
+    orgName: "CounterRx Pharmacy", branch: "Main branch", address: "", phone: "", license: "",
     currency: "USD",
     receiptFooter: "Get well soon — returns within 7 days with receipt",
     receiptTerms: "℞ items verified & dispensed by licensed pharmacist",
@@ -772,7 +772,7 @@ export function makeColdChainLogs(now: number): ColdChainLog[] {
     { id: "CCL-1001", productId: "insg", tempC: 3.8, inRange: true, staff: "R. Mensah, RPh", note: "Morning fridge check — zone B", at: now - 5 * h },
     { id: "CCL-1002", productId: "insg", tempC: 4.1, inRange: true, staff: "D. Whitfield", note: "Delivery hand-off verified", at: now - 30 * 60_000 },
     { id: "CCL-1003", productId: "salb", tempC: 7.4, inRange: true, staff: "R. Mensah, RPh", at: now - 26 * h },
-    { id: "CCL-1004", productId: "insg", tempC: 9.2, inRange: false, staff: "A. Okafor", note: "Fridge door left ajar — restock check", at: now - 49 * h },
+    { id: "CCL-1004", productId: "insg", tempC: 9.2, inRange: false, staff: "S-003", note: "Fridge door left ajar — restock check", at: now - 49 * h },
   ];
 }
 
@@ -817,10 +817,9 @@ export interface Transfer {
   toBranch: string; status: TransferStatus;
   createdAt: number; requestedBy: string; note?: string;
 }
-export const HOME_BRANCH = "Branch 04 — Maple & 9th";
+export const HOME_BRANCH = "Main branch";
 export const BRANCHES = ["Branch 02 — Cedar Mall", "Branch 07 — Northgate", "Branch 11 — Harbor East"];
 
-export const CASHIER = "A. Okafor";
 
 const day = 86_400_000;
 const iso = (ms: number) => new Date(ms).toISOString().slice(0, 10);
@@ -1015,7 +1014,7 @@ export function makeTransfers(now: number): Transfer[] {
   const h = 3_600_000;
   return [
     { id: "TR-311", productId: "insg", qty: 4, toBranch: BRANCHES[0], status: "requested", createdAt: now - 2.5 * h, requestedBy: "R. Mensah, RPh", note: "Northgate running low on glargine" },
-    { id: "TR-310", productId: "ors5", qty: 24, toBranch: BRANCHES[1], status: "approved", createdAt: now - 9 * h, requestedBy: "A. Okafor" },
+    { id: "TR-310", productId: "ors5", qty: 24, toBranch: BRANCHES[1], status: "approved", createdAt: now - 9 * h, requestedBy: "S-003" },
     { id: "TR-309", productId: "salb", qty: 6, toBranch: BRANCHES[2], status: "shipped", createdAt: now - 26 * h, requestedBy: "D. Whitfield", note: "Flu-season demand at Harbor" },
   ];
 }
@@ -1077,7 +1076,7 @@ export function makeTransactions(products: Product[], now: number): Transaction[
       txs.push({
         id: `T-${seq++}`, at, lines,
         subtotal: Math.round(subtotal * 100) / 100, discount, tax, total,
-        method, cashier: CASHIER,
+        method, cashier: "Seeded history",
         tendered: method === "cash" ? Math.ceil(total / 10) * 10 : undefined,
         change: method === "cash" ? Math.round((Math.ceil(total / 10) * 10 - total) * 100) / 100 : undefined,
       });
@@ -1090,19 +1089,11 @@ export function daysUntil(isoDate: string): number {
   return Math.ceil((new Date(isoDate + "T00:00:00").getTime() - Date.now()) / day);
 }
 
-export const STORE = {
-  name: "CounterRx Pharmacy",
-  branch: "Branch 04 — Maple & 9th",
-  address: "214 Maple Avenue, Springfield",
-  phone: "(555) 014-2210",
-  gstin: "LIC #PH-88412 · GST 29AAKCS4412F1Z8",
-};
-
 /* ------------------------------------------------------------------ */
 /*  Operations — deliveries, e-commerce intake, staff time-clock       */
 /* ------------------------------------------------------------------ */
 
-export const DRIVERS = ["K. Boateng", "S. Mensah", "T. Osei"];
+const DRIVERS = ["K. Boateng", "S. Mensah", "T. Osei"]; // seeded delivery history only
 
 export type DeliveryStatus = "queued" | "assigned" | "out" | "delivered";
 export interface Delivery {

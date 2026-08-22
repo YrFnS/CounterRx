@@ -2,7 +2,6 @@ import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import i18n from "../i18n";
 import { usePos, money, relTime } from "../store";
-import { DRIVERS } from "../data";
 import type { Delivery, DeliveryStatus, WebOrder } from "../data";
 import { cx, Badge, Empty, Modal } from "../ui";
 import { ITruck, IMapPin, IWeb, IX, ICheck, IChevD, ICash, IAlert } from "../icons";
@@ -26,6 +25,10 @@ export default function Deliveries() {
   const { state, dispatch } = usePos();
   const [podFor, setPodFor] = useState<Delivery | null>(null);
   const [podText, setPodText] = useState("");
+  /* Drivers = active staff roster; falls back to the signed-in user. */
+  const drivers = useMemo(
+    () => state.staff.filter((s) => s.active).map((s) => s.name),
+    [state.staff]);
 
   const custName = (id: string) => state.customers.find((c) => c.id === id)?.name ?? i18n.t("deliveries.walkIn");
   const lineLabel = (l: { productId: string; qty: number }) =>
@@ -37,7 +40,7 @@ export default function Deliveries() {
 
   const advance = (d: Delivery) => {
     if (d.status === "queued") {
-      dispatch({ type: "DELIVERY_STATUS", id: d.id, to: "assigned", driver: d.driver ?? DRIVERS[0] });
+      dispatch({ type: "DELIVERY_STATUS", id: d.id, to: "assigned", driver: d.driver ?? drivers[0] ?? state.user?.name });
     } else if (d.status === "assigned") {
       dispatch({ type: "DELIVERY_STATUS", id: d.id, to: "out" });
     } else if (d.status === "out") {
@@ -59,7 +62,7 @@ export default function Deliveries() {
           <IWeb size={14} /> {activeWeb.length} web order{activeWeb.length === 1 ? "" : "s"} awaiting triage
         </span>
         <span className="ml-auto text-[11px] text-inksoft hidden md:block">
-          Drivers on shift: <span className="font-semibold text-ink">{DRIVERS.join(" · ")}</span>
+          Drivers on shift: <span className="font-semibold text-ink">{drivers.slice(0, 4).join(" · ") || "—"}</span>
         </span>
       </div>
 
@@ -139,10 +142,10 @@ export default function Deliveries() {
                     {d.status !== "delivered" && (
                       <div className="mt-2 flex gap-1.5 items-center">
                         {d.status === "queued" && (
-                          <select value={d.driver ?? DRIVERS[0]}
+                          <select value={d.driver ?? drivers[0] ?? ""}
                             onChange={(e) => dispatch({ type: "DELIVERY_STATUS", id: d.id, to: "assigned", driver: e.target.value })}
                             className="flex-1 px-1.5 py-1.5 rounded-md border border-mist bg-paper text-[11px] font-semibold text-ink focus:outline-none focus:border-pine-500">
-                            {DRIVERS.map((dr) => <option key={dr} value={dr}>{dr}</option>)}
+                            {(d.driver && !drivers.includes(d.driver) ? [d.driver, ...drivers] : drivers).map((dr) => <option key={dr} value={dr}>{dr}</option>)}
                           </select>
                         )}
                         <button onClick={() => advance(d)}

@@ -4,7 +4,6 @@ import {
   makeProducts, makePrescriptions, makeTransactions, makeCustomers, makeTransfers, makePrescribers,
   makeSuppliers, makePurchaseOrders, makeApInvoices, makeExpenses, invoiceBalance,
   makeDeliveries, makeWebOrders, makeTimeEntries, makeColdChainLogs,
-  CASHIER,
   stockOf, nearestExpiry, allocFEFO, fefoBatches, newBatchCode, daysUntil,
   bulkPct, REDEEM_CHUNK_PTS, REDEEM_CHUNK_VALUE, can, tenderTypeOf, applyStoreCredit, pruneExpiredHolds,
   LINE_DISCOUNT_PIN_THRESHOLD, CATEGORIES_FALLBACK,
@@ -217,7 +216,7 @@ export const seed = (): Pick<State, "products" | "transactions" | "prescriptions
     staff: makeStaff(now),
     settings: makeSettings(),
     storeCredits: [],
-    audit: [{ id: auditSeq++, at: now - 36 * 60_000, actor: "system", kind: "system", detail: "Ledger initialized — demo dataset v10" }],
+    audit: [],
   };
 };
 
@@ -535,7 +534,7 @@ export function reducer(state: State, a: Action): State {
       if (!p || !Number.isFinite(a.tempC)) return state;
       const entry: ColdChainLog = {
         id: `CCL-${Date.now().toString(36)}`, productId: p.id, tempC: round2(a.tempC),
-        inRange: tempInRange(a.tempC), staff: state.user?.name ?? CASHIER, note: a.note?.trim() || undefined,
+        inRange: tempInRange(a.tempC), staff: state.user?.name ?? "Staff", note: a.note?.trim() || undefined,
         at: Date.now(),
       };
       const next = withAudit({ ...state, coldChainLog: [entry, ...state.coldChainLog] }, "stock",
@@ -703,7 +702,7 @@ export function reducer(state: State, a: Action): State {
         drug: `${p?.name ?? rx.productId} × ${rx.qty}`, qty: rx.qty,
         otherPharmacy: a.otherPharmacy, otherPhone: a.otherPhone,
         prescriber: state.prescribers.find((x) => x.id === rx.prescriberId)?.name ?? rx.prescriberId,
-        refillsRemaining: a.refillsRemaining, pharmacist: state.user?.name ?? CASHIER,
+        refillsRemaining: a.refillsRemaining, pharmacist: state.user?.name ?? "Pharmacist on duty",
         at: Date.now(), note: a.note?.trim() || undefined,
       };
       const prescriptions = state.prescriptions.map((x) => (x.id === rx.id ? { ...x, transferredOut: { at: Date.now(), to: a.otherPharmacy } } : x));
@@ -732,7 +731,7 @@ export function reducer(state: State, a: Action): State {
         drug: `${p.name} × ${a.qty}`, qty: a.qty,
         otherPharmacy: a.otherPharmacy, otherPhone: a.otherPhone,
         prescriber: prescriber.name, refillsRemaining: a.refillsRemaining,
-        pharmacist: state.user?.name ?? CASHIER, at: Date.now(),
+        pharmacist: state.user?.name ?? "Pharmacist on duty", at: Date.now(),
         note: "Incoming transfer accepted",
       };
       return withToast(
@@ -1003,7 +1002,7 @@ export function reducer(state: State, a: Action): State {
         at: Date.now(), lines: t.lines,
         subtotal: t.subtotal, discount: t.discount, couponDiscount: t.coupon > 0 ? t.coupon : undefined, tax: t.tax, total: t.total,
         invoiceDiscountAmt: (a.invoiceDiscountAmt ?? 0) > 0 ? t.invoiceAmt : undefined,
-        method: primary.method, cashier: state.user?.name ?? CASHIER,
+        method: primary.method, cashier: state.user?.name ?? "Staff",
         taxExempt: a.taxExempt || undefined,
         payments: a.payments.length > 1 ? a.payments : undefined,
         tendered: singleCash ? (a.tendered ?? primary.amount) : undefined,
@@ -1051,7 +1050,7 @@ export function reducer(state: State, a: Action): State {
           .map(({ p, l }) => ({
             id: logSeq++, at: tx.at, productId: p.id, qty: l.qty,
             purchaser: a.restricted!.purchaser.trim(), idType: a.restricted!.idType,
-            idLast4: a.restricted!.idLast4, cashier: state.user?.name ?? CASHIER,
+            idLast4: a.restricted!.idLast4, cashier: state.user?.name ?? "Staff",
           }));
         next = { ...next, restrictedLog: [...entries, ...next.restrictedLog] };
         next = withAudit(next, "sale", `⚠ BTC log ${tx.id} — ${entries.map((e) => `${e.qty}× ${state.products.find((p) => p.id === e.productId)?.name ?? e.productId}`).join(", ")} · ${a.restricted!.purchaser} (${a.restricted!.idType} ····${a.restricted!.idLast4})`);
@@ -1160,7 +1159,7 @@ export function reducer(state: State, a: Action): State {
       const onHand = stockOf(p);
       if (a.qty > onHand) return withToast(state, "error", `Only ${onHand} × ${p.name} on hand`);
       const id = `TR-${312 + state.transfers.length}`;
-      const tr: Transfer = { id, productId: p.id, qty: a.qty, toBranch: a.toBranch, status: "requested", createdAt: Date.now(), requestedBy: state.user?.name ?? CASHIER, note: a.note?.trim() || undefined };
+      const tr: Transfer = { id, productId: p.id, qty: a.qty, toBranch: a.toBranch, status: "requested", createdAt: Date.now(), requestedBy: state.user?.name ?? "Staff", note: a.note?.trim() || undefined };
       const next = withAudit({ ...state, transfers: [tr, ...state.transfers] }, "stock", `Transfer ${id} requested — ${a.qty} × ${p.name} → ${a.toBranch}`);
       return withToast(next, "success", `${id} requested — ${a.qty} × ${p.name} → ${a.toBranch}`);
     }
@@ -1342,7 +1341,7 @@ export function reducer(state: State, a: Action): State {
       const refund: Transaction = {
         id: `R-${orig.id.slice(2)}`, at: Date.now(), lines: orig.lines,
         subtotal: -orig.subtotal, discount: -orig.discount, tax: -orig.tax, total: -orig.total,
-        method: orig.method, cashier: CASHIER, refundOf: orig.id, reason: a.reason,
+        method: orig.method, cashier: state.user?.name ?? "Staff", refundOf: orig.id, reason: a.reason,
       };
       const transactions = [refund, ...state.transactions.map((t) => (t.id === orig.id ? { ...t, refundedAt: Date.now() } : t))];
       let next = withAudit({ ...state, products, transactions }, "money",

@@ -5,7 +5,7 @@ import i18n from "./i18n";
 import { PosProvider, usePos } from "./store";
 import { signInStaffByEmail } from "./lib/sync";
 import type { View } from "./store";
-import { CASHIER, daysUntil, nearestExpiry, stockOf, ROLE_LABEL, VIEW_ROLES } from "./data";
+import { daysUntil, nearestExpiry, stockOf, ROLE_LABEL, VIEW_ROLES } from "./data";
 import type { Product, Transaction, Prescription } from "./data";
 import { cx } from "./ui";
 import { PaymentModal, ReceiptModal, DataExchangeModal } from "./modals";
