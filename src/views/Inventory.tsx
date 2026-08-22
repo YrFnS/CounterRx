@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { usePos, money, relTime, clockTime } from "../store";
-import { CATEGORIES, daysUntil, fefoBatches, stockOf, nearestExpiry, newBatchCode, FIELD_SUGGESTIONS, BRANCHES, can, ndcLookup, hashPin, tempInRange, patientsForLot } from "../data";
-import type { CategoryId, Product, Batch, TransferStatus, Uom, Transaction } from "../data";
+import { daysUntil, fefoBatches, stockOf, nearestExpiry, newBatchCode, FIELD_SUGGESTIONS, BRANCHES, can, ndcLookup, hashPin, tempInRange, patientsForLot } from "../data";
+import type { Product, Batch, TransferStatus, Uom, Transaction } from "../data";
 import { aiForecast } from "../lib/ai";
 import type { ForecastRow } from "../lib/ai";
 import { buildForecastPayload, historyFromTransactions } from "../lib/ai-ui";
@@ -15,7 +15,8 @@ export default function Inventory() {
   const { t } = useTranslation();
   const { state, dispatch } = usePos();
   const [q, setQ] = useState("");
-  const [cat, setCat] = useState<CategoryId | "all">("all");
+  const [cat, setCat] = useState<string | "all">("all");
+  const categories = useMemo(() => (state.categories ?? []).filter((c) => !c.archived).sort((x, y) => x.sort - y.sort), [state.categories]);
   const [filter, setFilter] = useState<Filter>(state.invPreset === "expiring" ? "expiring" : state.invPreset === "low" ? "low" : "all");
   const [monthFilter, setMonthFilter] = useState<string | null>(null);
   const [adjusting, setAdjusting] = useState<Product | null>(null);
@@ -188,10 +189,10 @@ export default function Inventory() {
       </div>
 
       <div className="mt-3 flex items-center gap-2 text-xs text-inksoft flex-wrap">
-        <select value={cat} onChange={(e) => setCat(e.target.value as CategoryId | "all")}
+        <select value={cat} onChange={(e) => setCat(e.target.value)}
           className="px-2.5 py-1.5 rounded-lg border border-mist bg-card text-xs font-semibold text-ink focus:outline-none focus:border-pine-500 cursor-pointer">
           <option value="all">All categories</option>
-          {CATEGORIES.map((c) => <option key={c.id} value={c.id}>{c.label}</option>)}
+          {categories.map((c) => <option key={c.id} value={c.id}>{c.label}</option>)}
         </select>
         <span>· {rows.length} of {state.products.length} products · {totalLots} lots · stock value at cost</span>
         <span className="num font-bold text-pine-800">{money(stockValue)}</span>
@@ -220,7 +221,7 @@ export default function Inventory() {
                   <tr key={p.id} className={cx("border-t border-mist/70 align-top transition-colors hover:bg-pine-50/60", i % 2 === 1 && "bg-paper/50")}>
                     <td className="px-4 py-2.5">
                       <div className="flex items-center gap-2.5">
-                        <span className="w-2 h-2 shrink-0 rounded-full mt-1" style={{ background: CATEGORIES.find((c) => c.id === p.category)?.dot }} />
+                        <span className="w-2 h-2 shrink-0 rounded-full mt-1" style={{ background: state.categories?.find((c) => c.id === p.category)?.color }} />
                         <div className="min-w-0">
                           <p className="font-semibold text-ink leading-tight truncate max-w-[260px]">
                             {p.name} {p.rx && <span className="text-brick-700 font-bold">℞</span>}
@@ -1246,9 +1247,10 @@ function AdjustModal({ p, onClose }: { p: Product; onClose: () => void }) {
 }
 
 function AddProductModal({ onClose }: { onClose: () => void }) {
-  const { dispatch } = usePos();
+  const { state, dispatch } = usePos();
+  const categories = useMemo(() => (state.categories ?? []).filter((c) => !c.archived).sort((x, y) => x.sort - y.sort), [state.categories]);
   const [f, setF] = useState({
-    name: "", generic: "", brand: "", category: "pain" as CategoryId, form: "Tablet · strip of 10",
+    name: "", generic: "", brand: "", category: "pain", form: "Tablet · strip of 10",
     price: "", cost: "", stock: "24", reorder: "10", rx: false, expDays: "365", batch: "", ndc: "",
   });
   const set = (k: string, v: string | boolean) => setF((s) => ({ ...s, [k]: v }));
@@ -1275,7 +1277,7 @@ function AddProductModal({ onClose }: { onClose: () => void }) {
       product: {
         id, sku: `SKU-${id.slice(-5).toUpperCase()}`, barcode: `890${String(Math.floor(Math.random() * 1e10)).padStart(10, "0")}`,
         name: f.name.trim(), generic: f.generic.trim() || f.name.trim(), brand: f.brand.trim() || "House brand",
-        category: f.category, form: f.form, price: parseFloat(f.price), cost: parseFloat(f.cost) || parseFloat(f.price) * 0.55,
+        category: f.category as string, form: f.form, price: parseFloat(f.price), cost: parseFloat(f.cost) || parseFloat(f.price) * 0.55,
         reorderLevel: parseInt(f.reorder) || 10, rx: f.rx,
         supplier: "Manual entry",
         ndc: f.ndc.trim() || undefined,
@@ -1326,7 +1328,7 @@ function AddProductModal({ onClose }: { onClose: () => void }) {
           <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-inksoft">Category</span>
           <select value={f.category} onChange={(e) => set("category", e.target.value)}
             className="w-full mt-1 px-2.5 py-2 rounded-lg border border-mist bg-card text-sm focus:border-pine-500 focus:outline-none">
-            {CATEGORIES.map((c) => <option key={c.id} value={c.id}>{c.label}</option>)}
+            {categories.map((c) => <option key={c.id} value={c.id}>{c.label}</option>)}
           </select>
         </label>
         <Field label="Pack form" k="form" ph="Syrup · 100ml" />

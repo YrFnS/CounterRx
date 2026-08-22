@@ -3,7 +3,7 @@ import { useTranslation } from "react-i18next";
 import type { ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { usePos, money, cartTotals } from "./store";
-import { TAX_RATE, findInteractions, can, creditByCode } from "./data";
+import { findInteractions, can, creditByCode } from "./data";
 import type { PayMethod, PaymentLeg, Transaction, Product, StoreCredit } from "./data";
 import { Modal, cx } from "./ui";
 import { ICash, ICard, IShield, IX, IPrint, ICheck, ISplit, IUsers, IStar, IAlert, ICode, ICopy, IDownload } from "./icons";
@@ -18,8 +18,9 @@ export function PaymentModal() {
   const [split, setSplit] = useState(false);
   const [leg1Amt, setLeg1Amt] = useState("");
   const [discountPct, setDiscountPct] = useState(0);
+  const [discMode, setDiscMode] = useState<"pct" | "amt">("pct");
+  const [discVal, setDiscVal] = useState("");
   const [tendered, setTendered] = useState("");
-  const [exemptToggle, setExemptToggle] = useState(false);
   const [idChecked, setIdChecked] = useState(false);
   const [overrideAck, setOverrideAck] = useState(false);
   const [overrideReason, setOverrideReason] = useState("");
@@ -59,7 +60,8 @@ export function PaymentModal() {
   const restrictedLines = state.cart
     .map((c) => ({ qty: c.qty, p: product(c.productId) }))
     .filter((x): x is { qty: number; p: Product } => !!x.p && !!x.p.restricted);
-  const taxExempt = !!(customer?.taxExempt || exemptToggle);
+  /* kept for COMPLETE_SALE payload compatibility; tax itself is retired */
+  const taxExempt = !!customer?.taxExempt;
   /* coupon discount computed from the pre-coupon subtotal (cartTotals applies it) */
   const preCouponSubtotal = round2(state.cart.reduce((s, c) => {
     const p = state.products.find((x) => x.id === c.productId);
@@ -70,7 +72,8 @@ export function PaymentModal() {
       ? round2((preCouponSubtotal * couponMatch!.value) / 100)
       : Math.min(couponMatch!.value, preCouponSubtotal)
     : 0;
-  const t = useMemo(() => cartTotals(state, discountPct, taxExempt, couponDiscount), [state, discountPct, taxExempt, couponDiscount]);
+  const invoiceAmtInput = discMode === "amt" ? round2(Math.max(0, parseFloat(discVal) || 0)) : 0;
+  const t = useMemo(() => cartTotals(state, discountPct, taxExempt, couponDiscount, invoiceAmtInput), [state, discountPct, taxExempt, couponDiscount, invoiceAmtInput]);
   const hasControlled = state.cart.some((c) => product(c.productId)?.controlled);
   /* redeemable chunks: 100 pts = $5, capped by payable balance */
   const payableNow = Math.max(0, t.subtotal - t.bulkSavings - t.discount - t.coupon);
@@ -118,6 +121,7 @@ export function PaymentModal() {
     dispatch({
       type: "COMPLETE_SALE", payments, discountPct, taxExempt, idChecked,
       couponDiscount: couponDiscount > 0 ? couponDiscount : undefined,
+      invoiceDiscountAmt: invoiceAmtInput > 0 ? invoiceAmtInput : undefined,
       tendered: !split && leg1 === "cash" ? tenderedNum : undefined,
       restricted: restrictedLines.length > 0
         ? { purchaser: rPurchaser, idType: rIdType, idLast4: rIdLast4 }
@@ -201,30 +205,22 @@ export function PaymentModal() {
               <span className="text-inksoft">Discount</span>
               <span className="flex items-center gap-1">
                 {[0, 5, 10].map((d) => (
-                  <button key={d} onClick={() => setDiscountPct(d)}
+                  <button key={d} onClick={() => { setDiscMode("pct"); setDiscountPct(d); }}
                     className={cx("num px-2 py-0.5 rounded-md text-xs border transition",
-                      discountPct === d ? "bg-pine-700 text-pine-50 border-pine-700" : "bg-card border-mist text-inksoft hover:border-pine-400")}>
+                      discMode === "pct" && discountPct === d ? "bg-pine-700 text-pine-50 border-pine-700" : "bg-card border-mist text-inksoft hover:border-pine-400")}>
                     {d}%
                   </button>
                 ))}
-                <span className="num text-brick-700 font-semibold ms-1">−{money(t.discount)}</span>
+                <input value={discMode === "amt" ? discVal : ""} onChange={(e) => setDiscVal(e.target.value.replace(/[^\d.]/g, ""))}
+                  onFocus={() => { if (discMode !== "amt") { setDiscMode("amt"); setDiscountPct(0); } }}
+                  placeholder="$ off" inputMode="decimal"
+                  className="num w-16 px-1.5 py-0.5 rounded-md text-xs border border-mist bg-card text-ink focus:border-pine-500 focus:outline-none placeholder:text-inksoft/60" />
+                <span className="num text-brick-700 font-semibold ms-1">
+                  −{money(discMode === "pct" ? round2((t.subtotal * discountPct) / 100) : t.invoiceAmt)}
+                </span>
               </span>
             </div>
             {t.loyaltyDeduct > 0 && <Row k={<span className="text-pine-700 font-semibold">Points redeemed · {state.redeemPoints} pts</span>} v={<span className="text-pine-700">−{money(t.loyaltyDeduct)}</span>} />}
-            <Row
-              k={
-                <span className="flex items-center gap-2">
-                  {`Tax (${(TAX_RATE * 100).toFixed(0)}%)`}
-                  {taxExempt && <span className="px-1.5 py-px rounded bg-pine-700 text-pine-50 text-[9px] font-bold tracking-wide">EXEMPT</span>}
-                  {!taxExempt && !customer?.taxExempt && (
-                    <button onClick={() => setExemptToggle(true)}
-                      className="text-[9px] font-bold uppercase tracking-wide text-inksoft hover:text-pine-700 border border-mist hover:border-pine-400 rounded px-1 py-px transition">
-                      exempt
-                    </button>
-                  )}
-                </span>
-              }
-              v={<span className={taxExempt ? "line-through text-inksoft" : ""}>{money(taxExempt ? round2(t.tax === 0 ? (t.subtotal - t.bulkSavings - t.discount - t.loyaltyDeduct) * TAX_RATE : t.tax) : t.tax)}</span>} />
             <div className="receipt-dash pt-2 mt-2">
               <Row k={<span className="font-semibold text-ink">Total</span>} v={<span className="font-bold text-pine-800">{money(t.total)}</span>} />
             </div>
@@ -247,11 +243,6 @@ export function PaymentModal() {
                   <span className="flex items-center gap-1.5"><IStar size={12} /> {redeeming ? `Redeeming ${state.redeemPoints} pts` : `Redeem ${maxChunks * loy.chunkPts} pts`}</span>
                   <span className="num">{redeeming ? `−${money(t.loyaltyDeduct)} ✓` : `−${money(maxChunks * loy.chunkValue)}`}</span>
                 </button>
-              )}
-              {customer.taxExempt && (
-                <p className="mt-2 flex items-center gap-1.5 text-[10px] font-bold text-pine-700">
-                  <ICheck size={11} /> Tax-exempt account — resale certificate on file
-                </p>
               )}
             </div>
           )}
@@ -540,10 +531,6 @@ function ReceiptBody({ tx }: { tx: Transaction }) {
       {tx.bulkSavings && tx.bulkSavings > 0 && <div className="flex justify-between"><span>Bulk-tier savings</span><span>−{money(tx.bulkSavings)}</span></div>}
       {tx.discount > 0 && <div className="flex justify-between"><span>Discount</span><span>−{money(tx.discount)}</span></div>}
       {tx.loyaltyDeduct && tx.loyaltyDeduct > 0 && <div className="flex justify-between"><span>Points · {tx.pointsRedeemed} pts</span><span>−{money(tx.loyaltyDeduct)}</span></div>}
-      <div className="flex justify-between">
-        <span>Tax 8%{tx.taxExempt && <span className="ms-1 px-1 py-px bg-ink text-paper text-[8px] font-bold tracking-widest">EXEMPT</span>}</span>
-        <span className={tx.taxExempt ? "text-inksoft" : ""}>{money(tx.tax)}</span>
-      </div>
       <div className="flex justify-between font-bold text-[14px] mt-1"><span>TOTAL</span><span>{money(tx.total)}</span></div>
       <div className="receipt-dash my-3" />
       {(tx.payments ?? [{ method: tx.method, amount: tx.total }]).map((pg, i) => (

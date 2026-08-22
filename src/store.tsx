@@ -4,9 +4,10 @@ import {
   makeProducts, makePrescriptions, makeTransactions, makeCustomers, makeTransfers, makePrescribers,
   makeSuppliers, makePurchaseOrders, makeApInvoices, makeExpenses, invoiceBalance,
   makeDeliveries, makeWebOrders, makeTimeEntries, makeColdChainLogs,
-  TAX_RATE, CASHIER,
   stockOf, nearestExpiry, allocFEFO, fefoBatches, newBatchCode, daysUntil,
   bulkPct, REDEEM_CHUNK_PTS, REDEEM_CHUNK_VALUE, can, tenderTypeOf, applyStoreCredit, pruneExpiredHolds,
+  LINE_DISCOUNT_PIN_THRESHOLD, CATEGORIES_FALLBACK,
+  type Category,
   createShift, recordShiftTransaction, recordCashMovement, closeShift, generateXReport, generateZReport,
   deductFromLot, tempInRange,
 } from "./data";
@@ -21,7 +22,7 @@ import type {
 } from "./data";
 import { makeStaff, makeSettings, makeBackOrders, makeRxTransfers, SNAPS_KEY, hashPin, ROLE_LABEL } from "./data";
 import type { BackendData, LoadResult } from "./lib/sync";
-import { loadBackendData, persistBackendData, signOutStaff, subscribeToBackend } from "./lib/sync";
+import { loadBackendData, persistBackendData, signOutStaff, subscribeToBackend, getSessionStaffId } from "./lib/sync";
 import { setRuntimeInteractions } from "./lib/clinical";
 import i18n from "./i18n";
 
@@ -59,8 +60,9 @@ interface State {
   interactionPairs: InteractionPair[];
   coldChainLog: ColdChainLog[];
   coupons: Coupon[];
+  categories: Category[];
   currentShift: Shift | null;
-  cart: { productId: string; qty: number; note?: string; priceOverride?: number; daw?: number; substitutedFrom?: string; uom?: string }[];
+  cart: { productId: string; qty: number; note?: string; priceOverride?: number; daw?: number; substitutedFrom?: string; uom?: string; lineDiscount?: { mode: "amt" | "pct"; value: number } }[];
   held: HeldSale[];
   storeCredits: StoreCredit[];
   customers: Customer[];
@@ -127,14 +129,17 @@ type Action =
   | { type: "REDEEM_STORE_CREDIT"; id: string; amount: number }
   | { type: "SAVE_COUPON"; coupon: Coupon }
   | { type: "DELETE_COUPON"; id: string }
+  | { type: "SAVE_CATEGORY"; category: Category }
+  | { type: "DELETE_CATEGORY"; id: string }
   | { type: "EXPIRE_HELDS" }
   | { type: "OPEN_PAY"; open: boolean }
-  | { type: "COMPLETE_SALE"; payments: PaymentLeg[]; tendered?: number; discountPct: number; taxExempt: boolean; idChecked: boolean; restricted?: { purchaser: string; idType: string; idLast4: string }; couponDiscount?: number }
+  | { type: "COMPLETE_SALE"; payments: PaymentLeg[]; tendered?: number; discountPct: number; taxExempt: boolean; idChecked: boolean; restricted?: { purchaser: string; idType: string; idLast4: string }; couponDiscount?: number; invoiceDiscountAmt?: number; approvedBy?: string }
   | { type: "OPEN_RECEIPT"; tx: Transaction | null }
   | { type: "ADJUST_BATCH"; productId: string; batch: string; newQty: number; reason: string }
   | { type: "RESTOCK"; productId: string; amount: number; batch: string; expiry: string; cost?: number }
   | { type: "SET_NOTE"; productId: string; note: string }
   | { type: "SET_PRICE"; productId: string; price: number | null }
+  | { type: "SET_LINE_DISCOUNT"; productId: string; uom?: string; discount?: { mode: "amt" | "pct"; value: number }; approvedBy?: string }
   | { type: "SET_BATCH_PRICE"; productId: string; batch: string; price: number | null }
   | { type: "ADD_TRANSFER"; productId: string; qty: number; toBranch: string; note?: string }
   | { type: "TRANSFER_STATUS"; id: string; status: TransferStatus }
@@ -175,7 +180,6 @@ type Action =
   | { type: "VOID_TX"; txId: string; reason: string; approvedBy?: string }
   | { type: "GENERATE_X_REPORT"; shiftId: string }
   | { type: "GENERATE_Z_REPORT"; shiftId: string }
-  | { type: "RESET" }
   | { type: "HYDRATE_BACKEND"; data: BackendData }
   | { type: "BACKEND_OFFLINE" };
 
@@ -183,7 +187,7 @@ let toastSeq = 1;
 let heldSeq = 1;
 let auditSeq = 100;
 
-export const seed = (): Pick<State, "products" | "transactions" | "prescriptions" | "prescribers" | "customers" | "audit" | "transfers" | "backorders" | "rxTransfers" | "suppliers" | "purchaseOrders" | "apInvoices" | "expenses" | "deliveries" | "webOrders" | "timeEntries" | "staff" | "settings" | "shifts" | "storeCredits" | "interactionPairs" | "coldChainLog" | "coupons"> => {
+export const seed = (): Pick<State, "products" | "transactions" | "prescriptions" | "prescribers" | "customers" | "audit" | "transfers" | "backorders" | "rxTransfers" | "suppliers" | "purchaseOrders" | "apInvoices" | "expenses" | "deliveries" | "webOrders" | "timeEntries" | "staff" | "settings" | "shifts" | "storeCredits" | "interactionPairs" | "coldChainLog" | "coupons" | "categories"> => {
   const now = Date.now();
   const products = makeProducts(now);
   const customers = makeCustomers(now);
@@ -208,10 +212,11 @@ export const seed = (): Pick<State, "products" | "transactions" | "prescriptions
     shifts: [],
     interactionPairs: [],
     coupons: [],
+    categories: CATEGORIES_FALLBACK,
     staff: makeStaff(now),
     settings: makeSettings(),
     storeCredits: [],
-    audit: [{ id: auditSeq++, at: now - 36 * 60_000, actor: "system", kind: "system", detail: "Ledger initialized — demo dataset v10" }],
+    audit: [],
   };
 };
 
@@ -219,7 +224,7 @@ const LS_KEY = "counterrx:v10";
 
 function load(): State {
   const base: State = {
-    ...seed(), user: null, backendAuthenticated: false, backendOffline: false, lockouts: {}, restrictedLog: [], online: typeof navigator === "undefined" ? true : navigator.onLine,
+    ...seed(), categories: CATEGORIES_FALLBACK, user: null, backendAuthenticated: false, backendOffline: false, lockouts: {}, restrictedLog: [], online: typeof navigator === "undefined" ? true : navigator.onLine,
     cart: [], held: [], saleCustomerId: null, redeemPoints: 0, currentShift: null,
     view: "register", invPreset: "all",
     payOpen: false, receipt: null, toasts: [], flashId: null, flashKey: 0, snapshotVersion: 0,
@@ -254,6 +259,7 @@ function load(): State {
           interactionPairs: saved.interactionPairs ?? [],
           coldChainLog: saved.coldChainLog ?? [],
           coupons: saved.coupons ?? [],
+          categories: saved.categories ?? CATEGORIES_FALLBACK,
         };
       }
     }
@@ -283,7 +289,7 @@ export function uomFactor(state: State, productId: string, uomCode?: string): nu
   return p?.uoms?.find((u) => u.code === uomCode)?.factor ?? 1;
 }
 
-export function cartTotals(state: State, discountPct: number, taxExempt = false, couponDiscount = 0) {
+export function cartTotals(state: State, discountPct: number, taxExempt = false, couponDiscount = 0, invoiceDiscountAmt = 0) {
   const lines: TxLine[] = state.cart.map((c) => {
     const p = state.products.find((x) => x.id === c.productId)!;
     const base = unitPrice(state, p.id, c.uom);           // UOM-aware effective price (§5)
@@ -303,20 +309,33 @@ export function cartTotals(state: State, discountPct: number, taxExempt = false,
       substituted: c.substitutedFrom ? state.products.find((x) => x.id === c.substitutedFrom)?.name : undefined,
       ndc: p.ndc,
       uom: uomLabel, uomFactor: factor > 1 ? factor : undefined, kitComponents: kitSummary,
+      lineDiscount: c.lineDiscount,
     };
   });
-  const subtotal = round2(lines.reduce((s, l) => s + l.price * l.qty, 0));
+  const grossTotal = (l: TxLine) => l.price * l.qty;
+  const lineDiscountOf = (l: TxLine): number => {
+    if (!l.lineDiscount || l.lineDiscount.value <= 0) return 0;
+    return l.lineDiscount.mode === "pct"
+      ? round2((grossTotal(l) * Math.min(100, l.lineDiscount.value)) / 100)
+      : round2(Math.min(l.lineDiscount.value, grossTotal(l)));
+  };
+  const subtotal = round2(lines.reduce((s, l) => s + grossTotal(l), 0));
+  const lineDiscounts = round2(lines.reduce((s, l) => s + lineDiscountOf(l), 0));
   /* bulk tiers apply per non-Rx line */
-  const bulkSavings = round2(lines.reduce((s, l) => s + (l.rx ? 0 : (l.price * l.qty * bulkPct(l.qty)) / 100), 0));
-  const discount = round2((subtotal * discountPct) / 100);
+  const bulkSavings = round2(lines.reduce((s, l) => s + (l.rx ? 0 : ((grossTotal(l) - lineDiscountOf(l)) * bulkPct(l.qty)) / 100), 0));
+  const discountBase = Math.max(0, subtotal - lineDiscounts);
+  const discount = round2((discountBase * discountPct) / 100);
+  const invoiceAmt = round2(Math.max(0, Math.min(invoiceDiscountAmt, discountBase - discount)));
+  const totalInvoiceDiscount = round2(discount + invoiceAmt);
   const coupon = round2(Math.max(0, couponDiscount));
   /* loyalty redemption — org-configurable chunks (§7), capped by the payable balance */
   const loy = state.settings.loyalty;
-  const payable = Math.max(0, subtotal - bulkSavings - discount - coupon);
+  const payable = round2(Math.max(0, subtotal - lineDiscounts - totalInvoiceDiscount - coupon));
   const loyaltyDeduct = round2(Math.min((state.redeemPoints / Math.max(1, loy.chunkPts)) * loy.chunkValue, payable));
-  const tax = taxExempt ? 0 : round2((payable - loyaltyDeduct) * TAX_RATE);
+  /* tax removed per product decision — field kept so persisted rows stay shape-stable */
+  const tax = 0;
   return {
-    lines, subtotal, bulkSavings, discount, coupon, loyaltyDeduct, tax,
+    lines, subtotal, bulkSavings, discount: totalInvoiceDiscount, lineDiscounts, invoiceAmt, coupon, loyaltyDeduct, tax,
     total: round2(payable - loyaltyDeduct + tax),
   };
 }
@@ -515,7 +534,7 @@ export function reducer(state: State, a: Action): State {
       if (!p || !Number.isFinite(a.tempC)) return state;
       const entry: ColdChainLog = {
         id: `CCL-${Date.now().toString(36)}`, productId: p.id, tempC: round2(a.tempC),
-        inRange: tempInRange(a.tempC), staff: state.user?.name ?? CASHIER, note: a.note?.trim() || undefined,
+        inRange: tempInRange(a.tempC), staff: state.user?.name ?? "Staff", note: a.note?.trim() || undefined,
         at: Date.now(),
       };
       const next = withAudit({ ...state, coldChainLog: [entry, ...state.coldChainLog] }, "stock",
@@ -683,7 +702,7 @@ export function reducer(state: State, a: Action): State {
         drug: `${p?.name ?? rx.productId} × ${rx.qty}`, qty: rx.qty,
         otherPharmacy: a.otherPharmacy, otherPhone: a.otherPhone,
         prescriber: state.prescribers.find((x) => x.id === rx.prescriberId)?.name ?? rx.prescriberId,
-        refillsRemaining: a.refillsRemaining, pharmacist: state.user?.name ?? CASHIER,
+        refillsRemaining: a.refillsRemaining, pharmacist: state.user?.name ?? "Pharmacist on duty",
         at: Date.now(), note: a.note?.trim() || undefined,
       };
       const prescriptions = state.prescriptions.map((x) => (x.id === rx.id ? { ...x, transferredOut: { at: Date.now(), to: a.otherPharmacy } } : x));
@@ -712,7 +731,7 @@ export function reducer(state: State, a: Action): State {
         drug: `${p.name} × ${a.qty}`, qty: a.qty,
         otherPharmacy: a.otherPharmacy, otherPhone: a.otherPhone,
         prescriber: prescriber.name, refillsRemaining: a.refillsRemaining,
-        pharmacist: state.user?.name ?? CASHIER, at: Date.now(),
+        pharmacist: state.user?.name ?? "Pharmacist on duty", at: Date.now(),
         note: "Incoming transfer accepted",
       };
       return withToast(
@@ -876,6 +895,22 @@ export function reducer(state: State, a: Action): State {
       return withToast(withAudit({ ...state, coupons }, "settings", `Coupon ${a.id} deleted`), "success", i18n.t("toast.couponDeleted"));
     }
 
+    /* Dynamic categories (P4) — archived categories stay resolvable for history. */
+    case "SAVE_CATEGORY": {
+      if (!can(state.user?.role, "manage_settings")) return withToast(state, "error", "Admin required to manage categories");
+      const exists = state.categories.findIndex((c) => c.id === a.category.id);
+      const categories = exists >= 0 ? state.categories.map((c) => (c.id === a.category.id ? a.category : c)) : [...state.categories, a.category];
+      return withToast(withAudit({ ...state, categories }, "settings", exists >= 0 ? `Category ${a.category.label} updated` : `Category ${a.category.label} created`), "success", `Category saved — ${a.category.label}`);
+    }
+
+    case "DELETE_CATEGORY": {
+      if (!can(state.user?.role, "manage_settings")) return withToast(state, "error", "Admin required to manage categories");
+      const inUse = state.products.some((p) => p.category === a.id);
+      if (inUse) return withToast(state, "error", "Category still assigned to products — archive it instead");
+      const categories = state.categories.filter((c) => c.id !== a.id);
+      return withToast(withAudit({ ...state, categories }, "settings", `Category ${a.id} deleted`), "success", "Category deleted");
+    }
+
     case "RECALL_HELD": {
       const h = state.held.find((x) => x.id === a.id);
       if (!h) return state;
@@ -898,7 +933,7 @@ export function reducer(state: State, a: Action): State {
 
     case "COMPLETE_SALE": {
       if (state.cart.length === 0) return state;
-      const t = cartTotals(state, a.discountPct, a.taxExempt, a.couponDiscount ?? 0);
+      const t = cartTotals(state, a.discountPct, a.taxExempt, a.couponDiscount ?? 0, a.invoiceDiscountAmt ?? 0);
       const customer = state.customers.find((c) => c.id === state.saleCustomerId) ?? null;
       /* DEA controlled substances — require an identified customer and an ID check */
       const controlledLines = t.lines.filter((l) => state.products.find((p) => p.id === l.productId)?.controlled);
@@ -966,7 +1001,8 @@ export function reducer(state: State, a: Action): State {
         id: `T-${Date.now().toString(36).toUpperCase().slice(-6)}`,
         at: Date.now(), lines: t.lines,
         subtotal: t.subtotal, discount: t.discount, couponDiscount: t.coupon > 0 ? t.coupon : undefined, tax: t.tax, total: t.total,
-        method: primary.method, cashier: state.user?.name ?? CASHIER,
+        invoiceDiscountAmt: (a.invoiceDiscountAmt ?? 0) > 0 ? t.invoiceAmt : undefined,
+        method: primary.method, cashier: state.user?.name ?? "Staff",
         taxExempt: a.taxExempt || undefined,
         payments: a.payments.length > 1 ? a.payments : undefined,
         tendered: singleCash ? (a.tendered ?? primary.amount) : undefined,
@@ -1014,7 +1050,7 @@ export function reducer(state: State, a: Action): State {
           .map(({ p, l }) => ({
             id: logSeq++, at: tx.at, productId: p.id, qty: l.qty,
             purchaser: a.restricted!.purchaser.trim(), idType: a.restricted!.idType,
-            idLast4: a.restricted!.idLast4, cashier: state.user?.name ?? CASHIER,
+            idLast4: a.restricted!.idLast4, cashier: state.user?.name ?? "Staff",
           }));
         next = { ...next, restrictedLog: [...entries, ...next.restrictedLog] };
         next = withAudit(next, "sale", `⚠ BTC log ${tx.id} — ${entries.map((e) => `${e.qty}× ${state.products.find((p) => p.id === e.productId)?.name ?? e.productId}`).join(", ")} · ${a.restricted!.purchaser} (${a.restricted!.idType} ····${a.restricted!.idLast4})`);
@@ -1079,6 +1115,30 @@ export function reducer(state: State, a: Action): State {
             "success", `${p.name} overridden to ${money(round2(a.price))} (list ${money(p.price)})`);
     }
 
+    /* Per-line discount ($ or %). Discounts ≥ LINE_DISCOUNT_PIN_THRESHOLD need manager approval. */
+    case "SET_LINE_DISCOUNT": {
+      const p = state.products.find((x) => x.id === a.productId);
+      if (!p) return state;
+      const same = (c: { productId: string; uom?: string }) => c.productId === a.productId && (c.uom ?? "") === (a.uom ?? "");
+      if (!a.discount || a.discount.value <= 0) {
+        const cart = state.cart.map((c) => (same(c) ? { ...c, lineDiscount: undefined } : c));
+        return withToast({ ...state, cart }, "info", `${p.name} line discount removed`);
+      }
+      const base = unitPrice(state, p.id, a.uom);
+      const factor = uomFactor(state, p.id, a.uom);
+      const qty = state.cart.filter(same).reduce((s, c) => s + c.qty, 0);
+      const gross = base * qty;
+      const frac = a.discount.mode === "pct" ? Math.min(100, a.discount.value) / 100 : Math.min(1, a.discount.value / Math.max(0.01, gross));
+      if (frac >= LINE_DISCOUNT_PIN_THRESHOLD && !can(state.user?.role, "approve_discount") && !a.approvedBy) {
+        return withToast(state, "error", `Discount of ${(frac * 100).toFixed(0)}% needs manager PIN approval`);
+      }
+      const cart = state.cart.map((c) => (same(c) ? { ...c, lineDiscount: a.discount } : c));
+      return withToast(
+        withAudit({ ...state, cart }, "money",
+          `Line discount — ${p.name} ×${qty}: ${a.discount.mode === "pct" ? `${a.discount.value}%` : money(a.discount.value)}${a.approvedBy ? ` · approved by ${a.approvedBy}` : ""}`),
+        "success", `Discount applied — ${p.name}`);
+    }
+
     case "SET_BATCH_PRICE": {
       const p = state.products.find((x) => x.id === a.productId);
       const b = p?.batches.find((x) => x.batch === a.batch);
@@ -1099,7 +1159,7 @@ export function reducer(state: State, a: Action): State {
       const onHand = stockOf(p);
       if (a.qty > onHand) return withToast(state, "error", `Only ${onHand} × ${p.name} on hand`);
       const id = `TR-${312 + state.transfers.length}`;
-      const tr: Transfer = { id, productId: p.id, qty: a.qty, toBranch: a.toBranch, status: "requested", createdAt: Date.now(), requestedBy: state.user?.name ?? CASHIER, note: a.note?.trim() || undefined };
+      const tr: Transfer = { id, productId: p.id, qty: a.qty, toBranch: a.toBranch, status: "requested", createdAt: Date.now(), requestedBy: state.user?.name ?? "Staff", note: a.note?.trim() || undefined };
       const next = withAudit({ ...state, transfers: [tr, ...state.transfers] }, "stock", `Transfer ${id} requested — ${a.qty} × ${p.name} → ${a.toBranch}`);
       return withToast(next, "success", `${id} requested — ${a.qty} × ${p.name} → ${a.toBranch}`);
     }
@@ -1281,7 +1341,7 @@ export function reducer(state: State, a: Action): State {
       const refund: Transaction = {
         id: `R-${orig.id.slice(2)}`, at: Date.now(), lines: orig.lines,
         subtotal: -orig.subtotal, discount: -orig.discount, tax: -orig.tax, total: -orig.total,
-        method: orig.method, cashier: CASHIER, refundOf: orig.id, reason: a.reason,
+        method: orig.method, cashier: state.user?.name ?? "Staff", refundOf: orig.id, reason: a.reason,
       };
       const transactions = [refund, ...state.transactions.map((t) => (t.id === orig.id ? { ...t, refundedAt: Date.now() } : t))];
       let next = withAudit({ ...state, products, transactions }, "money",
@@ -1539,14 +1599,6 @@ export function reducer(state: State, a: Action): State {
         "success", `${c.name}'s profile saved`);
     }
 
-    case "RESET": {
-      localStorage.removeItem(LS_KEY);
-      return {
-        ...state, ...seed(), cart: [], held: [], receipt: null, payOpen: false,
-        saleCustomerId: null, redeemPoints: 0, currentShift: null,
-      };
-    }
-
     case "HYDRATE_BACKEND": {
       const hydratedUser = state.user
         ? a.data.staff.find((staff) => staff.id === state.user?.id && staff.active) ?? state.user
@@ -1581,6 +1633,7 @@ export function reducer(state: State, a: Action): State {
         interactionPairs: a.data.interactionPairs ?? [],
         coldChainLog: a.data.coldChainLog ?? [],
         coupons: a.data.coupons ?? [],
+        categories: a.data.categories ?? CATEGORIES_FALLBACK,
       };
     }
 
@@ -1698,6 +1751,7 @@ const backendDataFromState = (state: State): BackendData => ({
   interactionPairs: state.interactionPairs ?? [],
   coldChainLog: state.coldChainLog ?? [],
   coupons: state.coupons ?? [],
+  categories: state.categories ?? [],
 });
 
 export function PosProvider({ children }: { children: ReactNode }) {
@@ -1715,6 +1769,27 @@ export function PosProvider({ children }: { children: ReactNode }) {
     if (previousUserRef.current && !state.user) void signOutStaff();
     previousUserRef.current = state.user;
   }, [state.user]);
+
+  /* Keep the seed/localStorage path immediate; RLS-backed hydration starts after Supabase auth.
+   * On reboot, load() restores the user but backendAuthenticated is false — recover the still-live
+   * Supabase session here so a page refresh hydrates from the DB instead of falling back to seed. */
+  useEffect(() => {
+    if (state.backendAuthenticated || !state.user) return;
+    let cancelled = false;
+    void getSessionStaffId().then((staffId) => {
+      if (!cancelled && staffId && staffId === state.user?.id) {
+        dispatch({ type: "BACKEND_AUTH", staffId, authenticated: true });
+      } else if (!cancelled && staffId && !state.user) {
+        // Session belongs to someone but local user is missing — rehydrate user from staff list.
+        const staff = state.staff.find((s) => s.id === staffId && s.active);
+        if (staff) {
+          dispatch({ type: "LOGIN", staffId });
+          dispatch({ type: "BACKEND_AUTH", staffId, authenticated: true });
+        }
+      }
+    });
+    return () => { cancelled = true; };
+  }, [state.backendAuthenticated, state.user?.id]);
 
   /* Keep the seed/localStorage path immediate; RLS-backed hydration starts after Supabase auth. */
   useEffect(() => {

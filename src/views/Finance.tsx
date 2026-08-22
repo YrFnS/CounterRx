@@ -746,7 +746,7 @@ function PnlTab() {
           <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-inksoft mb-2 flex items-center gap-1.5"><IAlert size={11} className="text-honey-600" /> How this is computed</p>
           <p className="text-xs text-inksoft leading-relaxed">
             Revenue nets refunds. COGS is valued at each product's cost for the units sold in the period (refunds credited back).
-            Expenses are the operating costs you've recorded. This is a management view — it excludes tax detail by design.
+            Expenses are the operating costs you've recorded.
           </p>
         </div>
       </div>

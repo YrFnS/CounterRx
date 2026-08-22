@@ -9,3 +9,10 @@
   CHECK: `npm run typecheck && npm run build`
   EXPECT: exit 0 / built
   EVIDENCE: `npm run typecheck` completed with exit code 0; `npm run build` completed with Vite `✓ built in 13.52s` and emitted `dist/` (chunk-size warning only).
+
+## Session-recovery gate (P0 — added 2026-08-22)
+
+- [x] Page refresh recovers the Supabase session and hydrates from the DB (no silent seed fallback).
+  CHECK: sign in → hard refresh → DevTools network shows authenticated REST reads; sidebar badge reads "Supabase · connected".
+  EXPECT: no "Backend unavailable" banner after refresh; mutations persist to Supabase.
+  EVIDENCE: `getSessionStaffId()` in `src/lib/sync.ts` + reboot effect in `PosProvider` (`src/store.tsx`) dispatch `BACKEND_AUTH` when the embedded session matches the stored user. Root cause was `load()` resetting `backendAuthenticated=false` with no re-check path.

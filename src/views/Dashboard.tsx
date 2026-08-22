@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { usePos, money, clockTime } from "../store";
-import { CATEGORIES, daysUntil, nearestExpiry, stockOf, fefoBatches } from "../data";
+import { daysUntil, nearestExpiry, stockOf, fefoBatches } from "../data";
 import type { Customer } from "../data";
 import { aiAnomaly } from "../lib/ai";
 import type { Anomaly } from "../lib/ai";
@@ -267,7 +267,7 @@ export default function Dashboard() {
                     <div className="anim-grow-w h-full rounded-full"
                       style={{
                         width: `${(t.qty / maxQty) * 100}%`, animationDelay: `${i * 70}ms`,
-                        background: CATEGORIES.find((c) => c.id === t.cat)?.dot ?? "#3b8668",
+                        background: state.categories?.find((c) => c.id === t.cat)?.color ?? "#3b8668",
                       }} />
                   </div>
                 </div>

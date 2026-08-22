@@ -7,7 +7,33 @@ export type CategoryId =
   | "antibiotics" | "pain" | "coldflu" | "vitamins" | "diabetes"
   | "cardio" | "derma" | "devices" | "firstaid" | "baby" | "cns" | "compound";
 
-export const CATEGORIES: { id: CategoryId; label: string; dot: string }[] = [
+export interface Category {
+  id: string;          // slug stored on products.category
+  label: string;
+  color: string;
+  groupId: string;
+  sort: number;
+  archived: boolean;
+}
+
+/** Fallback list used before hydration / offline (mirrors the DB seed). */
+export const CATEGORIES_FALLBACK: Category[] = [
+  { id: "antibiotics", label: "Antibiotics", color: "#c24a2e", groupId: "acute", sort: 1, archived: false },
+  { id: "pain", label: "Pain relief", color: "#e0a63c", groupId: "chronic", sort: 2, archived: false },
+  { id: "coldflu", label: "Cold & flu", color: "#5da184", groupId: "acute", sort: 3, archived: false },
+  { id: "vitamins", label: "Vitamins", color: "#7d9c5a", groupId: "selfcare", sort: 4, archived: false },
+  { id: "diabetes", label: "Diabetes", color: "#4f7d9e", groupId: "chronic", sort: 5, archived: false },
+  { id: "cardio", label: "Cardio", color: "#a05a79", groupId: "chronic", sort: 6, archived: false },
+  { id: "derma", label: "Skin care", color: "#c98d5f", groupId: "selfcare", sort: 7, archived: false },
+  { id: "devices", label: "Devices", color: "#5c6b66", groupId: "technical", sort: 8, archived: false },
+  { id: "firstaid", label: "First aid", color: "#b8543f", groupId: "acute", sort: 9, archived: false },
+  { id: "baby", label: "Baby care", color: "#8a7fb5", groupId: "selfcare", sort: 10, archived: false },
+  { id: "cns", label: "CNS & sleep", color: "#6b7f8c", groupId: "chronic", sort: 11, archived: false },
+  { id: "compound", label: "Compounds", color: "#8a6fae", groupId: "technical", sort: 12, archived: false },
+];
+
+/* Legacy shape kept for the offline fallback consumers below. */
+const CATEGORIES_SEED: { id: CategoryId; label: string; dot: string }[] = [
   { id: "antibiotics", label: "Antibiotics", dot: "#c24a2e" },
   { id: "pain", label: "Pain relief", dot: "#e0a63c" },
   { id: "coldflu", label: "Cold & flu", dot: "#5da184" },
@@ -29,9 +55,19 @@ export const CATEGORY_GROUPS: { id: string; label: string; leaves: CategoryId[] 
   { id: "selfcare", label: "Self-care & family", leaves: ["vitamins", "derma", "baby"] },
   { id: "technical", label: "Devices & compounds", leaves: ["devices", "compound"] },
 ];
-export const groupOf = (cat: CategoryId) => CATEGORY_GROUPS.find((g) => g.leaves.includes(cat))?.id ?? "technical";
-export const groupLabel = (gid: string) => CATEGORY_GROUPS.find((g) => g.id === gid)?.label ?? gid;
-export const catLabel = (cat: CategoryId) => CATEGORIES.find((c) => c.id === cat)?.label ?? cat;
+export const CATEGORY_GROUPS_RUNTIME = [
+  { id: "acute", label: "Acute & infection" },
+  { id: "chronic", label: "Chronic care" },
+  { id: "selfcare", label: "Self-care & family" },
+  { id: "technical", label: "Devices & compounds" },
+];
+export const groupOf = (cat: string, cats?: { id: string; groupId: string }[]) =>
+  cats?.find((c) => c.id === cat)?.groupId ?? CATEGORY_GROUPS_RUNTIME.find((g) => g.id === cat)?.id
+  ?? CATEGORIES_SEED_LOOKUP.get(cat) ?? "technical";
+export const groupLabel = (gid: string) => CATEGORY_GROUPS_RUNTIME.find((g) => g.id === gid)?.label ?? gid;
+export const catLabel = (cat: string, cats?: { id: string; label: string }[]) =>
+  cats?.find((c) => c.id === cat)?.label ?? CATEGORIES_SEED.find((c) => c.id === (cat as CategoryId))?.label ?? cat;
+const CATEGORIES_SEED_LOOKUP = new Map<string, string>(CATEGORY_GROUPS.flatMap((g) => g.leaves.map((l) => [l, g.id] as const)));
 
 /** A single stock lot on the shelf. Sales consume lots FEFO — first expiry, first out. */
 export interface Batch {
@@ -58,7 +94,7 @@ export interface Uom {
 export interface Product {
   id: string; sku: string; barcode: string;
   name: string; generic: string; brand: string;
-  category: CategoryId; form: string;
+  category: string; form: string;
   price: number; cost: number;
   reorderLevel: number;
   rx: boolean;
@@ -80,7 +116,7 @@ export interface Product {
 /* Simulated NDC directory (§3) — used for auto-fill when creating new catalog items */
 export interface NdcEntry {
   ndc: string; name: string; generic: string; brand: string; form: string;
-  price: number; cost: number; category: CategoryId;
+  price: number; cost: number; category: string;
 }
 export const NDC_DIRECTORY: NdcEntry[] = [
   { ndc: "50111-0362-01", name: "Levothyroxine 50mcg", generic: "Levothyroxine sodium", brand: "Synthroid", form: "Tablet · bottle of 100", price: 14.2, cost: 7.8, category: "cardio" },
@@ -189,7 +225,12 @@ export interface TxLine {
   uom?: string;                             // UOM label, e.g. "Box of 10 strips" (§5)
   uomFactor?: number;                       // base units per UOM, for stock deduction (§5)
   kitComponents?: string;                   // kit contents summary (§5)
+  lineDiscount?: { mode: "amt" | "pct"; value: number }; // per-line discount (JSONB — no migration)
 }
+/** Discounts at or above these fractions need manager PIN approval. */
+export const LINE_DISCOUNT_PIN_THRESHOLD = 0.1;   // 10% off a single line
+export const INVOICE_DISCOUNT_PCT_PIN_THRESHOLD = 20; // percent off the invoice
+export const INVOICE_DISCOUNT_AMT_PIN_THRESHOLD = 50; // currency amount off the invoice
 export type PayMethod = "cash" | "card" | "insurance" | "store_credit";
 export interface PaymentLeg { method: PayMethod; amount: number; ref?: string; }
 export interface Transaction {
@@ -208,6 +249,7 @@ export interface Transaction {
   bulkSavings?: number;      // quantity-tier savings across lines
   loyaltyDeduct?: number;    // value of redeemed points
   couponDiscount?: number;    // coupon applied (Phase F)
+  invoiceDiscountAmt?: number; // fixed-amount invoice discount (on top of % discount)
   pointsEarned?: number;
   pointsRedeemed?: number;
 }
@@ -474,11 +516,12 @@ export const ROLE_LABEL: Record<Role, string> = {
 export type Perm =
   | "refund" | "approve_transfer" | "adjust_stock" | "apply_count"
   | "edit_settings" | "manage_settings" | "manage_staff" | "restore_snapshot" | "verify_rx" | "transfer_rx"
-  | "create_po" | "receive_po" | "pay_invoice" | "add_expense";
+  | "create_po" | "receive_po" | "pay_invoice" | "add_expense" | "approve_discount";
 
 /* Permission matrix — enforced in the UI layer now, mirrors the future RLS checks */
 export const PERMS: Record<Perm, Role[]> = {
   refund: ["manager", "pharmacy_admin"],
+  approve_discount: ["manager", "pharmacy_admin"],
   approve_transfer: ["manager", "pharmacy_admin"],
   adjust_stock: ["pharmacist", "manager", "pharmacy_admin"],
   apply_count: ["manager", "pharmacy_admin"],
@@ -621,7 +664,7 @@ export function makeStaff(now: number): Staff[] {
   return [
     mk("S-001", "D. Whitfield", "pharmacy_admin", "3333", 240),
     mk("S-002", "R. Mensah, RPh", "pharmacist", "2222", 180),
-    mk("S-003", "A. Okafor", "cashier", "1111", 120),
+    mk("S-003", "S-003", "cashier", "1111", 120),
     mk("S-004", "J. Boateng", "cashier", "4444", 45),
     mk("S-005", "T. Okoye", "super_admin", "5555", 20),
     mk("S-006", "K. Asante", "manager", "6666", 90),
@@ -662,7 +705,7 @@ export const CURRENCIES = ["USD", "EUR", "GBP", "NGN", "KES", "ZAR", "GHS", "INR
 
 export function makeSettings(): OrgSettings {
   return {
-    orgName: STORE.name, branch: STORE.branch, address: STORE.address, phone: STORE.phone, license: STORE.gstin,
+    orgName: "CounterRx Pharmacy", branch: "Main branch", address: "", phone: "", license: "",
     currency: "USD",
     receiptFooter: "Get well soon — returns within 7 days with receipt",
     receiptTerms: "℞ items verified & dispensed by licensed pharmacist",
@@ -729,7 +772,7 @@ export function makeColdChainLogs(now: number): ColdChainLog[] {
     { id: "CCL-1001", productId: "insg", tempC: 3.8, inRange: true, staff: "R. Mensah, RPh", note: "Morning fridge check — zone B", at: now - 5 * h },
     { id: "CCL-1002", productId: "insg", tempC: 4.1, inRange: true, staff: "D. Whitfield", note: "Delivery hand-off verified", at: now - 30 * 60_000 },
     { id: "CCL-1003", productId: "salb", tempC: 7.4, inRange: true, staff: "R. Mensah, RPh", at: now - 26 * h },
-    { id: "CCL-1004", productId: "insg", tempC: 9.2, inRange: false, staff: "A. Okafor", note: "Fridge door left ajar — restock check", at: now - 49 * h },
+    { id: "CCL-1004", productId: "insg", tempC: 9.2, inRange: false, staff: "S-003", note: "Fridge door left ajar — restock check", at: now - 49 * h },
   ];
 }
 
@@ -774,17 +817,15 @@ export interface Transfer {
   toBranch: string; status: TransferStatus;
   createdAt: number; requestedBy: string; note?: string;
 }
-export const HOME_BRANCH = "Branch 04 — Maple & 9th";
+export const HOME_BRANCH = "Main branch";
 export const BRANCHES = ["Branch 02 — Cedar Mall", "Branch 07 — Northgate", "Branch 11 — Harbor East"];
 
-export const TAX_RATE = 0.08;
-export const CASHIER = "A. Okafor";
 
 const day = 86_400_000;
 const iso = (ms: number) => new Date(ms).toISOString().slice(0, 10);
 
 function p(
-  id: string, name: string, generic: string, brand: string, category: CategoryId, form: string,
+  id: string, name: string, generic: string, brand: string, category: string, form: string,
   price: number, cost: number, stock: number, reorderLevel: number, rx: boolean,
   batch: string, expDays: number, supplier: string,
   b2?: [string, number, number], // optional second lot: [batch, qty, expDays]
@@ -973,7 +1014,7 @@ export function makeTransfers(now: number): Transfer[] {
   const h = 3_600_000;
   return [
     { id: "TR-311", productId: "insg", qty: 4, toBranch: BRANCHES[0], status: "requested", createdAt: now - 2.5 * h, requestedBy: "R. Mensah, RPh", note: "Northgate running low on glargine" },
-    { id: "TR-310", productId: "ors5", qty: 24, toBranch: BRANCHES[1], status: "approved", createdAt: now - 9 * h, requestedBy: "A. Okafor" },
+    { id: "TR-310", productId: "ors5", qty: 24, toBranch: BRANCHES[1], status: "approved", createdAt: now - 9 * h, requestedBy: "S-003" },
     { id: "TR-309", productId: "salb", qty: 6, toBranch: BRANCHES[2], status: "shipped", createdAt: now - 26 * h, requestedBy: "D. Whitfield", note: "Flu-season demand at Harbor" },
   ];
 }
@@ -1028,14 +1069,14 @@ export function makeTransactions(products: Product[], now: number): Transaction[
       }
       const subtotal = lines.reduce((s, l) => s + l.price * l.qty, 0);
       const discount = rnd() < 0.15 ? Math.round(subtotal * 0.05 * 100) / 100 : 0;
-      const tax = Math.round((subtotal - discount) * TAX_RATE * 100) / 100;
+      const tax = 0;
       const total = Math.round((subtotal - discount + tax) * 100) / 100;
       const mRoll = rnd();
       const method: PayMethod = mRoll < 0.44 ? "cash" : mRoll < 0.86 ? "card" : "insurance";
       txs.push({
         id: `T-${seq++}`, at, lines,
         subtotal: Math.round(subtotal * 100) / 100, discount, tax, total,
-        method, cashier: CASHIER,
+        method, cashier: "Seeded history",
         tendered: method === "cash" ? Math.ceil(total / 10) * 10 : undefined,
         change: method === "cash" ? Math.round((Math.ceil(total / 10) * 10 - total) * 100) / 100 : undefined,
       });
@@ -1048,19 +1089,11 @@ export function daysUntil(isoDate: string): number {
   return Math.ceil((new Date(isoDate + "T00:00:00").getTime() - Date.now()) / day);
 }
 
-export const STORE = {
-  name: "CounterRx Pharmacy",
-  branch: "Branch 04 — Maple & 9th",
-  address: "214 Maple Avenue, Springfield",
-  phone: "(555) 014-2210",
-  gstin: "LIC #PH-88412 · GST 29AAKCS4412F1Z8",
-};
-
 /* ------------------------------------------------------------------ */
 /*  Operations — deliveries, e-commerce intake, staff time-clock       */
 /* ------------------------------------------------------------------ */
 
-export const DRIVERS = ["K. Boateng", "S. Mensah", "T. Osei"];
+const DRIVERS = ["K. Boateng", "S. Mensah", "T. Osei"]; // seeded delivery history only
 
 export type DeliveryStatus = "queued" | "assigned" | "out" | "delivered";
 export interface Delivery {

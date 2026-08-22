@@ -26,6 +26,7 @@ import type {
   Transfer,
   WebOrder,
   Coupon,
+  Category,
 } from "../data";
 
 /** The persisted part of the reducer state. UI/session-only state stays local. */
@@ -55,6 +56,7 @@ export interface BackendData {
   interactionPairs: InteractionPair[];
   coldChainLog: ColdChainLog[];
   coupons: Coupon[];
+  categories: Category[];
 }
 
 type Row = Record<string, unknown>;
@@ -62,7 +64,7 @@ const TABLES = [
   "products", "transactions", "prescriptions", "prescribers", "customers", "transfers",
   "backorders", "rx_transfers", "suppliers", "purchase_orders", "ap_invoices", "expenses",
   "deliveries", "web_orders", "time_entries", "staff", "settings", "restricted_log",
-  "audit_log", "shifts", "store_credits", "snapshots", "interaction_pairs", "cold_chain_log", "coupons"
+  "audit_log", "shifts", "store_credits", "snapshots", "interaction_pairs", "cold_chain_log", "coupons", "categories"
 ] as const;
 
 type TableName = (typeof TABLES)[number];
@@ -309,6 +311,17 @@ function coldChainLogFrom(row: Row): ColdChainLog {
   };
 }
 
+function categoryFrom(row: Row): Category {
+  return {
+    id: text(row, "id"),
+    label: text(row, "label"),
+    color: text(row, "color", "#3b8668"),
+    groupId: text(row, "group_id", "technical"),
+    sort: numberValue(row, "sort", 100),
+    archived: booleanValue(row, "archived", false),
+  };
+}
+
 function couponFrom(row: Row): Coupon {
   return {
     id: text(row, "id"),
@@ -371,6 +384,7 @@ function rowsFor(data: BackendData): Record<TableName, Row[]> {
     interaction_pairs: data.interactionPairs.map((i) => ({ a: i.a, b: i.b, severity: i.severity, effect: i.effect, action: i.action })),
     cold_chain_log: data.coldChainLog.map((c) => ({ id: c.id, product_id: c.productId, temp_c: c.tempC, in_range: c.inRange, staff: nullable(c.staff), note: nullable(c.note), created_at: timestamp(c.at) })),
     coupons: data.coupons.map((c) => ({ id: c.id, code: c.code, type: c.type, value: c.value, expires_at: nullable(c.expiresAt), customer_id: nullable(c.customerId), active: c.active, created_at: timestamp(c.createdAt), updated_at: timestamp(c.updatedAt) })),
+    categories: data.categories.map((c) => ({ id: c.id, label: c.label, color: c.color, group_id: c.groupId, sort: c.sort, archived: c.archived, organization_id: "00000000-0000-0000-0000-000000000001" })),
   };
 }
 
@@ -416,6 +430,7 @@ export async function loadBackendData(seed: BackendData): Promise<LoadResult> {
         audit: byTable.audit_log.map(auditFrom), shifts: byTable.shifts.map(shiftFrom), storeCredits: byTable.store_credits.map(storeCreditFrom), snapshots: byTable.snapshots.map(snapshotFrom),
         interactionPairs: byTable.interaction_pairs.map(interactionPairFrom), coldChainLog: byTable.cold_chain_log.map(coldChainLogFrom),
         coupons: byTable.coupons.map(couponFrom),
+        categories: byTable.categories.map(categoryFrom),
       },
     };
   } catch (error) {
@@ -478,6 +493,19 @@ export function subscribeToBackend(onChange: (source: TableName | "auth") => voi
   } catch (error) {
     warn("realtime subscription", error);
     return () => undefined;
+  }
+}
+
+/** True when the embedded Supabase session belongs to the given staff id. */
+export async function getSessionStaffId(): Promise<string | null> {
+  if (!isSupabaseConfigured) return null;
+  try {
+    const { data } = await supabase.auth.getSession();
+    const email = data.session?.user.email ?? "";
+    const compact = email.split("@")[0];
+    return /^s\d{3}$/i.test(compact) ? `S-${compact.slice(1).toUpperCase()}` : null;
+  } catch {
+    return null;
   }
 }
 

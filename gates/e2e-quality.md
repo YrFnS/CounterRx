@@ -15,3 +15,12 @@ Manager coverage:
   EVIDENCE: curl to hosted Supabase Auth with `s006@counterrx.local` / `CRxS0066666` returned 200 and access_token.
 - [x] Manager tile appears on LockScreen (role badge shows Manager in brick tone).
   EVIDENCE: local `npm run dev` shows sixth tile; PIN 6666 accepted (pre-email-login run, `signInStaff('S-006','6666')` resolved true). Post-login-change re-verification in `outputs/e2e/login-change-REPORT.md`.
+
+## Demo-data grep gate (P5 — added 2026-08-22)
+
+- [x] Retired demo strings can never ship again ("Branch 04", "Maple Avenue", "demo dataset", "local ledger", "SCANNER LIVE", "Reset demo data", "A. Okafor").
+  CHECK: `npx vitest run src/__tests__/no-demo-data.test.ts`
+  EXPECT: passes; any new occurrence fails CI.
+- [x] Categories are DB-driven; Settings → Product categories adds/renames/recolors/archives them live.
+  CHECK: add a category as s001 → appears in Register chips + Inventory filter + product form immediately.
+  EVIDENCE: migration `20260822000013_categories.sql` (pushed live), `SAVE_CATEGORY`/`DELETE_CATEGORY` actions, `CategoriesTab`.

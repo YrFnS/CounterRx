@@ -248,7 +248,7 @@ function ShiftModal({ onClose }: { onClose: () => void }) {
           <h2 id="shift-title" className="font-display font-bold text-lg leading-none flex items-center gap-2">
             <ICalendar size={17} className="text-honey-300" /> Z-read · {new Date().toLocaleDateString("en-US", { weekday: "long", month: "short", day: "numeric" })}
           </h2>
-          <p className="text-[11px] text-pine-300 mt-1 num">Terminal 01 · cashier A. Okafor · shift open 08:30</p>
+          <p className="text-[11px] text-pine-300 mt-1 num">{state.settings.terminalId} · cashier {state.user?.name ?? "—"} · {new Date().toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" })}</p>
         </div>
         <button onClick={onClose} className="p-1.5 rounded-md hover:bg-white/10 text-pine-200" aria-label="Close"><IX size={14} /></button>
       </div>

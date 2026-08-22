@@ -2,8 +2,8 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { usePos, money, relTime, unitPrice, cartTotals, uomFactor } from "../store";
-import { CATEGORIES, TAX_RATE, daysUntil, stockOf, nearestExpiry, bulkPct, fefoBatches, findInteractions, allergyConflicts } from "../data";
-import type { CategoryId, Product } from "../data";
+import { daysUntil, stockOf, nearestExpiry, bulkPct, fefoBatches, findInteractions, allergyConflicts } from "../data";
+import type { Product } from "../data";
 import { aiClassify } from "../lib/ai";
 import { cartToInteractionPrompt, parseClassifyJson } from "../lib/ai-ui";
 import { cx, Badge, Empty, Modal } from "../ui";
@@ -61,11 +61,14 @@ export default function Register() {
   const { state, dispatch, product } = usePos();
   const { t } = useTranslation();
   const [q, setQ] = useState("");
-  const [cat, setCat] = useState<CategoryId | "all">("all");
+  const [cat, setCat] = useState<string | "all">("all");
   const [sort, setSort] = useState<SortKey>("name");
   const [noteFor, setNoteFor] = useState<string | null>(null);
   const [priceFor, setPriceFor] = useState<string | null>(null);
   const [priceVal, setPriceVal] = useState("");
+  const [discFor, setDiscFor] = useState<string | null>(null);
+  const [discVal, setDiscVal] = useState("");
+  const [discMode, setDiscMode] = useState<"amt" | "pct">("pct");
   const [scanMiss, setScanMiss] = useState(0);
   const searchRef = useRef<HTMLInputElement>(null);
 
@@ -102,6 +105,9 @@ export default function Register() {
 
   const needle = q.trim().toLowerCase();
 
+  const categories = useMemo(
+    () => (state.categories ?? []).filter((c) => !c.archived).sort((x, y) => x.sort - y.sort),
+    [state.categories]);
   const list = useMemo(() => {
     const entries = state.products
       .filter((p) => cat === "all" || p.category === cat)
@@ -180,6 +186,20 @@ export default function Register() {
   /* single source of truth — matches the payment modal exactly */
   const attachedCustomer = state.customers.find((c) => c.id === state.saleCustomerId) ?? null;
   const totals = cartTotals(state, 0, !!attachedCustomer?.taxExempt);
+
+  const lineDiscountValue = (price: number, qty: number, disc?: { mode: "amt" | "pct"; value: number }): number => {
+    if (!disc || disc.value <= 0) return 0;
+    const gross = price * qty;
+    return disc.mode === "pct"
+      ? Math.round((gross * Math.min(100, disc.value)) / 100 * 100) / 100
+      : Math.round(Math.min(disc.value, gross) * 100) / 100;
+  };
+  const applyLineDiscount = (productId: string, uom?: string) => {
+    const v = parseFloat(discVal);
+    const discount = !v || v <= 0 ? undefined : { mode: discMode, value: v } as const;
+    dispatch({ type: "SET_LINE_DISCOUNT", productId, uom, discount });
+    setDiscFor(null);
+  };
   const { subtotal, tax, total } = totals;
   const itemCount = state.cart.reduce((s, c) => s + c.qty, 0);
   const hasRx = cartLines.some((x) => x.p.rx);
@@ -194,7 +214,6 @@ export default function Register() {
     if (totals.bulkSavings > 0) lines.push(`Bulk savings     -${money(totals.bulkSavings)}`);
     if (totals.loyaltyDeduct > 0) lines.push(`Points redeemed -${money(totals.loyaltyDeduct)}`);
     lines.push(`Subtotal        ${money(subtotal)}`);
-    lines.push(`Tax             ${money(tax)}`);
     lines.push(`TOTAL           ${money(total)}`);
     try {
       await printReceipt({
@@ -227,7 +246,7 @@ export default function Register() {
                 className="w-full ps-9 pe-20 py-2.5 rounded-lg bg-card border border-mist text-sm text-ink placeholder:text-inksoft/70 focus:border-pine-500 focus:outline-none focus:ring-2 focus:ring-pine-200 transition"
               />
               <span className="scan-chip absolute right-2 top-1/2 -translate-y-1/2 hidden sm:flex items-center gap-1.5 px-2 py-1 rounded-md bg-pine-800 text-pine-100 text-[10px] font-semibold tracking-wide">
-                <IScan size={12} /> SCANNER LIVE
+                <IScan size={12} />
               </span>
             </div>
             <div className="relative">
@@ -246,8 +265,8 @@ export default function Register() {
           <div className="flex gap-1.5 overflow-x-auto scroll-slim pb-1 -mx-1 px-1">
             <CatChip active={cat === "all"} label={t("pos.allItems")} count={state.products.length}
               onClick={() => setCat("all")} dot="#5c6b66" />
-            {CATEGORIES.map((c) => (
-              <CatChip key={c.id} active={cat === c.id} label={c.label} dot={c.dot}
+            {categories.map((c) => (
+              <CatChip key={c.id} active={cat === c.id} label={c.label} dot={c.color}
                 count={state.products.filter((p) => p.category === c.id).length}
                 onClick={() => setCat(cat === c.id ? "all" : c.id)} />
             ))}
@@ -256,7 +275,7 @@ export default function Register() {
 
         <div className="lg:flex-1 overflow-y-auto scroll-slim px-3 sm:px-5 pb-6">
           {needle === "" && cat === "all" && topSellers.length > 0 && (
-            <QuickPicks items={topSellers} onAdd={(id) => { const p = state.products.find((x) => x.id === id); if (p) tryAdd(p); }} />
+            <QuickPicks items={topSellers} colorOf={(c) => state.categories?.find((x) => x.id === c)?.color ?? "#5c6b66"} onAdd={(id) => { const p = state.products.find((x) => x.id === id); if (p) tryAdd(p); }} />
           )}
           {list.length === 0 ? (
             <Empty icon={<IPill size={22} />} title={t("pos.noProductsMatch")}
@@ -265,7 +284,7 @@ export default function Register() {
             <div className="grid grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4 gap-3">
               {list.map(({ p, idx }) => (
                 <ProductCard key={p.id} p={p} hl={idx}
-                  flashing={state.flashId === p.id} flashKey={state.flashKey}
+                  flashing={state.flashId === p.id} flashKey={state.flashKey} colorOf={(c) => state.categories?.find((x) => x.id === c)?.color ?? "#5c6b66"}
                   onAdd={() => tryAdd(p)} />
               ))}
             </div>
@@ -482,6 +501,38 @@ export default function Register() {
                   <ITag size={9} /> Override price
                 </button>
               )}
+              {discFor === p.id ? (
+                <div className="anim-fade-up mt-1.5 flex items-center gap-1.5">
+                  <div className="flex rounded-md overflow-hidden border border-pine-300">
+                    <button onClick={() => setDiscMode("pct")}
+                      className={cx("px-2 py-1 text-[10px] font-bold transition", discMode === "pct" ? "bg-pine-700 text-pine-50" : "bg-card text-inksoft hover:bg-mist")}>%</button>
+                    <button onClick={() => setDiscMode("amt")}
+                      className={cx("px-2 py-1 text-[10px] font-bold transition", discMode === "amt" ? "bg-pine-700 text-pine-50" : "bg-card text-inksoft hover:bg-mist")}>$</button>
+                  </div>
+                  <input autoFocus value={discVal} onChange={(e) => setDiscVal(e.target.value.replace(/[^\d.]/g, ""))}
+                    placeholder={discMode === "pct" ? "10" : "5.00"} inputMode="decimal"
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") { applyLineDiscount(p.id, line.uom); }
+                      if (e.key === "Escape") setDiscFor(null);
+                    }}
+                    onBlur={() => applyLineDiscount(p.id, line.uom)}
+                    className="num flex-1 min-w-0 text-[11px] px-2 py-1.5 rounded-md border border-pine-300 bg-card text-ink focus:outline-none focus:border-pine-500 focus:ring-2 focus:ring-pine-200 transition" />
+                </div>
+              ) : line.lineDiscount ? (
+                <p className="mt-1.5 flex items-center gap-1.5 text-[10px] font-semibold text-brick-700 bg-brick-100/70 border border-brick-300/50 rounded-md px-2 py-1 num">
+                  <ITag size={9} className="shrink-0" />
+                  <span>discount −{money(lineDiscountValue(line.priceOverride ?? unitPrice(state, p.id, line.uom), line.qty, line.lineDiscount))}</span>
+                  <button onClick={() => dispatch({ type: "SET_LINE_DISCOUNT", productId: p.id, uom: line.uom })}
+                    className="ml-auto shrink-0 p-0.5 rounded text-inksoft hover:text-brick-700 transition" aria-label="Remove line discount">
+                    <IX size={9} />
+                  </button>
+                </p>
+              ) : (
+                <button onClick={() => { setDiscFor(p.id); setDiscVal(""); setDiscMode("pct"); }}
+                  className="mt-1.5 mr-3 flex items-center gap-1 text-[10px] font-semibold text-inksoft/60 hover:text-brick-700 opacity-0 group-hover:opacity-100 transition-all duration-200">
+                  <ITag size={9} /> Line discount
+                </button>
+              )}
             </div>
           ))}
         </div>
@@ -489,16 +540,15 @@ export default function Register() {
         <div className="border-t border-mist px-4 py-4 bg-card">
           <div className="space-y-1 text-sm">
             <div className="flex justify-between text-inksoft"><span>Subtotal</span><span className="num">{money(subtotal)}</span></div>
+            {totals.lineDiscounts > 0 && (
+              <div className="flex justify-between text-brick-700 font-semibold anim-fade-up"><span>Line discounts</span><span className="num">−{money(totals.lineDiscounts)}</span></div>
+            )}
             {totals.bulkSavings > 0 && (
               <div className="flex justify-between text-honey-700 font-semibold anim-fade-up"><span>Bulk-tier savings</span><span className="num">−{money(totals.bulkSavings)}</span></div>
             )}
             {totals.loyaltyDeduct > 0 && (
               <div className="flex justify-between text-pine-700 font-semibold anim-fade-up"><span>Points · {state.redeemPoints} pts</span><span className="num">−{money(totals.loyaltyDeduct)}</span></div>
             )}
-            <div className="flex justify-between text-inksoft">
-              <span>Tax {TAX_RATE * 100}%{attachedCustomer?.taxExempt ? <span className="ms-1.5 px-1 py-px rounded bg-pine-700 text-pine-50 text-[9px] font-bold align-middle">EXEMPT</span> : null}</span>
-              <span className={cx("num", attachedCustomer?.taxExempt && "line-through text-inksoft/50")}>{money(tax)}</span>
-            </div>
             <div className="flex justify-between items-baseline pt-1.5 border-t border-dashed border-mist">
               <span className="font-display font-bold text-ink">Total</span>
               <span className="num text-[26px] font-bold text-pine-800">{money(total)}</span>
@@ -548,7 +598,7 @@ function Highlight({ text, idx }: { text: string; idx: number[] }) {
   );
 }
 
-function QuickPicks({ items, onAdd }: { items: { p: Product; sold: number }[]; onAdd: (id: string) => void }) {
+function QuickPicks({ items, onAdd, colorOf }: { items: { p: Product; sold: number }[]; onAdd: (id: string) => void; colorOf: (cat: string) => string }) {
   return (
     <div className="mb-4 anim-fade-up">
       <div className="flex items-center gap-1.5 mb-2">
@@ -560,7 +610,7 @@ function QuickPicks({ items, onAdd }: { items: { p: Product; sold: number }[]; o
           <button key={p.id} onClick={() => onAdd(p.id)}
             className="group shrink-0 w-[172px] text-start bg-pine-50/60 border border-pine-200/70 rounded-xl p-2.5 hover:border-pine-400 hover:-translate-y-0.5 hover:shadow-lift active:scale-[0.97] transition-all duration-200">
             <div className="flex items-center justify-between gap-1">
-              <span className="w-2 h-2 rounded-full" style={{ background: CATEGORIES.find((c) => c.id === p.category)?.dot }} />
+              <span className="w-2 h-2 rounded-full" style={{ background: colorOf(p.category) }} />
               <span className="num text-[9px] font-bold text-pine-700 bg-pine-100 rounded px-1 py-0.5">{sold} sold</span>
             </div>
             <p className="mt-1.5 text-[12px] font-semibold text-ink leading-tight line-clamp-2 min-h-[2.4em]">{p.name}</p>
@@ -719,8 +769,8 @@ function CatChip({ active, label, count, dot, onClick }: {
   );
 }
 
-function ProductCard({ p, hl = [], flashing, flashKey, onAdd }: {
-  p: Product; hl?: number[]; flashing: boolean; flashKey: number; onAdd: () => void;
+function ProductCard({ p, hl = [], flashing, flashKey, onAdd, colorOf }: {
+  p: Product; hl?: number[]; flashing: boolean; flashKey: number; onAdd: () => void; colorOf: (cat: string) => string;
 }) {
   const { t } = useTranslation();
   const near = nearestExpiry(p);
@@ -737,7 +787,7 @@ function ProductCard({ p, hl = [], flashing, flashKey, onAdd }: {
       {flashing && <span key={flashKey} className="anim-pop absolute inset-0 rounded-xl ring-2 ring-pine-500 pointer-events-none" />}
       <div className="flex items-start justify-between gap-2">
         <span className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-[0.12em] text-inksoft">
-          <span className="w-2 h-2 rounded-full" style={{ background: CATEGORIES.find((c) => c.id === p.category)?.dot }} />
+          <span className="w-2 h-2 rounded-full" style={{ background: colorOf(p.category) }} />
           {p.brand}
         </span>
         <span className="flex items-center gap-1">

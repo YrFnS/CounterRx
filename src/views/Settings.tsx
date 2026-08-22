@@ -4,14 +4,15 @@ import type { ReactNode } from "react";
 import { usePos, listSnapshots, money } from "../store";
 import i18n from "../i18n";
 import { CURRENCIES, ROLE_LABEL, can, randomPin, Coupon } from "../data";
+import type { Category } from "../data";
 import type { OrgSettings, Role, Staff, Snapshot, Product } from "../data";
 import { cx, Modal, Badge } from "../ui";
 import {
-  IGear, IPrint, IStar, IUsers, IDownload, IPlus, IX, ICheck, ITrash, IRecall, IAlert, IScan, IChevD, IClockIn, IPill, IEdit,
+  IGear, IPrint, IStar, IUsers, IDownload, IPlus, IX, ICheck, ITrash, IRecall, IAlert, IScan, IChevD, IClockIn, IPill, IEdit, ITag,
 } from "../icons";
 import { connectPrinter, printLabel, kickDrawer, HardwareError } from "../lib/hardware";
 
-type Tab = "profile" | "receipt" | "loyalty" | "team" | "clock" | "hardware" | "data" | "language" | "clinical" | "coupons";
+type Tab = "profile" | "receipt" | "loyalty" | "team" | "clock" | "hardware" | "data" | "language" | "clinical" | "coupons" | "categories";
 
 export default function Settings() {
   const { t } = useTranslation();
@@ -31,6 +32,7 @@ export default function Settings() {
     { id: "language", label: t("settings.language"), icon: <IX size={14} /> },
     { id: "clinical", label: t("settings.clinical"), icon: <IPill size={14} /> },
     { id: "coupons", label: t("analytics.couponsTitle"), icon: <IPlus size={14} /> },
+    { id: "categories", label: t("settings.categoriesTitle"), icon: <ITag size={14} /> },
   ];
 
   return (
@@ -68,6 +70,7 @@ export default function Settings() {
         {tab === "language" && <LanguageTab />}
         {tab === "clinical" && <ClinicalTab admin={admin} />}
         {tab === "coupons" && <CouponsTab admin={admin} />}
+        {tab === "categories" && <CategoriesTab admin={admin} />}
       </div>
     </div>
   );
@@ -836,6 +839,143 @@ function CouponsTab({ admin }: { admin: boolean }) {
                     <button onClick={() => openEdit(c)} className="p-1.5 rounded-md hover:bg-mist/60 text-inksoft" aria-label="Edit"><IEdit size={13} /></button>
                     <button onClick={() => dispatch({ type: "DELETE_COUPON", id: c.id })} className="p-1.5 rounded-md hover:bg-rose-50 text-rose-500" aria-label="Delete"><ITrash size={13} /></button>
                   </div>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+const CATEGORY_GROUP_OPTIONS = [
+  { id: "acute", label: "Acute & infection" },
+  { id: "chronic", label: "Chronic care" },
+  { id: "selfcare", label: "Self-care & family" },
+  { id: "technical", label: "Devices & compounds" },
+];
+
+function CategoriesTab({ admin }: { admin: boolean }) {
+  const { t } = useTranslation();
+  const { state, dispatch } = usePos();
+  const [creating, setCreating] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [id, setId] = useState("");
+  const [label, setLabel] = useState("");
+  const [color, setColor] = useState("#3b8668");
+  const [groupId, setGroupId] = useState("technical");
+  const [archived, setArchived] = useState(false);
+
+  const categories = useMemo(
+    () => [...(state.categories ?? [])].sort((a, b) => a.sort - b.sort),
+    [state.categories]);
+  const usage = (cid: string) => state.products.filter((p) => p.category === cid).length;
+
+  const reset = () => { setCreating(false); setEditingId(null); setId(""); setLabel(""); setColor("#3b8668"); setGroupId("technical"); setArchived(false); };
+  const openEdit = (c: Category) => {
+    setCreating(true); setEditingId(c.id); setId(c.id); setLabel(c.label);
+    setColor(c.color); setGroupId(c.groupId); setArchived(c.archived);
+  };
+
+  const save = () => {
+    if (!admin || !label.trim()) return;
+    const slug = (editingId ?? id.trim().toLowerCase().replace(/[^a-z0-9-]/g, "-")).trim();
+    if (!slug) return;
+    dispatch({
+      type: "SAVE_CATEGORY",
+      category: {
+        id: slug,
+        label: label.trim(),
+        color,
+        groupId,
+        sort: editingId ? categories.find((c) => c.id === editingId)?.sort ?? categories.length + 1 : categories.length + 1,
+        archived,
+      },
+    });
+    reset();
+  };
+
+  return (
+    <div className="space-y-4 max-w-[980px]">
+      <div className="flex items-center justify-between">
+        <h3 className="font-display font-bold text-ink text-[15px] flex items-center gap-2">
+          <ITag size={16} className="text-pine-700" /> {t("settings.categoriesTitle")}
+        </h3>
+        <button onClick={() => { setCreating(true); setEditingId(null); setId(""); setLabel(""); setColor("#3b8668"); setGroupId("technical"); setArchived(false); }}
+          disabled={!admin}
+          className="px-3 py-1.5 rounded-lg bg-pine-700 text-pine-50 text-xs font-bold hover:bg-pine-600 transition flex items-center gap-1.5 disabled:opacity-50">
+          <IPlus size={13} /> {t("settings.newCategory")}
+        </button>
+      </div>
+
+      {creating && (
+        <div className="rounded-xl border border-mist bg-card shadow-lift p-4 space-y-3 anim-fade-up">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            <label className="block text-[11px] font-bold text-inksoft">
+              {editingId ? "Slug (fixed)" : t("settings.categorySlug")}
+              <input value={id} onChange={(e) => setId(e.target.value)} disabled={!!editingId} placeholder="e.g. cosmetics"
+                className="mt-1 w-full px-2.5 py-1.5 rounded-lg border border-mist bg-card text-sm font-bold focus:border-pine-500 focus:outline-none disabled:bg-mist/40" />
+            </label>
+            <label className="block text-[11px] font-bold text-inksoft">{t("settings.categoryName")}
+              <input value={label} onChange={(e) => setLabel(e.target.value)} placeholder={t("settings.categoryNamePh")}
+                className="mt-1 w-full px-2.5 py-1.5 rounded-lg border border-mist bg-card text-sm font-bold focus:border-pine-500 focus:outline-none" />
+            </label>
+            <label className="block text-[11px] font-bold text-inksoft">{t("settings.categoryColor")}
+              <input type="color" value={color} onChange={(e) => setColor(e.target.value)}
+                className="mt-1 w-full h-[34px] rounded-lg border border-mist bg-card cursor-pointer" />
+            </label>
+            <label className="block text-[11px] font-bold text-inksoft">{t("settings.categoryGroup")}
+              <select value={groupId} onChange={(e) => setGroupId(e.target.value)}
+                className="mt-1 w-full px-2.5 py-1.5 rounded-lg border border-mist bg-card text-sm font-bold focus:border-pine-500 focus:outline-none">
+                {CATEGORY_GROUP_OPTIONS.map((g) => <option key={g.id} value={g.id}>{g.label}</option>)}
+              </select>
+            </label>
+          </div>
+          {editingId && (
+            <label className="flex items-center gap-2 text-xs font-semibold text-inksoft">
+              <input type="checkbox" checked={archived} onChange={(e) => setArchived(e.target.checked)} />
+              {t("settings.categoryArchived")}
+            </label>
+          )}
+          <div className="flex gap-2">
+            <button onClick={save} disabled={!admin || !label.trim()}
+              className="px-4 py-1.5 rounded-lg bg-pine-700 text-pine-50 text-xs font-bold hover:bg-pine-600 transition disabled:opacity-50">
+              <ICheck size={13} className="inline me-1" /> {t("common.save")}
+            </button>
+            <button onClick={reset}
+              className="px-4 py-1.5 rounded-lg border border-mist text-xs font-bold text-inksoft hover:border-pine-400 transition">
+              {t("common.cancel")}
+            </button>
+          </div>
+        </div>
+      )}
+
+      <div className="rounded-xl border border-mist bg-card overflow-hidden">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="text-start text-[10px] uppercase tracking-[0.14em] text-inksoft border-b border-mist bg-paper/60">
+              <th className="text-start px-4 py-2 font-bold"></th>
+              <th className="text-start px-4 py-2 font-bold">{t("settings.categoryName")}</th>
+              <th className="text-start px-4 py-2 font-bold">Slug</th>
+              <th className="text-start px-4 py-2 font-bold">{t("settings.categoryGroup")}</th>
+              <th className="text-start px-4 py-2 font-bold">{t("pos.inStock")}</th>
+              <th className="text-end px-4 py-2 font-bold"></th>
+            </tr>
+          </thead>
+          <tbody>
+            {categories.map((c) => (
+              <tr key={c.id} className={cx("border-t border-mist/60", c.archived && "opacity-45")}>
+                <td className="px-4 py-2"><span className="w-2.5 h-2.5 rounded-full inline-block" style={{ background: c.color }} /></td>
+                <td className="px-4 py-2 font-semibold text-ink">{c.label}{c.archived && <span className="ms-2 text-[9px] font-bold uppercase text-inksoft">archived</span>}</td>
+                <td className="px-4 py-2 num text-inksoft">{c.id}</td>
+                <td className="px-4 py-2 text-inksoft">{CATEGORY_GROUP_OPTIONS.find((g) => g.id === c.groupId)?.label ?? c.groupId}</td>
+                <td className="px-4 py-2 num text-inksoft">{usage(c.id)}</td>
+                <td className="px-4 py-2 text-end whitespace-nowrap">
+                  <button onClick={() => openEdit(c)} disabled={!admin}
+                    className="p-1.5 rounded-md text-inksoft hover:text-pine-700 hover:bg-pine-100 transition disabled:opacity-30" aria-label="Edit category"><IEdit size={13} /></button>
+                  <button onClick={() => dispatch({ type: "DELETE_CATEGORY", id: c.id })} disabled={!admin}
+                    className="p-1.5 rounded-md text-inksoft hover:text-brick-700 hover:bg-brick-100 transition disabled:opacity-30" aria-label="Delete category"><ITrash size={13} /></button>
                 </td>
               </tr>
             ))}
