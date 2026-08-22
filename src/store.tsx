@@ -1774,7 +1774,7 @@ export function PosProvider({ children }: { children: ReactNode }) {
    * On reboot, load() restores the user but backendAuthenticated is false — recover the still-live
    * Supabase session here so a page refresh hydrates from the DB instead of falling back to seed. */
   useEffect(() => {
-    if (state.backendAuthenticated || !state.user) return;
+    if (state.backendAuthenticated) return;
     let cancelled = false;
     void getSessionStaffId().then((staffId) => {
       if (!cancelled && staffId && staffId === state.user?.id) {
@@ -1789,7 +1789,7 @@ export function PosProvider({ children }: { children: ReactNode }) {
       }
     });
     return () => { cancelled = true; };
-  }, [state.backendAuthenticated, state.user?.id]);
+  }, [state.backendAuthenticated, state.user?.id, state.staff]);
 
   /* Keep the seed/localStorage path immediate; RLS-backed hydration starts after Supabase auth. */
   useEffect(() => {
