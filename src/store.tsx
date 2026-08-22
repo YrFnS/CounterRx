@@ -7,7 +7,8 @@ import {
   CASHIER,
   stockOf, nearestExpiry, allocFEFO, fefoBatches, newBatchCode, daysUntil,
   bulkPct, REDEEM_CHUNK_PTS, REDEEM_CHUNK_VALUE, can, tenderTypeOf, applyStoreCredit, pruneExpiredHolds,
-  LINE_DISCOUNT_PIN_THRESHOLD,
+  LINE_DISCOUNT_PIN_THRESHOLD, CATEGORIES_FALLBACK,
+  type Category,
   createShift, recordShiftTransaction, recordCashMovement, closeShift, generateXReport, generateZReport,
   deductFromLot, tempInRange,
 } from "./data";
@@ -60,6 +61,7 @@ interface State {
   interactionPairs: InteractionPair[];
   coldChainLog: ColdChainLog[];
   coupons: Coupon[];
+  categories: Category[];
   currentShift: Shift | null;
   cart: { productId: string; qty: number; note?: string; priceOverride?: number; daw?: number; substitutedFrom?: string; uom?: string; lineDiscount?: { mode: "amt" | "pct"; value: number } }[];
   held: HeldSale[];
@@ -128,6 +130,8 @@ type Action =
   | { type: "REDEEM_STORE_CREDIT"; id: string; amount: number }
   | { type: "SAVE_COUPON"; coupon: Coupon }
   | { type: "DELETE_COUPON"; id: string }
+  | { type: "SAVE_CATEGORY"; category: Category }
+  | { type: "DELETE_CATEGORY"; id: string }
   | { type: "EXPIRE_HELDS" }
   | { type: "OPEN_PAY"; open: boolean }
   | { type: "COMPLETE_SALE"; payments: PaymentLeg[]; tendered?: number; discountPct: number; taxExempt: boolean; idChecked: boolean; restricted?: { purchaser: string; idType: string; idLast4: string }; couponDiscount?: number; invoiceDiscountAmt?: number; approvedBy?: string }
@@ -184,7 +188,7 @@ let toastSeq = 1;
 let heldSeq = 1;
 let auditSeq = 100;
 
-export const seed = (): Pick<State, "products" | "transactions" | "prescriptions" | "prescribers" | "customers" | "audit" | "transfers" | "backorders" | "rxTransfers" | "suppliers" | "purchaseOrders" | "apInvoices" | "expenses" | "deliveries" | "webOrders" | "timeEntries" | "staff" | "settings" | "shifts" | "storeCredits" | "interactionPairs" | "coldChainLog" | "coupons"> => {
+export const seed = (): Pick<State, "products" | "transactions" | "prescriptions" | "prescribers" | "customers" | "audit" | "transfers" | "backorders" | "rxTransfers" | "suppliers" | "purchaseOrders" | "apInvoices" | "expenses" | "deliveries" | "webOrders" | "timeEntries" | "staff" | "settings" | "shifts" | "storeCredits" | "interactionPairs" | "coldChainLog" | "coupons" | "categories"> => {
   const now = Date.now();
   const products = makeProducts(now);
   const customers = makeCustomers(now);
@@ -209,6 +213,7 @@ export const seed = (): Pick<State, "products" | "transactions" | "prescriptions
     shifts: [],
     interactionPairs: [],
     coupons: [],
+    categories: CATEGORIES_FALLBACK,
     staff: makeStaff(now),
     settings: makeSettings(),
     storeCredits: [],
@@ -220,7 +225,7 @@ const LS_KEY = "counterrx:v10";
 
 function load(): State {
   const base: State = {
-    ...seed(), user: null, backendAuthenticated: false, backendOffline: false, lockouts: {}, restrictedLog: [], online: typeof navigator === "undefined" ? true : navigator.onLine,
+    ...seed(), categories: CATEGORIES_FALLBACK, user: null, backendAuthenticated: false, backendOffline: false, lockouts: {}, restrictedLog: [], online: typeof navigator === "undefined" ? true : navigator.onLine,
     cart: [], held: [], saleCustomerId: null, redeemPoints: 0, currentShift: null,
     view: "register", invPreset: "all",
     payOpen: false, receipt: null, toasts: [], flashId: null, flashKey: 0, snapshotVersion: 0,
@@ -255,6 +260,7 @@ function load(): State {
           interactionPairs: saved.interactionPairs ?? [],
           coldChainLog: saved.coldChainLog ?? [],
           coupons: saved.coupons ?? [],
+          categories: saved.categories ?? CATEGORIES_FALLBACK,
         };
       }
     }
@@ -888,6 +894,22 @@ export function reducer(state: State, a: Action): State {
       if (!can(state.user?.role, "manage_settings")) return withToast(state, "error", "Admin required to manage coupons");
       const coupons = state.coupons.filter((c) => c.id !== a.id);
       return withToast(withAudit({ ...state, coupons }, "settings", `Coupon ${a.id} deleted`), "success", i18n.t("toast.couponDeleted"));
+    }
+
+    /* Dynamic categories (P4) — archived categories stay resolvable for history. */
+    case "SAVE_CATEGORY": {
+      if (!can(state.user?.role, "manage_settings")) return withToast(state, "error", "Admin required to manage categories");
+      const exists = state.categories.findIndex((c) => c.id === a.category.id);
+      const categories = exists >= 0 ? state.categories.map((c) => (c.id === a.category.id ? a.category : c)) : [...state.categories, a.category];
+      return withToast(withAudit({ ...state, categories }, "settings", exists >= 0 ? `Category ${a.category.label} updated` : `Category ${a.category.label} created`), "success", `Category saved — ${a.category.label}`);
+    }
+
+    case "DELETE_CATEGORY": {
+      if (!can(state.user?.role, "manage_settings")) return withToast(state, "error", "Admin required to manage categories");
+      const inUse = state.products.some((p) => p.category === a.id);
+      if (inUse) return withToast(state, "error", "Category still assigned to products — archive it instead");
+      const categories = state.categories.filter((c) => c.id !== a.id);
+      return withToast(withAudit({ ...state, categories }, "settings", `Category ${a.id} deleted`), "success", "Category deleted");
     }
 
     case "RECALL_HELD": {
@@ -1612,6 +1634,7 @@ export function reducer(state: State, a: Action): State {
         interactionPairs: a.data.interactionPairs ?? [],
         coldChainLog: a.data.coldChainLog ?? [],
         coupons: a.data.coupons ?? [],
+        categories: a.data.categories ?? CATEGORIES_FALLBACK,
       };
     }
 
@@ -1729,6 +1752,7 @@ const backendDataFromState = (state: State): BackendData => ({
   interactionPairs: state.interactionPairs ?? [],
   coldChainLog: state.coldChainLog ?? [],
   coupons: state.coupons ?? [],
+  categories: state.categories ?? [],
 });
 
 export function PosProvider({ children }: { children: ReactNode }) {

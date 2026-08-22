@@ -3,7 +3,8 @@ import { useTranslation } from "react-i18next";
 import i18n from "../i18n";
 import type { ReactNode } from "react";
 import { usePos, money, clockTime } from "../store";
-import { CATEGORIES, fefoBatches, generateXReport, generateZReport, calculateLTV, supplierPerformance, expiryAtRisk } from "../data";
+import { catLabel } from "../data";
+import { fefoBatches, generateXReport, generateZReport, calculateLTV, supplierPerformance, expiryAtRisk } from "../data";
 import type { Product, TxLine, Transaction, PayMethod, Shift, ZReport, Customer, Supplier, PurchaseOrder, ApInvoice } from "../data";
 import { cx, Badge, Empty, Modal } from "../ui";
 import { ITrendUp, IDownload, IX, IPlus, IBox, ICash, ISearch, ICalendar } from "../icons";
@@ -122,7 +123,7 @@ function MarginTab({ ledger }: { ledger: { sales: Transaction[]; refunds: Transa
       : state.products.find((p) => p.id === l.productId)?.category ?? "other";
     const labelOf = (k: string) => groupBy === "product"
       ? state.products.find((p) => p.id === k)?.name ?? k
-      : CATEGORIES.find((c) => c.id === k)?.label ?? k;
+      : catLabel(k, state.categories);
     const add = (l: TxLine, sign: 1 | -1) => {
       const k = keyOf(l);
       const cur = agg.get(k) ?? { key: k, label: labelOf(k), units: 0, revenue: 0, cogs: 0 };
@@ -370,7 +371,7 @@ function BuilderTab({ from, to, preset }: { from: number; to: number; preset: Pr
     const labelOf = (k: string): string => {
       switch (cfg.groupBy) {
         case "product": return state.products.find((p) => p.id === k)?.name ?? k;
-        case "category": return CATEGORIES.find((c) => c.id === k)?.label ?? k;
+        case "category": return catLabel(k, state.categories);
         case "day": return k;
         case "method": return k;
       }

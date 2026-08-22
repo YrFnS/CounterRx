@@ -7,7 +7,33 @@ export type CategoryId =
   | "antibiotics" | "pain" | "coldflu" | "vitamins" | "diabetes"
   | "cardio" | "derma" | "devices" | "firstaid" | "baby" | "cns" | "compound";
 
-export const CATEGORIES: { id: CategoryId; label: string; dot: string }[] = [
+export interface Category {
+  id: string;          // slug stored on products.category
+  label: string;
+  color: string;
+  groupId: string;
+  sort: number;
+  archived: boolean;
+}
+
+/** Fallback list used before hydration / offline (mirrors the DB seed). */
+export const CATEGORIES_FALLBACK: Category[] = [
+  { id: "antibiotics", label: "Antibiotics", color: "#c24a2e", groupId: "acute", sort: 1, archived: false },
+  { id: "pain", label: "Pain relief", color: "#e0a63c", groupId: "chronic", sort: 2, archived: false },
+  { id: "coldflu", label: "Cold & flu", color: "#5da184", groupId: "acute", sort: 3, archived: false },
+  { id: "vitamins", label: "Vitamins", color: "#7d9c5a", groupId: "selfcare", sort: 4, archived: false },
+  { id: "diabetes", label: "Diabetes", color: "#4f7d9e", groupId: "chronic", sort: 5, archived: false },
+  { id: "cardio", label: "Cardio", color: "#a05a79", groupId: "chronic", sort: 6, archived: false },
+  { id: "derma", label: "Skin care", color: "#c98d5f", groupId: "selfcare", sort: 7, archived: false },
+  { id: "devices", label: "Devices", color: "#5c6b66", groupId: "technical", sort: 8, archived: false },
+  { id: "firstaid", label: "First aid", color: "#b8543f", groupId: "acute", sort: 9, archived: false },
+  { id: "baby", label: "Baby care", color: "#8a7fb5", groupId: "selfcare", sort: 10, archived: false },
+  { id: "cns", label: "CNS & sleep", color: "#6b7f8c", groupId: "chronic", sort: 11, archived: false },
+  { id: "compound", label: "Compounds", color: "#8a6fae", groupId: "technical", sort: 12, archived: false },
+];
+
+/* Legacy shape kept for the offline fallback consumers below. */
+const CATEGORIES_SEED: { id: CategoryId; label: string; dot: string }[] = [
   { id: "antibiotics", label: "Antibiotics", dot: "#c24a2e" },
   { id: "pain", label: "Pain relief", dot: "#e0a63c" },
   { id: "coldflu", label: "Cold & flu", dot: "#5da184" },
@@ -29,9 +55,19 @@ export const CATEGORY_GROUPS: { id: string; label: string; leaves: CategoryId[] 
   { id: "selfcare", label: "Self-care & family", leaves: ["vitamins", "derma", "baby"] },
   { id: "technical", label: "Devices & compounds", leaves: ["devices", "compound"] },
 ];
-export const groupOf = (cat: CategoryId) => CATEGORY_GROUPS.find((g) => g.leaves.includes(cat))?.id ?? "technical";
-export const groupLabel = (gid: string) => CATEGORY_GROUPS.find((g) => g.id === gid)?.label ?? gid;
-export const catLabel = (cat: CategoryId) => CATEGORIES.find((c) => c.id === cat)?.label ?? cat;
+export const CATEGORY_GROUPS_RUNTIME = [
+  { id: "acute", label: "Acute & infection" },
+  { id: "chronic", label: "Chronic care" },
+  { id: "selfcare", label: "Self-care & family" },
+  { id: "technical", label: "Devices & compounds" },
+];
+export const groupOf = (cat: string, cats?: { id: string; groupId: string }[]) =>
+  cats?.find((c) => c.id === cat)?.groupId ?? CATEGORY_GROUPS_RUNTIME.find((g) => g.id === cat)?.id
+  ?? CATEGORIES_SEED_LOOKUP.get(cat) ?? "technical";
+export const groupLabel = (gid: string) => CATEGORY_GROUPS_RUNTIME.find((g) => g.id === gid)?.label ?? gid;
+export const catLabel = (cat: string, cats?: { id: string; label: string }[]) =>
+  cats?.find((c) => c.id === cat)?.label ?? CATEGORIES_SEED.find((c) => c.id === (cat as CategoryId))?.label ?? cat;
+const CATEGORIES_SEED_LOOKUP = new Map<string, string>(CATEGORY_GROUPS.flatMap((g) => g.leaves.map((l) => [l, g.id] as const)));
 
 /** A single stock lot on the shelf. Sales consume lots FEFO — first expiry, first out. */
 export interface Batch {
@@ -58,7 +94,7 @@ export interface Uom {
 export interface Product {
   id: string; sku: string; barcode: string;
   name: string; generic: string; brand: string;
-  category: CategoryId; form: string;
+  category: string; form: string;
   price: number; cost: number;
   reorderLevel: number;
   rx: boolean;
@@ -80,7 +116,7 @@ export interface Product {
 /* Simulated NDC directory (§3) — used for auto-fill when creating new catalog items */
 export interface NdcEntry {
   ndc: string; name: string; generic: string; brand: string; form: string;
-  price: number; cost: number; category: CategoryId;
+  price: number; cost: number; category: string;
 }
 export const NDC_DIRECTORY: NdcEntry[] = [
   { ndc: "50111-0362-01", name: "Levothyroxine 50mcg", generic: "Levothyroxine sodium", brand: "Synthroid", form: "Tablet · bottle of 100", price: 14.2, cost: 7.8, category: "cardio" },
@@ -790,7 +826,7 @@ const day = 86_400_000;
 const iso = (ms: number) => new Date(ms).toISOString().slice(0, 10);
 
 function p(
-  id: string, name: string, generic: string, brand: string, category: CategoryId, form: string,
+  id: string, name: string, generic: string, brand: string, category: string, form: string,
   price: number, cost: number, stock: number, reorderLevel: number, rx: boolean,
   batch: string, expDays: number, supplier: string,
   b2?: [string, number, number], // optional second lot: [batch, qty, expDays]

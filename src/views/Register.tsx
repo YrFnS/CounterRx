@@ -2,8 +2,8 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { usePos, money, relTime, unitPrice, cartTotals, uomFactor } from "../store";
-import { CATEGORIES, daysUntil, stockOf, nearestExpiry, bulkPct, fefoBatches, findInteractions, allergyConflicts } from "../data";
-import type { CategoryId, Product } from "../data";
+import { daysUntil, stockOf, nearestExpiry, bulkPct, fefoBatches, findInteractions, allergyConflicts } from "../data";
+import type { Product } from "../data";
 import { aiClassify } from "../lib/ai";
 import { cartToInteractionPrompt, parseClassifyJson } from "../lib/ai-ui";
 import { cx, Badge, Empty, Modal } from "../ui";
@@ -61,7 +61,7 @@ export default function Register() {
   const { state, dispatch, product } = usePos();
   const { t } = useTranslation();
   const [q, setQ] = useState("");
-  const [cat, setCat] = useState<CategoryId | "all">("all");
+  const [cat, setCat] = useState<string | "all">("all");
   const [sort, setSort] = useState<SortKey>("name");
   const [noteFor, setNoteFor] = useState<string | null>(null);
   const [priceFor, setPriceFor] = useState<string | null>(null);
@@ -105,6 +105,9 @@ export default function Register() {
 
   const needle = q.trim().toLowerCase();
 
+  const categories = useMemo(
+    () => (state.categories ?? []).filter((c) => !c.archived).sort((x, y) => x.sort - y.sort),
+    [state.categories]);
   const list = useMemo(() => {
     const entries = state.products
       .filter((p) => cat === "all" || p.category === cat)
@@ -262,8 +265,8 @@ export default function Register() {
           <div className="flex gap-1.5 overflow-x-auto scroll-slim pb-1 -mx-1 px-1">
             <CatChip active={cat === "all"} label={t("pos.allItems")} count={state.products.length}
               onClick={() => setCat("all")} dot="#5c6b66" />
-            {CATEGORIES.map((c) => (
-              <CatChip key={c.id} active={cat === c.id} label={c.label} dot={c.dot}
+            {categories.map((c) => (
+              <CatChip key={c.id} active={cat === c.id} label={c.label} dot={c.color}
                 count={state.products.filter((p) => p.category === c.id).length}
                 onClick={() => setCat(cat === c.id ? "all" : c.id)} />
             ))}
@@ -272,7 +275,7 @@ export default function Register() {
 
         <div className="lg:flex-1 overflow-y-auto scroll-slim px-3 sm:px-5 pb-6">
           {needle === "" && cat === "all" && topSellers.length > 0 && (
-            <QuickPicks items={topSellers} onAdd={(id) => { const p = state.products.find((x) => x.id === id); if (p) tryAdd(p); }} />
+            <QuickPicks items={topSellers} colorOf={(c) => state.categories?.find((x) => x.id === c)?.color ?? "#5c6b66"} onAdd={(id) => { const p = state.products.find((x) => x.id === id); if (p) tryAdd(p); }} />
           )}
           {list.length === 0 ? (
             <Empty icon={<IPill size={22} />} title={t("pos.noProductsMatch")}
@@ -281,7 +284,7 @@ export default function Register() {
             <div className="grid grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4 gap-3">
               {list.map(({ p, idx }) => (
                 <ProductCard key={p.id} p={p} hl={idx}
-                  flashing={state.flashId === p.id} flashKey={state.flashKey}
+                  flashing={state.flashId === p.id} flashKey={state.flashKey} colorOf={(c) => state.categories?.find((x) => x.id === c)?.color ?? "#5c6b66"}
                   onAdd={() => tryAdd(p)} />
               ))}
             </div>
@@ -595,7 +598,7 @@ function Highlight({ text, idx }: { text: string; idx: number[] }) {
   );
 }
 
-function QuickPicks({ items, onAdd }: { items: { p: Product; sold: number }[]; onAdd: (id: string) => void }) {
+function QuickPicks({ items, onAdd, colorOf }: { items: { p: Product; sold: number }[]; onAdd: (id: string) => void; colorOf: (cat: string) => string }) {
   return (
     <div className="mb-4 anim-fade-up">
       <div className="flex items-center gap-1.5 mb-2">
@@ -607,7 +610,7 @@ function QuickPicks({ items, onAdd }: { items: { p: Product; sold: number }[]; o
           <button key={p.id} onClick={() => onAdd(p.id)}
             className="group shrink-0 w-[172px] text-start bg-pine-50/60 border border-pine-200/70 rounded-xl p-2.5 hover:border-pine-400 hover:-translate-y-0.5 hover:shadow-lift active:scale-[0.97] transition-all duration-200">
             <div className="flex items-center justify-between gap-1">
-              <span className="w-2 h-2 rounded-full" style={{ background: CATEGORIES.find((c) => c.id === p.category)?.dot }} />
+              <span className="w-2 h-2 rounded-full" style={{ background: colorOf(p.category) }} />
               <span className="num text-[9px] font-bold text-pine-700 bg-pine-100 rounded px-1 py-0.5">{sold} sold</span>
             </div>
             <p className="mt-1.5 text-[12px] font-semibold text-ink leading-tight line-clamp-2 min-h-[2.4em]">{p.name}</p>
@@ -766,8 +769,8 @@ function CatChip({ active, label, count, dot, onClick }: {
   );
 }
 
-function ProductCard({ p, hl = [], flashing, flashKey, onAdd }: {
-  p: Product; hl?: number[]; flashing: boolean; flashKey: number; onAdd: () => void;
+function ProductCard({ p, hl = [], flashing, flashKey, onAdd, colorOf }: {
+  p: Product; hl?: number[]; flashing: boolean; flashKey: number; onAdd: () => void; colorOf: (cat: string) => string;
 }) {
   const { t } = useTranslation();
   const near = nearestExpiry(p);
@@ -784,7 +787,7 @@ function ProductCard({ p, hl = [], flashing, flashKey, onAdd }: {
       {flashing && <span key={flashKey} className="anim-pop absolute inset-0 rounded-xl ring-2 ring-pine-500 pointer-events-none" />}
       <div className="flex items-start justify-between gap-2">
         <span className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-[0.12em] text-inksoft">
-          <span className="w-2 h-2 rounded-full" style={{ background: CATEGORIES.find((c) => c.id === p.category)?.dot }} />
+          <span className="w-2 h-2 rounded-full" style={{ background: colorOf(p.category) }} />
           {p.brand}
         </span>
         <span className="flex items-center gap-1">
