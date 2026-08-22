@@ -1,14 +1,15 @@
-import { useMemo, useState } from "react";
+import { useMemo, useState, useCallback } from "react";
 import { useTranslation } from "react-i18next";
 import type { ReactNode } from "react";
 import { usePos, listSnapshots, money } from "../store";
 import i18n from "../i18n";
 import { CURRENCIES, ROLE_LABEL, can, randomPin, Coupon } from "../data";
+import { supabase } from "../lib/supabase";
 import type { Category } from "../data";
 import type { OrgSettings, Role, Staff, Snapshot, Product } from "../data";
 import { cx, Modal, Badge } from "../ui";
 import {
-  IGear, IPrint, IStar, IUsers, IDownload, IPlus, IX, ICheck, ITrash, IRecall, IAlert, IScan, IChevD, IClockIn, IPill, IEdit, ITag,
+  IGear, IPrint, IStar, IUsers, IDownload, IPlus, IX, ICheck, ITrash, IRecall, IAlert, IScan, IChevD, IClockIn, IPill, IEdit, ITag, IShield, ICopy,
 } from "../icons";
 import { connectPrinter, printLabel, kickDrawer, HardwareError } from "../lib/hardware";
 
@@ -288,6 +289,7 @@ function LoyaltyTab({ admin }: { admin: boolean }) {
 
 /* ---------------------------------- team ---------------------------------- */
 function TeamTab() {
+  const { t } = useTranslation();
   const { state, dispatch } = usePos();
   const [adding, setAdding] = useState(false);
   const [resetFor, setResetFor] = useState<Staff | null>(null);
@@ -341,8 +343,8 @@ function TeamTab() {
                   <td className="px-4 py-2.5">
                     <div className="flex justify-end gap-1.5">
                       <button onClick={() => setResetFor(s)}
-                        className="px-2 py-1 rounded-md border border-mist text-[11px] font-bold text-inksoft hover:border-honey-400 hover:text-honey-700 transition">
-                        Reset PIN
+                        className="px-2 py-1 rounded-md border border-mist text-[11px] font-bold text-inksoft hover:border-pine-400 hover:text-pine-700 transition flex items-center gap-1">
+                        <IShield size={11} /> {t("settings.setPassword")}
                       </button>
                       <button disabled={self}
                         onClick={() => dispatch({ type: "UPDATE_STAFF", id: s.id, patch: { active: !s.active } })}
@@ -359,7 +361,7 @@ function TeamTab() {
       </div>
 
       {adding && <AddStaffModal onClose={() => setAdding(false)} />}
-      {resetFor && <PinModal staff={resetFor} onClose={() => setResetFor(null)} />}
+      {resetFor && <SetPasswordModal staff={resetFor} onClose={() => setResetFor(null)} />}
     </div>
   );
 }
@@ -411,31 +413,160 @@ function AddStaffModal({ onClose }: { onClose: () => void }) {
   );
 }
 
-function PinModal({ staff, onClose }: { staff: Staff; onClose: () => void }) {
+function SetPasswordModal({ staff, onClose }: { staff: Staff; onClose: () => void }) {
+  const { t } = useTranslation();
   const { dispatch } = usePos();
-  const [pin] = useState(randomPin);
-  const [saved, setSaved] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [password, setPassword] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
+
+  const generateTempPassword = useCallback(() => {
+    const chars = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789!@#$%";
+    const array = new Uint8Array(16);
+    crypto.getRandomValues(array);
+    return Array.from(array, (v) => chars[v % chars.length]).join("");
+  }, []);
+
+  const handleSetPassword = async () => {
+    const tempPassword = generateTempPassword();
+    setLoading(true);
+    setError(null);
+
+    try {
+      const { data: sessionData } = await supabase.auth.getSession();
+      const accessToken = sessionData.session?.access_token;
+
+      if (!accessToken) {
+        throw new Error(t("settings.noSession"));
+      }
+
+      // Derive email from staff ID (S-001 -> s001@counterrx.local)
+      const staffEmail = `${staff.id.replace(/-/g, "").toLowerCase()}@counterrx.local`;
+      const res = await fetch(
+        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/admin-set-password`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${accessToken}`,
+          },
+          body: JSON.stringify({ staffEmail, newPassword: tempPassword }),
+        }
+      );
+
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        if (res.status === 404) {
+          // Function not deployed - fall back to email reset
+          throw new Error("FUNCTION_NOT_DEPLOYED");
+        }
+        throw new Error(err.error || t("settings.passwordResetFailed"));
+      }
+
+      setPassword(tempPassword);
+    } catch (e) {
+      if (e instanceof Error && e.message === "FUNCTION_NOT_DEPLOYED") {
+        setError("FUNCTION_NOT_DEPLOYED");
+      } else {
+        setError(e instanceof Error ? e.message : t("settings.unexpectedError"));
+      }
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleEmailReset = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const staffEmail = `${staff.id.replace(/-/g, "").toLowerCase()}@counterrx.local`;
+      const { error } = await supabase.auth.resetPasswordForEmail(staffEmail, {
+        redirectTo: `${window.location.origin}/reset-password`,
+      });
+      if (error) throw error;
+      dispatch({ type: "TOAST", kind: "success", msg: t("settings.resetEmailSent", { email: staffEmail }) });
+      onClose();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : t("settings.unexpectedError"));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleCopy = () => {
+    if (password) {
+      navigator.clipboard.writeText(password);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    }
+  };
+
   return (
-    <Modal onClose={onClose} width={400} labelledBy="pin-title">
+    <Modal onClose={onClose} width={420} labelledBy="pwd-title">
       <div className="px-5 py-4 border-b border-mist flex items-start justify-between">
-        <h2 id="pin-title" className="font-display font-bold text-ink">Reset PIN — {staff.name}</h2>
+        <h2 id="pwd-title" className="font-display font-bold text-ink flex items-center gap-2"><IShield size={17} className="text-pine-700" /> {t("settings.setPasswordTitle", { name: staff.name })}</h2>
         <button onClick={onClose} className="p-1.5 rounded-md hover:bg-mist/60 text-inksoft" aria-label="Close"><IX size={14} /></button>
       </div>
-      <div className="p-5 text-center">
-        {!saved ? (
+      <div className="p-5 space-y-3">
+        {!password && !error ? (
           <>
-            <p className="text-xs text-inksoft">Generate a fresh PIN and hand it to {staff.name.split(",")[0]} privately. Their lockout (if any) clears.</p>
-            <button onClick={() => { dispatch({ type: "SET_STAFF_PIN", id: staff.id, pin }); setSaved(true); }}
-              className="mt-4 w-full py-2.5 rounded-lg bg-pine-700 text-pine-50 font-display font-bold text-sm hover:bg-pine-600 transition active:scale-[0.98] shadow-lift">
-              Generate new PIN
+            <p className="text-xs text-inksoft">{t("settings.setPasswordDesc", { name: staff.name.split(",")[0] })}</p>
+            <button
+              onClick={handleSetPassword}
+              disabled={loading}
+              className="mt-2 w-full py-2.5 rounded-lg bg-pine-700 text-pine-50 font-display font-bold text-sm hover:bg-pine-600 transition active:scale-[0.98] shadow-lift disabled:opacity-50">
+              {loading ? t("settings.generating") : t("settings.generateTempPassword")}
             </button>
           </>
+        ) : error === "FUNCTION_NOT_DEPLOYED" ? (
+          <div className="space-y-3">
+            <p className="text-xs text-honey-700 bg-honey-50 border border-honey-200 p-3 rounded-md">{t("settings.functionNotDeployed")}</p>
+            <button
+              onClick={handleEmailReset}
+              disabled={loading}
+              className="w-full py-2.5 rounded-lg bg-honey-600 text-white font-display font-bold text-sm hover:bg-honey-500 transition disabled:opacity-50">
+              {loading ? t("settings.sending") : t("settings.sendResetLink")}
+            </button>
+            <button
+              onClick={onClose}
+              className="w-full py-2 rounded-md border border-mist text-sm font-medium text-inksoft hover:bg-mist/50 transition">
+              {t("common.cancel")}
+            </button>
+          </div>
+        ) : error ? (
+          <div className="space-y-3">
+            <p className="text-xs text-brick-700 bg-brick-50 border border-brick-200 p-3 rounded-md">{error}</p>
+            <button
+              onClick={handleSetPassword}
+              disabled={loading}
+              className="w-full py-2.5 rounded-lg bg-pine-700 text-pine-50 font-display font-bold text-sm hover:bg-pine-600 transition disabled:opacity-50">
+              {loading ? t("settings.generating") : t("settings.tryAgain")}
+            </button>
+            <button
+              onClick={onClose}
+              className="w-full py-2 rounded-md border border-mist text-sm font-medium text-inksoft hover:bg-mist/50 transition">
+              {t("common.cancel")}
+            </button>
+          </div>
         ) : (
-          <div className="anim-pop">
-            <p className="text-xs font-bold uppercase tracking-[0.16em] text-inksoft">New PIN</p>
-            <p className="num text-[40px] font-bold text-pine-800 tracking-[0.3em] my-2">{pin}</p>
-            <button onClick={onClose} className="mt-3 w-full py-2.5 rounded-lg bg-ink text-paper font-display font-bold text-sm hover:bg-pine-900 transition">
-              Done — I've shared it
+          <div className="anim-pop space-y-3">
+            <p className="text-xs font-bold uppercase tracking-[0.16em] text-inksoft">{t("settings.tempPasswordLabel")}</p>
+            <div className="flex items-center gap-2">
+              <code className="flex-1 bg-mist/50 border border-mist rounded-md px-3 py-2 text-center text-sm font-mono tracking-[0.2em] break-all select-all" id="temp-pwd">{password}</code>
+              <button
+                onClick={handleCopy}
+                className="p-2 rounded-md border border-mist hover:bg-mist/50 transition flex-shrink-0"
+                aria-label={t("settings.copyPassword")}
+              >
+                {copied ? <ICheck size={16} className="text-pine-600" /> : <ICopy size={16} className="text-inksoft" />}
+              </button>
+            </div>
+            <p className="text-[11px] text-inksoft">{t("settings.passwordShownOnce")}</p>
+            <button
+              onClick={onClose}
+              className="mt-2 w-full py-2.5 rounded-lg bg-ink text-paper font-display font-bold text-sm hover:bg-pine-900 transition">
+              {t("settings.doneShared")}
             </button>
           </div>
         )}
