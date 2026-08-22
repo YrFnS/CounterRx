@@ -1862,7 +1862,8 @@ export function PosProvider({ children }: { children: ReactNode }) {
   }, [state.backendAuthenticated, state.products, state.transactions, state.prescriptions, state.prescribers, state.customers,
     state.transfers, state.backorders, state.rxTransfers, state.suppliers, state.purchaseOrders,
     state.apInvoices, state.expenses, state.deliveries, state.webOrders, state.timeEntries,
-    state.staff, state.settings, state.restrictedLog, state.audit, state.shifts, state.snapshotVersion, state.coldChainLog]);
+    state.staff, state.settings, state.restrictedLog, state.audit, state.shifts, state.snapshotVersion, state.coldChainLog,
+    state.categories, state.coupons]);
 
   /* track connectivity so the UI can show offline state (6.5); retry persist on reconnect (F11) */
   useEffect(() => {
