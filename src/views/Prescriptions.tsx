@@ -10,7 +10,7 @@ import type { DragStartEvent, DragEndEvent, DragOverEvent } from "@dnd-kit/core"
 import { usePos, relTime } from "../store";
 import { stockOf, can, daysUntil, allergyConflicts } from "../data";
 import { findInteractions, detectDuplicateTherapy, dispenseBlockers } from "../lib/clinical";
-import type { RxStatus, Prescription, BackOrderStatus, Product } from "../data";
+import type { RxStatus, Prescription, BackOrderStatus, Product, Prescriber } from "../data";
 import { aiOcr, type OcrResult } from "../lib/ai";
 import { suggestProducts } from "../lib/ai-ui";
 import { cx, Badge, Modal } from "../ui";
@@ -37,7 +37,7 @@ function resizeToDataUrl(file: File, maxDim: number): Promise<string> {
     img.src = url;
   });
 }
-import { IRx, ICheck, IClock, IRegister, IShield, IGrab, IRefresh, ISend, IRecall, IX, IBox, ISwap, IArrowIn, IArrowOut, IDownload, IPlus, IScan, IAlert, IPrint, ISpark } from "../icons";
+import { IRx, ICheck, IClock, IRegister, IShield, IGrab, IRefresh, ISend, IRecall, IX, IBox, ISwap, IArrowIn, IArrowOut, IDownload, IPlus, IScan, IAlert, IPrint, ISpark, IUsers, ISearch, IEdit, IArchive, ITrash } from "../icons";
 
 const FLOW: RxStatus[] = ["new", "verifying", "ready", "waiting", "dispensed"];
 const LABEL: Record<RxStatus, string> = {
@@ -66,6 +66,7 @@ export default function Prescriptions() {
   const [xferIn, setXferIn] = useState(false);
   const [intake, setIntake] = useState(false);
   const [ocrIntake, setOcrIntake] = useState(false);
+  const [tab, setTab] = useState<"workflow" | "prescribers">("workflow");
   const mayTransfer = can(state.user?.role, "transfer_rx");
 
   /* Refill radar: maintenance fills whose days-supply runs out within 7 days */
@@ -94,6 +95,22 @@ export default function Prescriptions() {
 
   return (
     <div className="h-full flex flex-col px-3 sm:px-6 py-4 sm:py-5 min-h-0">
+      <div className="flex items-center gap-2 flex-wrap mb-3">
+        <button onClick={() => setTab("workflow")}
+          className={cx("px-3 py-1.5 rounded-lg text-xs font-bold transition active:scale-95",
+            tab === "workflow" ? "bg-pine-700 text-pine-50 shadow-lift" : "border border-mist bg-card text-ink hover:border-pine-400")}>
+          Rx workflow
+        </button>
+        <button onClick={() => setTab("prescribers")}
+          className={cx("px-3 py-1.5 rounded-lg text-xs font-bold transition active:scale-95",
+            tab === "prescribers" ? "bg-pine-700 text-pine-50 shadow-lift" : "border border-mist bg-card text-ink hover:border-pine-400")}>
+          <IUsers size={13} className="inline me-1" /> {t("prescribers.title")}
+        </button>
+      </div>
+      {tab === "prescribers" ? (
+        <PrescribersTab onClose={() => setTab("workflow")} />
+      ) : (
+      <>
       <div className="flex items-center gap-3 flex-wrap">
         <div>
           <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-inksoft flex items-center gap-1.5">
@@ -201,7 +218,228 @@ export default function Prescriptions() {
       {xferIn && <XferInModal onClose={() => setXferIn(false)} />}
       {intake && <IntakeModal onClose={() => setIntake(false)} />}
       {ocrIntake && <OcrIntakeModal onClose={() => setOcrIntake(false)} />}
+      </>
+      )}
     </div>
+  );
+}
+
+/* ================================================================== */
+/*  W1.3 — Prescriber directory                                      */
+/* ================================================================== */
+
+const maskDea = (dea: string) => dea.length <= 4 ? dea : "●".repeat(dea.length - 4) + dea.slice(-4);
+
+function PrescribersTab({ onClose }: { onClose: () => void }) {
+  const { t } = useTranslation();
+  const { state, dispatch, product, prescriber } = usePos();
+  const editable = can(state.user?.role, "manage_settings") || state.user?.role === "pharmacist";
+
+  const [q, setQ] = useState("");
+  const [editing, setEditing] = useState<Prescriber | null>(null);
+  const [historyFor, setHistoryFor] = useState<string | null>(null);
+  const [name, setName] = useState("");
+  const [credentials, setCredentials] = useState("");
+  const [specialty, setSpecialty] = useState("");
+  const [npi, setNpi] = useState("");
+  const [dea, setDea] = useState("");
+  const [phone, setPhone] = useState("");
+  const [fax, setFax] = useState("");
+  const [active, setActive] = useState(true);
+
+  const filtered = useMemo(() => {
+    const term = q.trim().toLowerCase();
+    return state.prescribers.filter((p) => !p.archived && (!term
+      || `${p.name} ${p.credentials} ${p.specialty} ${p.npi} ${maskDea(p.dea)} ${p.phone} ${p.fax}`.toLowerCase().includes(term)));
+  }, [state.prescribers, q]);
+  const archived = useMemo(() => state.prescribers.filter((p) => p.archived), [state.prescribers]);
+
+  const openEdit = (p?: Prescriber) => {
+    setEditing(p ?? null);
+    setName(p?.name ?? ""); setCredentials(p?.credentials ?? ""); setSpecialty(p?.specialty ?? "");
+    setNpi(p?.npi ?? ""); setDea(p?.dea ?? ""); setPhone(p?.phone ?? ""); setFax(p?.fax ?? "");
+    setActive(p?.active ?? true);
+  };
+  const reset = () => { setEditing(null); setName(""); setCredentials(""); setSpecialty(""); setNpi(""); setDea(""); setPhone(""); setFax(""); setActive(true); };
+
+  const save = () => {
+    if (!editable || !name.trim()) return;
+    dispatch({ type: "PRESCRIBER_SAVE", prescriber: { id: editing?.id ?? "", name: name.trim(), credentials: credentials.trim(), specialty: specialty.trim(), npi: npi.trim(), dea: dea.trim(), phone: phone.trim(), fax: fax.trim(), active, archived: editing?.archived ?? false } });
+    reset();
+  };
+
+  return (
+    <div className="h-full flex flex-col min-h-0">
+      <div className="flex items-center gap-3 flex-wrap">
+        <div className="relative flex-1 min-w-[200px]">
+          <ISearch size={15} className="absolute start-3 top-1/2 -translate-y-1/2 text-inksoft" />
+          <input value={q} onChange={(e) => setQ(e.target.value)} placeholder={t("prescribers.searchPh")}
+            className="w-full ps-9 pe-3 py-2 rounded-lg border border-mist bg-card text-sm focus:border-pine-500 focus:outline-none" />
+        </div>
+        <button onClick={() => openEdit()} disabled={!editable}
+          className={cx("flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-bold transition active:scale-95",
+            editable ? "bg-pine-700 text-pine-50 hover:bg-pine-600 shadow-lift" : "bg-mist text-inksoft/50 cursor-not-allowed")}>
+          <IPlus size={14} /> {t("prescribers.create")}
+        </button>
+        <p className="flex items-center gap-1.5 text-xs text-inksoft">
+          <IShield size={14} className="text-pine-600" /> {editable ? t("prescribers.canManage") : t("prescribers.readOnly")}
+        </p>
+      </div>
+
+      <div className="mt-3.5 flex-1 min-h-0 overflow-y-auto scroll-slim grid sm:grid-cols-2 xl:grid-cols-3 gap-3 pb-4">
+        {filtered.map((p) => {
+          const theirs = state.prescriptions.filter((rx) => rx.prescriberId === p.id);
+          return (
+            <div key={p.id} className="rounded-xl border border-mist bg-card p-3.5 shadow-lift flex flex-col">
+              <div className="flex items-start justify-between gap-2">
+                <div className="min-w-0">
+                  <h3 className="font-display font-bold text-ink text-[14px] leading-tight truncate">{p.name}, {p.credentials}</h3>
+                  <p className="text-[11px] text-inksoft">{p.specialty}</p>
+                </div>
+                {!p.active && <Badge tone="brick">Inactive</Badge>}
+              </div>
+              <dl className="mt-2.5 space-y-1 text-[11px]">
+                <div className="flex justify-between gap-2"><dt className="text-inksoft">NPI</dt><dd className="num font-semibold text-ink">{p.npi || "—"}</dd></div>
+                <div className="flex justify-between gap-2"><dt className="text-inksoft">DEA</dt><dd className="num font-semibold text-ink">{maskDea(p.dea) || "—"}</dd></div>
+                <div className="flex justify-between gap-2"><dt className="text-inksoft">Phone</dt><dd className="num font-semibold text-ink">{p.phone || "—"}</dd></div>
+                <div className="flex justify-between gap-2"><dt className="text-inksoft">Fax</dt><dd className="num font-semibold text-ink">{p.fax || "—"}</dd></div>
+              </dl>
+              <div className="mt-2 flex items-center gap-2 text-[11px]">
+                <Badge tone="pine">{theirs.length} Rx</Badge>
+              </div>
+              <div className="mt-auto pt-3 flex gap-1.5">
+                <button onClick={() => setHistoryFor(p.id)} disabled={theirs.length === 0}
+                  className="flex-1 flex items-center justify-center gap-1 py-1.5 rounded-md border border-mist bg-card text-inksoft text-[11px] font-bold hover:border-pine-400 hover:text-pine-700 transition active:scale-95 disabled:opacity-40">
+                  <IX size={11} className="hidden" /> {t("prescribers.history")}
+                </button>
+                <button onClick={() => openEdit(p)} disabled={!editable}
+                  className="p-1.5 rounded-md hover:bg-mist/60 text-inksoft disabled:opacity-40" aria-label="Edit"><IEdit size={13} /></button>
+                <button onClick={() => dispatch({ type: "PRESCRIBER_SAVE", prescriber: { ...p, archived: true } })} disabled={!editable}
+                  className="p-1.5 rounded-md hover:bg-mist/60 text-inksoft disabled:opacity-40" aria-label="Archive"><IArchive size={13} /></button>
+                <button onClick={() => dispatch({ type: "PRESCRIBER_DELETE", id: p.id })} disabled={!editable}
+                  className="p-1.5 rounded-md hover:bg-brick-100 text-brick-700 disabled:opacity-40" aria-label="Delete"><ITrash size={13} /></button>
+              </div>
+            </div>
+          );
+        })}
+        {filtered.length === 0 && <p className="text-xs text-inksoft px-1">{t("prescribers.empty")}</p>}
+      </div>
+
+      {archived.length > 0 && (
+        <details className="mt-2 rounded-xl border border-mist bg-card/60">
+          <summary className="cursor-pointer px-4 py-2.5 text-[11px] font-bold uppercase tracking-[0.14em] text-inksoft">
+            {t("prescribers.archived")} · {archived.length}
+          </summary>
+          <div className="px-4 pb-4 grid sm:grid-cols-2 xl:grid-cols-3 gap-2.5">
+            {archived.map((p) => (
+              <div key={p.id} className="opacity-55 rounded-lg border border-mist bg-paper px-3 py-2 flex items-center justify-between">
+                <div className="min-w-0">
+                  <p className="text-xs font-bold text-ink truncate">{p.name}, {p.credentials}</p>
+                  <p className="text-[10px] text-inksoft">{p.specialty}</p>
+                </div>
+                <div className="flex gap-1 shrink-0">
+                  <button onClick={() => openEdit(p)} disabled={!editable} className="p-1 rounded hover:bg-mist/60 text-inksoft disabled:opacity-40" aria-label="Edit"><IEdit size={12} /></button>
+                  <button onClick={() => dispatch({ type: "PRESCRIBER_SAVE", prescriber: { ...p, archived: false } })} disabled={!editable} className="p-1 rounded hover:bg-mist/60 text-inksoft disabled:opacity-40" aria-label="Restore" title={t("prescribers.restore")}><IArrowIn size={12} /></button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </details>
+      )}
+
+      {editing !== null && (
+        <Modal onClose={reset} width={560} labelledBy="pr-edit-title">
+          <div className="px-5 py-4 border-b border-mist flex items-start justify-between">
+            <h2 id="pr-edit-title" className="font-display font-bold text-ink flex items-center gap-2">
+              <IUsers size={17} className="text-pine-700" /> {editing ? t("prescribers.edit") : t("prescribers.create")}
+            </h2>
+            <button onClick={reset} className="p-1.5 rounded-md hover:bg-mist/60 text-inksoft" aria-label="Close"><IX size={14} /></button>
+          </div>
+          <div className="p-5 space-y-3 max-h-[70vh] overflow-y-auto scroll-slim">
+            <div className="grid grid-cols-2 gap-2.5">
+              <label className="block text-[11px] font-bold text-inksoft">{t("prescribers.name")} *
+                <input value={name} onChange={(e) => setName(e.target.value)} disabled={!editable} autoFocus className={xfIn} /></label>
+              <label className="block text-[11px] font-bold text-inksoft">{t("prescribers.credentials")}
+                <input value={credentials} onChange={(e) => setCredentials(e.target.value)} disabled={!editable} className={xfIn} /></label>
+              <label className="block text-[11px] font-bold text-inksoft">{t("prescribers.specialty")}
+                <input value={specialty} onChange={(e) => setSpecialty(e.target.value)} disabled={!editable} className={xfIn} /></label>
+              <label className="block text-[11px] font-bold text-inksoft">{t("prescribers.npi")}
+                <input value={npi} onChange={(e) => setNpi(e.target.value)} disabled={!editable} className={cx(xfIn, "num")} /></label>
+              <label className="block text-[11px] font-bold text-inksoft">{t("prescribers.dea")}
+                <input value={dea} onChange={(e) => setDea(e.target.value)} disabled={!editable} className={cx(xfIn, "num")} /></label>
+              <label className="block text-[11px] font-bold text-inksoft">{t("prescribers.phone")}
+                <input value={phone} onChange={(e) => setPhone(e.target.value)} disabled={!editable} className={cx(xfIn, "num")} /></label>
+              <label className="block text-[11px] font-bold text-inksoft">{t("prescribers.fax")}
+                <input value={fax} onChange={(e) => setFax(e.target.value)} disabled={!editable} className={cx(xfIn, "num")} /></label>
+            </div>
+            <label className="flex items-center gap-2 text-xs font-semibold text-inksoft">
+              <input type="checkbox" checked={active} onChange={(e) => setActive(e.target.checked)} disabled={!editable} /> {t("prescribers.active")}
+            </label>
+            <div className="flex justify-end gap-2">
+              <button onClick={reset} className="px-4 py-1.5 rounded-lg border border-mist text-inksoft text-xs font-bold hover:bg-mist/50 transition">{t("prescribers.cancel")}</button>
+              <button onClick={save} disabled={!editable || !name.trim()} className="px-4 py-1.5 rounded-lg bg-pine-700 text-pine-50 text-xs font-bold hover:bg-pine-600 transition disabled:opacity-50">
+                {editing ? t("prescribers.save") : t("prescribers.create")}
+              </button>
+            </div>
+          </div>
+        </Modal>
+      )}
+
+      {historyFor && (
+        <RxHistoryDrawer prescriberId={historyFor} onClose={() => setHistoryFor(null)} product={product} prescriber={prescriber} />
+      )}
+    </div>
+  );
+}
+
+/* Per-prescriber Rx history — reuse the prescriptions table rendering (§3). */
+function RxHistoryDrawer({ prescriberId, onClose, product, prescriber }: {
+  prescriberId: string; onClose: () => void;
+  product: (id: string) => Product | undefined; prescriber: (id: string) => Prescriber | undefined;
+}) {
+  const { t } = useTranslation();
+  const { state } = usePos();
+  const pr = prescriber(prescriberId);
+  const rows = state.prescriptions
+    .filter((rx) => rx.prescriberId === prescriberId)
+    .sort((a, b) => b.createdAt - a.createdAt);
+  return (
+    <Modal onClose={onClose} width={640} labelledBy="pr-hist-title">
+      <div className="px-5 py-4 border-b border-mist flex items-start justify-between">
+        <div>
+          <h2 id="pr-hist-title" className="font-display font-bold text-ink flex items-center gap-2">
+            <IUsers size={17} className="text-pine-700" /> {pr?.name ?? prescriberId}
+          </h2>
+          <p className="text-xs text-inksoft mt-0.5">{rows.length} {t("prescribers.historyCount")}</p>
+        </div>
+        <button onClick={onClose} className="p-1.5 rounded-md hover:bg-mist/60 text-inksoft" aria-label="Close"><IX size={14} /></button>
+      </div>
+      <div className="p-5">
+        <div className="max-h-[380px] overflow-auto scroll-slim rounded-lg border border-mist">
+          <table className="w-full text-xs border-collapse">
+            <thead className="sticky top-0">
+              <tr className="bg-pine-900 text-pine-100 text-start text-[9px] uppercase tracking-[0.14em]">
+                <th className="px-3 py-2 font-bold">Rx</th>
+                <th className="px-2 py-2 font-bold">Patient</th>
+                <th className="px-2 py-2 font-bold">Product</th>
+                <th className="px-3 py-2 font-bold text-end">Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((rx, i) => (
+                <tr key={rx.id} className={cx("border-t border-mist/70", i % 2 === 1 && "bg-paper/60")}>
+                  <td className="px-3 py-2 num font-bold text-ink">{rx.id}</td>
+                  <td className="px-2 py-2 text-ink">{rx.patient}</td>
+                  <td className="px-2 py-2 text-inksoft truncate max-w-[160px]">{product(rx.productId)?.name ?? rx.productId}</td>
+                  <td className="px-3 py-2 text-end"><StatusPill status={rx.status} /></td>
+                </tr>
+              ))}
+              {rows.length === 0 && <tr><td colSpan={4} className="px-3 py-8 text-center text-inksoft">No prescriptions on file.</td></tr>}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </Modal>
   );
 }
 
@@ -978,7 +1216,7 @@ function XferInModal({ onClose }: { onClose: () => void }) {
           <div>
             <label className="text-[11px] font-semibold uppercase tracking-[0.14em] text-inksoft">Prescriber *</label>
             <select value={prescriberId} onChange={(e) => setPrescriberId(e.target.value)} className={xfIn}>
-              {state.prescribers.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+              {state.prescribers.filter((p) => !p.archived).map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
             </select>
           </div>
           <div>
@@ -1082,7 +1320,7 @@ function IntakeModal({ onClose }: { onClose: () => void }) {
           <div>
             <label className="text-[11px] font-semibold uppercase tracking-[0.14em] text-inksoft">Prescriber *</label>
             <select value={prescriberId} onChange={(e) => setPrescriberId(e.target.value)} className={xfIn}>
-              {state.prescribers.filter((p) => p.active).map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+              {state.prescribers.filter((p) => p.active && !p.archived).map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
             </select>
           </div>
         </div>

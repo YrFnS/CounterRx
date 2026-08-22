@@ -262,6 +262,7 @@ export interface Prescriber {
   id: string; name: string; credentials: string; specialty: string;
   npi: string; dea: string; phone: string; fax: string;
   active: boolean;
+  archived?: boolean;
 }
 
 export interface Prescription {

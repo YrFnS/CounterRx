@@ -87,6 +87,8 @@ type Action =
   | { type: "UPDATE_STAFF"; id: string; patch: Partial<Pick<Staff, "name" | "role" | "active">> }
   | { type: "SET_STAFF_PIN"; id: string; pin: string }
   | { type: "ADD_PRESCRIBER"; prescriber: Omit<Prescriber, "id"> }
+  | { type: "PRESCRIBER_SAVE"; prescriber: Prescriber }
+  | { type: "PRESCRIBER_DELETE"; id: string }
   | { type: "FLAG_RECALL"; productId: string; batch: string; flagged: boolean }
   | { type: "RTV"; productId: string; batch: string; qty: number; reason: string }
   | { type: "WRITE_OFF"; productId: string; batch: string; reason: string; approvedBy?: string }
@@ -442,6 +444,37 @@ export function reducer(state: State, a: Action): State {
       return withAudit(
         withToast({ ...state, prescribers: [...state.prescribers, pr] }, "success", i18n.t("toast.prescriberAdded", { name: pr.name })),
         "rx", `Prescriber added — ${pr.name} · NPI ${pr.npi}`);
+    }
+
+    /* Prescriber directory (W1.3) — admin/pharmacist CRUD with delete reference guard.
+       Archived prescribers stay resolvable for Rx history. */
+    case "PRESCRIBER_SAVE": {
+      if (!can(state.user?.role, "manage_settings") && state.user?.role !== "pharmacist") {
+        return withToast(state, "error", "Pharmacist or admin required to manage prescribers");
+      }
+      const exists = state.prescribers.findIndex((p) => p.id === a.prescriber.id);
+      const prescriber: Prescriber = (!a.prescriber.id && exists < 0)
+        ? { ...a.prescriber, id: `DR-${String(state.prescribers.length + 1).padStart(2, "0")}` }
+        : a.prescriber;
+      const prescribers = exists >= 0
+        ? state.prescribers.map((p) => (p.id === a.prescriber.id ? prescriber : p))
+        : [...state.prescribers, prescriber];
+      return withToast(withAudit({ ...state, prescribers }, "rx",
+        exists >= 0 ? `Prescriber ${prescriber.name} updated` : `Prescriber ${prescriber.name} created`),
+        "success", exists >= 0 ? i18n.t("prescribers.updated", { name: prescriber.name }) : i18n.t("prescribers.created", { name: prescriber.name }));
+    }
+
+    case "PRESCRIBER_DELETE": {
+      if (!can(state.user?.role, "manage_settings") && state.user?.role !== "pharmacist") {
+        return withToast(state, "error", "Pharmacist or admin required to manage prescribers");
+      }
+      const pr = state.prescribers.find((p) => p.id === a.id);
+      if (!pr) return state;
+      const referenced = state.prescriptions.some((rx) => rx.prescriberId === a.id);
+      if (referenced) return withToast(state, "error", i18n.t("prescribers.deleteBlocked"));
+      const prescribers = state.prescribers.filter((p) => p.id !== a.id);
+      return withToast(withAudit({ ...state, prescribers }, "rx", `Prescriber ${pr.name} deleted`),
+        "success", i18n.t("prescribers.deleted", { name: pr.name }));
     }
 
     case "FLAG_RECALL": {
