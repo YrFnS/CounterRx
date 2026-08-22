@@ -78,7 +78,7 @@ interface State {
 }
 
 type Action =
-  | { type: "LOGIN"; staffId: string; pin: string }
+  | { type: "LOGIN"; staffId: string; pin?: string }
   | { type: "BACKEND_AUTH"; staffId: string; authenticated: boolean }
   | { type: "LOGOUT"; auto?: boolean }
   | { type: "ADD_STAFF"; name: string; role: Role; pin: string }
@@ -350,8 +350,10 @@ export function reducer(state: State, a: Action): State {
       const s = state.staff.find((x) => x.id === a.staffId);
       if (!s || !s.active) return state;
       const lock = state.lockouts[s.id];
-      if (lock && lock.until > Date.now()) return state; // still locked
-      if (s.pinHash !== hashPin(a.pin)) {
+      // pin === undefined → email/password flow: credentials were already verified
+      // (Supabase auth or the offline seed-password table), skip the local PIN check.
+      if (a.pin !== undefined && lock && lock.until > Date.now()) return state; // still locked
+      if (a.pin !== undefined && s.pinHash !== hashPin(a.pin)) {
         const fails = (lock && lock.until <= Date.now() ? 0 : lock?.fails ?? 0) + 1;
         const lockouts = { ...state.lockouts, [s.id]: { fails, until: fails >= LOCK_AFTER ? Date.now() + LOCK_MS : 0 } };
         return { ...state, lockouts };

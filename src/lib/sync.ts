@@ -482,6 +482,41 @@ export function subscribeToBackend(onChange: (source: TableName | "auth") => voi
 }
 
 /** Sign in using the deterministic staff credentials defined by supabase/seed.sql. */
+/** Email+password sign-in (replaces PIN-pad flow). Verifies typed credentials
+ *  against Supabase auth (seeded users: s00X@counterrx.local). Offline fallback:
+ *  matches against the seeded password table so the till still works without a
+ *  network; non-seeded staff cannot sign in offline. */
+export async function signInStaffByEmail(
+  email: string,
+  password: string,
+): Promise<{ staffId: string | null; authenticated: boolean }> {
+  if (!isSupabaseConfigured) {
+    const { SEED_PASSWORDS } = await import("../data");
+    const wanted = email.trim().toLowerCase();
+    for (const [staffId, expected] of Object.entries(SEED_PASSWORDS)) {
+      const seedEmail = `${staffId.replace(/-/g, "").toLowerCase()}@counterrx.local`;
+      if (wanted === seedEmail && password === expected) {
+        return { staffId, authenticated: true };
+      }
+    }
+    return { staffId: null, authenticated: false };
+  }
+  try {
+    const { error } = await supabase.auth.signInWithPassword({ email, password });
+    if (error) {
+      warn("staff sign-in (email)", error.message);
+      return { staffId: null, authenticated: false };
+    }
+    // Map seeded email back to the local staff id (s001@… → S-001)
+    const compactId = email.trim().split("@")[0];
+    const staffId = /^s\d{3}$/i.test(compactId) ? `S-${compactId.slice(1).toUpperCase()}` : null;
+    return { staffId, authenticated: true };
+  } catch (error) {
+    warn("staff sign-in (email)", error);
+    return { staffId: null, authenticated: false };
+  }
+}
+
 export async function signInStaff(staffId: string, pin: string): Promise<boolean> {
   if (!isSupabaseConfigured) return false;
   const compactId = staffId.replace(/-/g, "").toUpperCase();

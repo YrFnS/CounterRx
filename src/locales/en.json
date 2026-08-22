@@ -441,6 +441,7 @@
   },
   "auth": {
     "login": "Login",
+    "loginTitle": "Sign in to CounterRx",
     "locked": "Account Locked",
     "retryIn": "Retry in {{seconds}}s",
     "wrongPin": "Wrong PIN — {{attempts}} attempts left",
@@ -453,7 +454,10 @@
     "demoPins": "Demo PINs — cashier {{cashier}} · pharmacist {{pharmacist}} · manager {{manager}}",
     "logout": "Logout",
     "username": "Username",
+    "email": "Email",
     "password": "Password",
+    "signIn": "Sign in",
+    "invalidCredentials": "Invalid email or password",
     "pin": "PIN",
     "forgotPassword": "Forgot Password?",
     "resetPassword": "Reset Password",

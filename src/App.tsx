@@ -3,10 +3,10 @@ import type { ReactNode, ChangeEvent } from "react";
 import { useTranslation } from "react-i18next";
 import i18n from "./i18n";
 import { PosProvider, usePos } from "./store";
-import { signInStaff } from "./lib/sync";
+import { signInStaffByEmail } from "./lib/sync";
 import type { View } from "./store";
-import { CASHIER, daysUntil, nearestExpiry, stockOf, hashPin, ROLE_LABEL } from "./data";
-import type { Product, Transaction, Prescription, Staff, Role } from "./data";
+import { CASHIER, daysUntil, nearestExpiry, stockOf, ROLE_LABEL } from "./data";
+import type { Product, Transaction, Prescription, Role } from "./data";
 import { cx } from "./ui";
 import { PaymentModal, ReceiptModal, DataExchangeModal } from "./modals";
 import { ToastHost } from "./ui";
@@ -80,109 +80,27 @@ export default function App() {
 function LockScreen() {
   const { state, dispatch } = usePos();
   const { t } = useTranslation();
-  const roster = state.staff.filter((s) => s.active);
-  const [selected, setSelected] = useState<Staff | null>(null);
-  const [pin, setPin] = useState("");
-  const [shake, setShake] = useState(false);
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [busy, setBusy] = useState(false);
   const [error, setError] = useState(false);
-  const [, tick] = useState(0);
 
-  /* live countdown while a profile is locked out */
-  const lock = selected ? state.lockouts[selected.id] : undefined;
-  const lockedMs = lock && lock.until > Date.now() ? lock.until - Date.now() : 0;
-  useEffect(() => {
-    if (lockedMs <= 0) return;
-    const id = setInterval(() => tick((n) => n + 1), 500);
-    return () => clearInterval(id);
-  }, [lockedMs > 0]);
-
-  const submit = (code: string) => {
-    if (!selected) return;
-    if (lockedMs > 0) { setPin(""); return; }
-    const ok = hashPin(code) === selected.pinHash;
-    dispatch({ type: "LOGIN", staffId: selected.id, pin: code });
-    if (ok) {
-      // Ask Supabase to back the PIN. On success BACKEND_AUTH drives RLS hydration;
-      // on failure the local fallback (already in state) stays the session.
-      void signInStaff(selected.id, code).then((backendAuthenticated) => {
-        dispatch({ type: "BACKEND_AUTH", staffId: selected.id, authenticated: backendAuthenticated });
-      });
-    }
-    if (!ok) {
-      setError(true); setShake(true); setPin("");
-      setTimeout(() => setShake(false), 450);
-    }
-  };
-
-  const press = (d: string) => {
+  const submit = async (e?: React.FormEvent) => {
+    e?.preventDefault();
+    if (busy) return;
+    setBusy(true);
     setError(false);
-    const next = (pin + d).slice(0, 4);
-    setPin(next);
-    if (next.length === 4) setTimeout(() => submit(next), 120);
+    // Verify typed credentials first (Supabase, or offline seed table), then log in.
+    const r = await signInStaffByEmail(email, password);
+    if (!r.staffId) {
+      setError(true);
+      setBusy(false);
+      return;
+    }
+    dispatch({ type: "LOGIN", staffId: r.staffId });
+    dispatch({ type: "BACKEND_AUTH", staffId: r.staffId, authenticated: r.authenticated });
+    setBusy(false);
   };
-
-  /* physical keyboard support */
-  useEffect(() => {
-    const h = (e: KeyboardEvent) => {
-      if (/^[0-9]$/.test(e.key)) press(e.key);
-      if (e.key === "Backspace") { setError(false); setPin((p) => p.slice(0, -1)); }
-      if (e.key === "Enter" && pin.length === 4) submit(pin);
-    };
-    window.addEventListener("keydown", h);
-    return () => window.removeEventListener("keydown", h);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pin, selected]);
-
-  const roleTone: Record<Staff["role"], string> = {
-    cashier: "bg-pine-700 text-pine-100",
-    pharmacist: "bg-honey-500 text-pine-950",
-    manager: "bg-brick-500 text-brick-100",
-    pharmacy_admin: "bg-ink text-paper",
-    super_admin: "bg-ink text-paper",
-  };
-
-  /* no profile picked yet → roster chooser */
-  if (!selected) {
-    return (
-      <div className="h-full grid place-items-center px-6 relative overflow-hidden">
-        <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[820px] h-[420px] rounded-full bg-pine-200/25 blur-[110px] pointer-events-none" />
-        <div className="w-full max-w-[420px] relative">
-          <div className="text-center mb-5">
-            <span className="inline-grid place-items-center w-14 h-14 rounded-2xl bg-pine-800 text-pine-50 shadow-pop mx-auto">
-              <ICross size={28} />
-            </span>
-            <h1 className="font-display font-bold text-[26px] text-ink mt-3 tracking-tight">CounterRx</h1>
-            <p className="text-[11px] font-bold uppercase tracking-[0.22em] text-inksoft mt-0.5">{state.settings.terminalId} · {t('auth.locked')}</p>
-          </div>
-          <div className="bg-card border border-mist rounded-2xl shadow-pop p-5">
-            <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-inksoft mb-2.5">{t('auth.whoOnTill')}</p>
-            <div className="space-y-2">
-              {roster.map((u, i) => (
-                <button key={u.id} onClick={() => { setSelected(u); setPin(""); setError(false); }}
-                  style={{ animationDelay: `${i * 60}ms` }}
-                  className="anim-fade-up w-full flex items-center gap-3 p-2.5 rounded-xl border-2 border-mist bg-paper hover:border-pine-400 hover:bg-pine-50 hover:-translate-y-0.5 transition-all duration-200 text-start">
-                  <span className="grid place-items-center w-9 h-9 rounded-full bg-pine-900 text-pine-100 font-display font-bold text-xs shrink-0">
-                    {u.initials}
-                  </span>
-                  <span className="flex-1 min-w-0">
-                    <span className="block text-[13px] font-bold text-ink truncate">{u.name}</span>
-                    <span className="block text-[10px] text-inksoft num">staff since {new Date(u.createdAt).toLocaleDateString("en-US", { month: "short", year: "numeric" })}</span>
-                  </span>
-                  <span className={cx("px-1.5 py-0.5 rounded text-[8px] font-bold uppercase tracking-wide shrink-0", roleTone[u.role])}>
-                    {ROLE_LABEL[u.role]}
-                  </span>
-                  <IChevD size={14} className="-rotate-90 text-inksoft shrink-0" />
-                </button>
-              ))}
-              {roster.length === 0 && <p className="text-xs text-inksoft text-center py-4">{t('auth.noActiveStaff')}</p>}
-            </div>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  /* PIN entry for the chosen profile */
 
   return (
     <div className="h-full grid place-items-center px-6 relative overflow-hidden">
@@ -193,68 +111,29 @@ function LockScreen() {
             <ICross size={28} />
           </span>
           <h1 className="font-display font-bold text-[26px] text-ink mt-3 tracking-tight">CounterRx</h1>
-          <p className="text-[11px] font-bold uppercase tracking-[0.22em] text-inksoft mt-0.5">{state.settings.terminalId} · locked</p>
+          <p className="text-[11px] font-bold uppercase tracking-[0.22em] text-inksoft mt-0.5">{state.settings.terminalId}</p>
         </div>
 
-        <div className="bg-card border border-mist rounded-2xl shadow-pop p-5">
-          <button onClick={() => { setSelected(null); setPin(""); setError(false); }}
-            className="flex items-center gap-1.5 text-[11px] font-bold text-inksoft hover:text-pine-700 transition mb-3">
-            <IChevD size={12} className="rotate-90" /> {t('auth.switchProfile')}
+        <form onSubmit={submit} className="bg-card border border-mist rounded-2xl shadow-pop p-5">
+          <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-inksoft mb-3">{t('auth.loginTitle')}</p>
+          <label className="block mb-3">
+            <span className="block text-[10px] font-bold uppercase tracking-[0.14em] text-inksoft mb-1">{t('auth.email')}</span>
+            <input type="email" required autoComplete="username" value={email}
+              onChange={(e: ChangeEvent<HTMLInputElement>) => { setEmail(e.target.value); setError(false); }}
+              className="w-full rounded-xl border border-mist bg-paper px-3 py-2.5 text-[13px] font-semibold text-ink focus:border-pine-500 focus:outline-none transition" />
+          </label>
+          <label className="block mb-4">
+            <span className="block text-[10px] font-bold uppercase tracking-[0.14em] text-inksoft mb-1">{t('auth.password')}</span>
+            <input type="password" required autoComplete="current-password" value={password}
+              onChange={(e: ChangeEvent<HTMLInputElement>) => { setPassword(e.target.value); setError(false); }}
+              className="w-full rounded-xl border border-mist bg-paper px-3 py-2.5 text-[13px] font-semibold text-ink focus:border-pine-500 focus:outline-none transition" />
+          </label>
+          {error && <p className="text-[11px] font-semibold text-brick-700 mb-3">{t('auth.invalidCredentials')}</p>}
+          <button type="submit" disabled={busy || !email || !password}
+            className="w-full py-2.5 rounded-xl bg-pine-700 text-pine-50 font-display font-bold text-[13px] hover:bg-pine-600 active:scale-[0.98] disabled:opacity-40 disabled:pointer-events-none transition-all">
+            {busy ? t('auth.login') : t('auth.signIn')}
           </button>
-          <div className="flex items-center gap-3 pb-3 border-b border-mist">
-            <span className="grid place-items-center w-11 h-11 rounded-full bg-pine-900 text-pine-100 font-display font-bold text-sm shrink-0">
-              {selected.initials}
-            </span>
-            <div className="min-w-0">
-              <p className="text-[14px] font-bold text-ink truncate">{selected.name}</p>
-              <span className={cx("inline-block px-1.5 py-0.5 rounded text-[8px] font-bold uppercase tracking-wide mt-0.5", roleTone[selected.role])}>
-                {ROLE_LABEL[selected.role]}
-              </span>
-            </div>
-          </div>
-
-          <div className={cx("mt-5 flex justify-center gap-3", shake && "anim-shake")}>
-            {[0, 1, 2, 3].map((i) => (
-              <span key={i}
-                className={cx("w-3.5 h-3.5 rounded-full border-2 transition-all duration-150",
-                  error ? "border-brick-500 bg-brick-500" : i < pin.length ? "border-pine-700 bg-pine-700 scale-110" : "border-inksoft/40")} />
-            ))}
-          </div>
-          <p className={cx("text-center text-[11px] mt-2 h-4 font-semibold transition-colors",
-            lockedMs > 0 ? "text-brick-700" : error ? "text-brick-700" : "text-inksoft/70")}>
-            {lockedMs > 0
-              ? t('auth.retryIn', { seconds: Math.ceil(lockedMs / 1000) })
-              : error
-                ? t('auth.wrongPin', { attempts: Math.max(0, 5 - (state.lockouts[selected.id]?.fails ?? 0)) })
-                : t('auth.enterPin', { name: selected.name.split(",")[0] })}
-          </p>
-
-          <div className="mt-4 grid grid-cols-3 gap-2">
-            {["1", "2", "3", "4", "5", "6", "7", "8", "9"].map((d) => (
-              <button key={d} onClick={() => press(d)}
-                className="py-3 rounded-xl bg-paper border border-mist font-display font-bold text-lg text-ink hover:bg-pine-50 hover:border-pine-300 active:scale-95 active:bg-pine-100 transition-all duration-100">
-                {d}
-              </button>
-            ))}
-            <button onClick={() => { setError(false); setPin(""); }}
-              className="py-3 rounded-xl bg-paper border border-mist text-[11px] font-bold text-inksoft hover:bg-brick-100 hover:text-brick-700 hover:border-brick-300 active:scale-95 transition-all duration-100">
-              {t('auth.clear')}
-            </button>
-            <button onClick={() => press("0")}
-              className="py-3 rounded-xl bg-paper border border-mist font-display font-bold text-lg text-ink hover:bg-pine-50 hover:border-pine-300 active:scale-95 transition-all duration-100">
-              0
-            </button>
-            <button onClick={() => { setError(false); setPin((p) => p.slice(0, -1)); }}
-              className="py-3 rounded-xl bg-paper border border-mist grid place-items-center text-inksoft hover:bg-honey-100 hover:text-honey-700 hover:border-honey-300 active:scale-95 transition-all duration-100"
-              aria-label={t('auth.deleteDigit')}>
-              <IChevD size={16} className="rotate-90" />
-            </button>
-          </div>
-        </div>
-
-        <p className="text-center text-[10px] text-inksoft mt-4 num">
-          {t('auth.demoPins', { cashier: '1111', pharmacist: '2222', manager: '6666' })}
-        </p>
+        </form>
       </div>
     </div>
   );

@@ -612,6 +612,18 @@ export function makeStaff(now: number): Staff[] {
   ];
 }
 
+/** Seeded staff passwords — mirrors supabase/seed.sql auth.users provisioning.
+ *  Format: CRx<compactId><pin>. Used for offline email/password verification
+ *  when Supabase is unreachable (non-seeded staff cannot sign in offline). */
+export const SEED_PASSWORDS: Record<string, string> = {
+  "S-001": "CRxS0013333",
+  "S-002": "CRxS0022222",
+  "S-003": "CRxS0031111",
+  "S-004": "CRxS0044444",
+  "S-005": "CRxS0055555",
+  "S-006": "CRxS0066666",
+};
+
 export const randomPin = () => String(Math.floor(1000 + Math.random() * 9000));
 
 /* ------------------------------------------------------------------ */
