@@ -8,7 +8,7 @@ import { aiClassify } from "../lib/ai";
 import { cartToInteractionPrompt, parseClassifyJson } from "../lib/ai-ui";
 import { cx, Badge, Empty, Modal } from "../ui";
 import {
-  ISearch, IScan, IPlus, IMinus, ITrash, IPause, IRecall, IX, ICart, IPill, IChevD, ISpark as ISparkIcon, IEdit, ITag, IUsers, IAlert, IPrint, ICold, ICheck,
+  ISearch, IPlus, IMinus, ITrash, IPause, IRecall, IX, ICart, IPill, IChevD, ISpark as ISparkIcon, IEdit, ITag, IUsers, IAlert, IPrint, ICold, ICheck,
 } from "../icons";
 import ShiftBar from "./Till";
 import { printReceipt, HardwareError } from "../lib/hardware";
@@ -238,16 +238,13 @@ export default function Register() {
         <div className="px-3 sm:px-5 pt-4 pb-3 space-y-3">
           <div className="flex gap-2.5 items-center">
             <div key={scanMiss} className={cx("relative flex-1", scanMiss > 0 && "anim-shake")}>
-              <ISearch size={16} className="absolute start-3 top-1/2 -translate-y-1/2 text-inksoft" />
+              <ISearch size={16} className="absolute start-3 inset-y-0 flex items-center text-inksoft" />
               <input
                 id="pos-search" ref={searchRef} value={q}
                 onChange={(e) => setQ(e.target.value)} onKeyDown={onSearchKey}
                 placeholder={t("pos.searchFuzzyHint")}
                 className="w-full ps-9 pe-20 py-2.5 rounded-lg bg-card border border-mist text-sm text-ink placeholder:text-inksoft/70 focus:border-pine-500 focus:outline-none focus:ring-2 focus:ring-pine-200 transition"
               />
-              <span className="scan-chip absolute right-2 top-1/2 -translate-y-1/2 hidden sm:flex items-center gap-1.5 px-2 py-1 rounded-md bg-pine-800 text-pine-100 text-[10px] font-semibold tracking-wide">
-                <IScan size={12} />
-              </span>
             </div>
             <div className="relative">
               <select value={sort} onChange={(e) => setSort(e.target.value as SortKey)}
@@ -699,7 +696,7 @@ function CustomerAttach() {
       {open && !customer && (
         <div className="anim-pop absolute left-4 right-4 top-full mt-1.5 z-30 bg-card border border-mist rounded-xl shadow-pop p-2.5">
           <div className="relative">
-            <ISearch size={12} className="absolute start-2.5 top-1/2 -translate-y-1/2 text-inksoft" />
+            <ISearch size={12} className="absolute start-2.5 inset-y-0 flex items-center text-inksoft" />
             <input autoFocus value={q} onChange={(e) => setQ(e.target.value)} placeholder={t("pos.searchCustomer")}
               className="w-full ps-7.5 ps-8 pe-2 py-1.5 rounded-md border border-mist text-xs focus:border-pine-500 focus:outline-none transition" />
           </div>

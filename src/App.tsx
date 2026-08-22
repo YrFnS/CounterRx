@@ -318,10 +318,12 @@ function Shell() {
             title={t('common.apiSurfaceDesc')}>
             <ICode size={12} /> {t('common.apiSurface')}
           </button>
-          <p className={cx("text-center text-[9px] num flex items-center justify-center gap-1.5 font-semibold", state.backendOffline ? "text-honey-400" : "text-pine-300")}>
-            <span className={cx("w-1.5 h-1.5 rounded-full", state.backendOffline ? "bg-honey-500 anim-pulse-dot" : "bg-pine-400")} />
-            {state.backendOffline ? t('common.backendReconnecting') : t('common.backendConnected')}
-          </p>
+          {state.backendOffline && (
+            <div className="flex items-center justify-center gap-1.5 px-2 py-1 rounded-md bg-honey-100 border border-honey-300 text-honey-700 text-[9px] font-semibold">
+              <span className="w-1.5 h-1.5 rounded-full bg-honey-600 anim-pulse-dot" />
+              {t('common.backendReconnecting')}
+            </div>
+          )}
         </div>
       </aside>
 

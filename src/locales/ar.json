@@ -80,6 +80,7 @@
     "cartHint": "امسح الرمز أو ابحث لإضافة أصناف",
     "outOfStock": "نفذ المخزون",
     "available": "متوفر",
+    "inStock": "متوفر",
     "searchCustomer": "بحث عن عميل",
     "decrease": "تقليل",
     "increase": "زيادة",
@@ -628,6 +629,23 @@
     "storeCredit": "رصيد المتجر",
     "remainingDue": "المتبقي"
   },
+  "till": {
+    "cashInOut": "إيداع/سحب نقدي",
+    "cashIn": "إيداع نقدي",
+    "cashOut": "سحب نقدي",
+    "needManager": "مطلوب موافقة المدير",
+    "managerApproval": "مطلوب موافقة المدير",
+    "reason": "السبب",
+    "record": "تسجيل",
+    "viewReports": "عرض التقارير",
+    "issueCredit": "إصدار رصيد متجر",
+    "creditAmount": "مبلغ الرصيد",
+    "creditCode": "كود الرصيد",
+    "giftCardCode": "كود بطاقة الهدايا",
+    "optional": "اختياري",
+    "note": "ملاحظة",
+    "issue": "إصدار"
+  },
   "toast": {
     "signedIn": "تم تسجيل الدخول — {{name}} ({{role}})",
     "staffAdded": "تمت إضافة الموظف",
@@ -640,7 +658,10 @@
     "lowUnits": "وحدات منخفضة",
     "paApproved": "تمت الموافقة على الطلب المسبق",
     "paRejected": "تم رفض الطلب المسبق",
-    "dupeBackorder": "طلب مؤجل مكرر"
+    "dupeBackorder": "طلب مؤجل مكرر",
+    "couponCreated": "تم إنشاء القسيمة",
+    "couponUpdated": "تم تحديث القسيمة",
+    "couponDeleted": "تم حذف القسيمة"
   },
   "history": {
     "customerReturn": "إرجاع عميل",
