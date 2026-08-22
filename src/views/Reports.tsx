@@ -8,6 +8,7 @@ import { fefoBatches, generateXReport, generateZReport, calculateLTV, supplierPe
 import type { Product, TxLine, Transaction, PayMethod, Shift, ZReport, Customer, Supplier, PurchaseOrder, ApInvoice } from "../data";
 import { cx, Badge, Empty, Modal } from "../ui";
 import { ITrendUp, IDownload, IX, IPlus, IBox, ICash, ISearch, ICalendar } from "../icons";
+import { buildXlsx } from "../lib/export";
 
 /* ------------------------------------------------------------------ */
 /*  Costing helpers — every figure below derives from lot-level cost    */
@@ -541,6 +542,7 @@ function Seg<T extends string>({ value, onChange, options, vertical }: {
 
 function ExportCsv({ name, head, rows }: { name: string; head: string[]; rows: (string | number)[][] }) {
   const { dispatch } = usePos();
+  const { t } = useTranslation();
   const go = () => {
     const blob = new Blob([[head.join(","), ...rows.map((r) => r.join(","))].join("\n")], { type: "text/csv" });
     const url = URL.createObjectURL(blob);
@@ -549,11 +551,28 @@ function ExportCsv({ name, head, rows }: { name: string; head: string[]; rows: (
     a.click(); URL.revokeObjectURL(url);
     dispatch({ type: "TOAST", kind: "success", msg: `${name}.csv exported` });
   };
+  const goExcel = () => {
+    const tRows: Record<string, unknown>[] = rows.map((r) =>
+      Object.fromEntries(head.map((h, i) => [h, r[i]])));
+    const buf = buildXlsx(tRows, `${name}.xlsx`);
+    const blob = new Blob([buf], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url; a.download = `${name}-${new Date().toISOString().slice(0, 10)}.xlsx`;
+    a.click(); URL.revokeObjectURL(url);
+    dispatch({ type: "TOAST", kind: "success", msg: `${name}.xlsx exported` });
+  };
   return (
-    <button onClick={go}
-      className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-pine-700 text-pine-50 text-xs font-bold hover:bg-pine-600 transition active:scale-95">
-      <IDownload size={13} /> Export CSV
-    </button>
+    <div className="flex gap-1.5">
+      <button onClick={go}
+        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-pine-700 text-pine-50 text-xs font-bold hover:bg-pine-600 transition active:scale-95">
+        <IDownload size={13} /> Export CSV
+      </button>
+      <button onClick={goExcel}
+        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-mist text-ink border border-mist text-xs font-semibold hover:border-pine-300 hover:bg-pine-50 transition active:scale-95">
+        <IDownload size={13} /> {t("reports.exportExcel")}
+      </button>
+    </div>
   );
 }
 

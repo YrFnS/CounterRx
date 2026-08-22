@@ -5,6 +5,7 @@ import { can, invoiceBalance, invoicePaid, EXPENSE_CATEGORIES } from "../data";
 import type { PurchaseOrder, ApInvoice, ApPayMethod } from "../data";
 import { cx, Badge, Modal } from "../ui";
 import { IPlus, IX, ICheck, IDownload, IAlert, ICash, ICard, ITrash, ILedger, IBox, ICalendar, ITag, IRecall } from "../icons";
+import { buildXlsx } from "../lib/export";
 
 const day = 86_400_000;
 const r2 = (n: number) => Math.round(n * 100) / 100;
@@ -294,6 +295,7 @@ function NewPoModal({ onClose }: { onClose: () => void }) {
 
 /* ---------------------------- Accounts Payable ---------------------------- */
 function ApTab() {
+  const { t } = useTranslation();
   const { state, dispatch, supplier } = usePos();
   const [paying, setPaying] = useState<ApInvoice | null>(null);
   const [crediting, setCrediting] = useState<ApInvoice | null>(null);
@@ -327,13 +329,38 @@ function ApTab() {
     const a = document.createElement("a"); a.href = url; a.download = `ap-${toISODate(now)}.csv`; a.click(); URL.revokeObjectURL(url);
   };
 
+  const exportXlsx = () => {
+    const rows: Record<string, unknown>[] = state.apInvoices.map((i) => {
+      const bal = invoiceBalance(i);
+      return {
+        invoice: i.number,
+        supplier: supplier(i.supplierId)?.name ?? "",
+        po: i.poId ?? "",
+        date: toISODate(i.date),
+        due: toISODate(dueTs(i)),
+        total: i.total,
+        paid: invoicePaid(i),
+        balance: bal,
+        status: bal <= 0 ? "paid" : daysOver(i) > 0 ? "overdue" : "open",
+      };
+    });
+    const blob = new Blob([buildXlsx(rows, "ap.xlsx")], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a"); a.href = url; a.download = `ap-${toISODate(now)}.xlsx`; a.click(); URL.revokeObjectURL(url);
+  };
+
   return (
     <div>
       <div className="flex items-center justify-between mb-3">
         <h2 className="font-display font-bold text-ink text-[15px]">Accounts payable</h2>
-        <button onClick={exportCsv} className="flex items-center gap-1.5 px-3 py-2 rounded-lg border border-mist bg-card text-xs font-semibold text-ink hover:border-pine-400 hover:bg-pine-50 transition active:scale-95">
-          <IDownload size={13} /> Export
-        </button>
+        <div className="flex gap-1.5">
+          <button onClick={exportCsv} className="flex items-center gap-1.5 px-3 py-2 rounded-lg border border-mist bg-card text-xs font-semibold text-ink hover:border-pine-400 hover:bg-pine-50 transition active:scale-95">
+            <IDownload size={13} /> Export
+          </button>
+          <button onClick={exportXlsx} className="flex items-center gap-1.5 px-3 py-2 rounded-lg border border-mist bg-card text-xs font-semibold text-ink hover:border-pine-400 hover:bg-pine-50 transition active:scale-95">
+            <IDownload size={13} /> {t("reports.exportExcel")}
+          </button>
+        </div>
       </div>
 
       {/* aging strip */}
@@ -414,6 +441,7 @@ function ApTab() {
 }
 
 function PayModal({ inv, onClose }: { inv: ApInvoice; onClose: () => void }) {
+  const { t } = useTranslation();
   const { dispatch, supplier } = usePos();
   const bal = invoiceBalance(inv);
   const [amount, setAmount] = useState(bal.toFixed(2));
@@ -470,6 +498,7 @@ function PayModal({ inv, onClose }: { inv: ApInvoice; onClose: () => void }) {
 }
 
 function CreditModal({ inv, onClose }: { inv: ApInvoice; onClose: () => void }) {
+  const { t } = useTranslation();
   const { dispatch } = usePos();
   const [amount, setAmount] = useState("");
   const [note, setNote] = useState("");
@@ -507,6 +536,7 @@ function CreditModal({ inv, onClose }: { inv: ApInvoice; onClose: () => void }) 
 
 /* ---------------------------- Expenses ---------------------------- */
 function ExpTab() {
+  const { t } = useTranslation();
   const { state, dispatch } = usePos();
   const mayAdd = can(state.user?.role, "add_expense");
   const [f, setF] = useState({ category: EXPENSE_CATEGORIES[0], amount: "", date: toISODate(Date.now()), payee: "", note: "", recurring: false });
@@ -525,6 +555,20 @@ function ExpTab() {
     const blob = new Blob([[head.join(","), ...rows].join("\n")], { type: "text/csv" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a"); a.href = url; a.download = `expenses-${toISODate(Date.now())}.csv`; a.click(); URL.revokeObjectURL(url);
+  };
+
+  const exportXlsx = () => {
+    const rows: Record<string, unknown>[] = state.expenses.map((e) => ({
+      date: toISODate(e.date),
+      category: e.category,
+      payee: e.payee,
+      note: e.note ?? "",
+      recurring: e.recurring ? "yes" : "no",
+      amount: e.amount,
+    }));
+    const blob = new Blob([buildXlsx(rows, "expenses.xlsx")], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a"); a.href = url; a.download = `expenses-${toISODate(Date.now())}.xlsx`; a.click(); URL.revokeObjectURL(url);
   };
 
   return (
@@ -596,9 +640,14 @@ function ExpTab() {
       <div>
         <div className="flex items-center justify-between mb-3">
           <h2 className="font-display font-bold text-ink text-[15px]">Expense ledger</h2>
-          <button onClick={exportCsv} className="flex items-center gap-1.5 px-3 py-2 rounded-lg border border-mist bg-card text-xs font-semibold text-ink hover:border-pine-400 hover:bg-pine-50 transition active:scale-95">
-            <IDownload size={13} /> Export
-          </button>
+          <div className="flex gap-1.5">
+            <button onClick={exportCsv} className="flex items-center gap-1.5 px-3 py-2 rounded-lg border border-mist bg-card text-xs font-semibold text-ink hover:border-pine-400 hover:bg-pine-50 transition active:scale-95">
+              <IDownload size={13} /> Export
+            </button>
+            <button onClick={exportXlsx} className="flex items-center gap-1.5 px-3 py-2 rounded-lg border border-mist bg-card text-xs font-semibold text-ink hover:border-pine-400 hover:bg-pine-50 transition active:scale-95">
+              <IDownload size={13} /> {t("reports.exportExcel")}
+            </button>
+          </div>
         </div>
         <div className="overflow-auto scroll-slim rounded-xl border border-mist bg-card shadow-lift">
           <table className="w-full text-sm border-collapse min-w-[640px]">
@@ -646,6 +695,7 @@ function ExpTab() {
 
 /* ---------------------------- P&L ---------------------------- */
 function PnlTab() {
+  const { t } = useTranslation();
   const { state, product } = usePos();
   const [period, setPeriod] = useState<"month" | "30d" | "year">("month");
   const now = Date.now();
@@ -680,6 +730,20 @@ function PnlTab() {
     const blob = new Blob([rows], { type: "text/csv" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a"); a.href = url; a.download = `pnl-${period}-${toISODate(now)}.csv`; a.click(); URL.revokeObjectURL(url);
+  };
+
+  const exportXlsx = () => {
+    const rows: Record<string, unknown>[] = [
+      { line: "Period", value: range.label },
+      { line: "Revenue (net of refunds)", value: calc.revenue },
+      { line: "COGS", value: calc.cogs },
+      { line: "Gross profit", value: calc.gross },
+      { line: "Operating expenses", value: calc.expenses },
+      { line: "Net income", value: calc.net },
+    ];
+    const blob = new Blob([buildXlsx(rows, "pnl.xlsx")], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a"); a.href = url; a.download = `pnl-${period}-${toISODate(now)}.xlsx`; a.click(); URL.revokeObjectURL(url);
   };
 
   const Row = ({ label, value, strong, tone }: { label: string; value: number; strong?: boolean; tone?: "pos" | "neg" }) => (
@@ -720,6 +784,9 @@ function PnlTab() {
         <div className="px-4 py-3 border-t border-mist">
           <button onClick={exportCsv} className="flex items-center gap-1.5 text-xs font-bold text-pine-700 hover:text-pine-600 transition">
             <IDownload size={13} /> Export P&L
+          </button>
+          <button onClick={exportXlsx} className="flex items-center gap-1.5 text-xs font-bold text-pine-700 hover:text-pine-600 transition">
+            <IDownload size={13} /> {t("reports.exportExcel")}
           </button>
         </div>
       </div>

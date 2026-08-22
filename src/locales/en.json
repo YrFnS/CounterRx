@@ -248,7 +248,8 @@
     "lowStock": "Low stock",
     "expiring60": "Expiring ≤60d",
     "search": "Search SKU, lot, barcode…",
-    "requiresClinician": "Requires pharmacist or admin"
+    "requiresClinician": "Requires pharmacist or admin",
+    "exportExcel": "Export XLSX"
   },
   "finance": {
     "title": "Finance",
@@ -331,7 +332,8 @@
     "xReport": "X Report",
     "zClose": "Z Close",
     "zCloseHint": "Count the cash in the drawer to close this shift and lock the Z report.",
-    "zReport": "Z Report"
+    "zReport": "Z Report",
+    "exportExcel": "Export XLSX"
   },
   "settings": {
     "title": "Settings",

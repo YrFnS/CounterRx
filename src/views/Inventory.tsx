@@ -8,6 +8,7 @@ import type { ForecastRow } from "../lib/ai";
 import { buildForecastPayload, historyFromTransactions } from "../lib/ai-ui";
 import { cx, Badge, Modal, StockBar, Empty, CustomFieldsBlock } from "../ui";
 import { ISearch, IPlus, IBox, IAlert, IDownload, IEdit, IX, ICheck, IReport, ICalendar, IClipboard, ITag, ISwap, IScan, IUsers, IFlask, ICold, ITrendUp, IClock, IArchive, ITrash } from "../icons";
+import { buildXlsx } from "../lib/export";
 
 type Filter = "all" | "low" | "expiring" | "rx" | "controlled";
 
@@ -99,6 +100,34 @@ export default function Inventory() {
     dispatch({ type: "TOAST", kind: "success", msg: `Exported ${body.length} lot rows to CSV` });
   };
 
+  const exportXlsx = () => {
+    const body: Record<string, unknown>[] = rows.flatMap((p) =>
+      fefoBatches(p).map((b) => ({
+        sku: p.sku,
+        name: p.name,
+        generic: p.generic,
+        brand: p.brand,
+        category: p.category,
+        form: p.form,
+        price: p.price,
+        cost: p.cost,
+        lot: b.batch,
+        lot_qty: b.qty,
+        expiry: b.expiry,
+        total_stock: stockOf(p),
+        reorder_level: p.reorderLevel,
+        rx: p.rx,
+        supplier: p.supplier,
+      })));
+    const buf = buildXlsx(body, "inventory-lots.xlsx");
+    const blob = new Blob([buf], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url; a.download = `inventory-lots-${new Date().toISOString().slice(0, 10)}.xlsx`;
+    a.click(); URL.revokeObjectURL(url);
+    dispatch({ type: "TOAST", kind: "success", msg: `Exported ${body.length} lot rows to XLSX` });
+  };
+
   const filters: { id: Filter; label: string; count: number; tone?: string }[] = [
     { id: "all", label: t("inventory.everything"), count: state.products.length },
     { id: "low", label: t("inventory.lowStock"), count: state.products.filter((p) => stockOf(p) <= p.reorderLevel).length, tone: "#e0a63c" },
@@ -161,6 +190,10 @@ export default function Inventory() {
         <button onClick={exportCsv}
           className="flex items-center gap-1.5 px-3 py-2 rounded-lg border border-mist bg-card text-xs font-semibold text-ink hover:border-pine-400 hover:bg-pine-50 transition active:scale-95">
           <IDownload size={14} /> Export CSV
+        </button>
+        <button onClick={exportXlsx}
+          className="flex items-center gap-1.5 px-3 py-2 rounded-lg border border-mist bg-card text-xs font-semibold text-ink hover:border-pine-400 hover:bg-pine-50 transition active:scale-95">
+          <IDownload size={14} /> Export XLSX
         </button>
         <button onClick={() => setAdding(true)}
           className="flex items-center gap-1.5 px-3.5 py-2 rounded-lg bg-pine-700 text-pine-50 text-xs font-bold hover:bg-pine-600 transition active:scale-95 shadow-lift">
@@ -364,6 +397,35 @@ function SuppliersManager({ onClose }: { onClose: () => void }) {
     reset();
   };
 
+  const exportCsv = () => {
+    const head = ["name", "contact", "phone", "email", "terms_days", "lead_days", "min_order", "products_supplied", "archived"];
+    const body = suppliers.map((s) => [`"${s.name}"`, `"${s.contact ?? ""}"`, `"${s.phone ?? ""}"`, `"${s.email ?? ""}"`, s.terms, s.leadDays, s.minOrder, productsSupplied(s), s.archived ? "yes" : "no"].join(","));
+    const blob = new Blob([[head.join(","), ...body].join("\n")], { type: "text/csv" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url; a.download = `suppliers-${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click(); URL.revokeObjectURL(url);
+  };
+
+  const exportXlsx = () => {
+    const rows: Record<string, unknown>[] = suppliers.map((s) => ({
+      name: s.name,
+      contact: s.contact ?? "",
+      phone: s.phone ?? "",
+      email: s.email ?? "",
+      terms_days: s.terms,
+      lead_days: s.leadDays,
+      min_order: s.minOrder,
+      products_supplied: productsSupplied(s),
+      archived: s.archived ? "yes" : "no",
+    }));
+    const blob = new Blob([buildXlsx(rows, "suppliers.xlsx")], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url; a.download = `suppliers-${new Date().toISOString().slice(0, 10)}.xlsx`;
+    a.click(); URL.revokeObjectURL(url);
+  };
+
   return (
     <Modal onClose={onClose} width={720} labelledBy="sup-title">
       <div className="px-5 py-4 border-b border-mist flex items-start justify-between">
@@ -420,6 +482,17 @@ function SuppliersManager({ onClose }: { onClose: () => void }) {
               {editing ? t("suppliers.save") : t("suppliers.create")}
             </button>
           </div>
+        </div>
+
+        <div className="flex justify-end gap-1.5">
+          <button onClick={exportCsv}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-mist bg-card text-xs font-semibold text-ink hover:border-pine-400 hover:bg-pine-50 transition active:scale-95">
+            <IDownload size={13} /> Export CSV
+          </button>
+          <button onClick={exportXlsx}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-mist bg-card text-xs font-semibold text-ink hover:border-pine-400 hover:bg-pine-50 transition active:scale-95">
+            <IDownload size={13} /> {t("inventory.exportExcel")}
+          </button>
         </div>
 
         <div className="max-h-80 overflow-auto scroll-slim rounded-lg border border-mist">
@@ -1170,6 +1243,8 @@ function ReportModal({ mode, onClose }: { mode: "low" | "expiry"; onClose: () =>
   const isLow = mode === "low";
 
   /* --- reorder report: everything at/below par, with suggested order qty --- */
+
+  /* --- reorder report: everything at/below par, with suggested order qty --- */
   const lowRows = useMemo(() => {
     const archivedNames = new Set(state.suppliers.filter((s) => s.archived).map((s) => s.name));
     return state.products
@@ -1220,6 +1295,36 @@ function ReportModal({ mode, onClose }: { mode: "low" | "expiry"; onClose: () =>
   };
 
   const rows = isLow ? lowRows.length : expRows.length;
+
+  const exportXlsx = () => {
+    const body: Record<string, unknown>[] = isLow
+      ? lowRows.map((r) => ({
+          sku: r.p.sku,
+          product: r.p.name,
+          on_hand: r.onHand,
+          reorder_level: r.p.reorderLevel,
+          suggested_order: r.suggest,
+          supplier: r.p.supplier,
+          unit_cost: r.p.cost,
+          order_cost: r.orderCost,
+        }))
+      : expRows.map((r) => ({
+          sku: r.p.sku,
+          product: r.p.name,
+          batch: r.b.batch,
+          expiry: r.b.expiry,
+          days_left: r.d,
+          qty: r.b.qty,
+          value_at_cost: r.b.qty * r.p.cost,
+        }));
+    const buf = buildXlsx(body, `${isLow ? "reorder" : "expiry"}-report.xlsx`);
+    const blob = new Blob([buf], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url; a.download = `${isLow ? "reorder" : "expiry"}-report.xlsx`;
+    a.click(); URL.revokeObjectURL(url);
+    dispatch({ type: "TOAST", kind: "success", msg: `${isLow ? "Reorder" : "Expiry"} report exported to XLSX` });
+  };
 
   return (
     <Modal onClose={onClose} width={680} labelledBy="rpt-title">
@@ -1326,6 +1431,10 @@ function ReportModal({ mode, onClose }: { mode: "low" | "expiry"; onClose: () =>
           <button onClick={exportCsv}
             className="flex items-center gap-1.5 px-4 py-2 rounded-lg bg-pine-700 text-pine-50 text-xs font-bold hover:bg-pine-600 transition active:scale-95">
             <IDownload size={13} /> Export CSV
+          </button>
+          <button onClick={exportXlsx}
+            className="flex items-center gap-1.5 px-4 py-2 rounded-lg bg-mist text-ink border border-mist text-xs font-semibold hover:border-pine-300 hover:bg-pine-50 transition active:scale-95">
+            <IDownload size={13} /> {t("inventory.exportExcel")}
           </button>
         </div>
       </div>

@@ -248,7 +248,8 @@
     "lowStock": "مخزون منخفض",
     "expiring60": "ينتهي خلال 60 يوماً",
     "search": "بحث…",
-    "requiresClinician": "يتطلب صيدلياً"
+    "requiresClinician": "يتطلب صيدلياً",
+    "exportExcel": "تصدير XLSX"
   },
   "finance": {
     "title": "المالية",
@@ -331,7 +332,8 @@
     "xReport": "تقرير X",
     "zClose": "إغلاق Z",
     "zCloseHint": "يغلق الوردية ويطالب بالنقد المعدود",
-    "zReport": "تقرير Z"
+    "zReport": "تقرير Z",
+    "exportExcel": "تصدير XLSX"
   },
   "settings": {
     "title": "الإعدادات",
