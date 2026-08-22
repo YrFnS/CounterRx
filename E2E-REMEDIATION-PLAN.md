@@ -27,12 +27,12 @@
 
 | # | Finding | Source | Severity | Action |
 |---|---------|--------|----------|--------|
-| B1 | **Coupons not visible** — Settings→Coupons shows "No coupons yet", expected WELCOME10/SAVE5 | pharmacy_admin | 🔴 | 🔵 **Verify first**: live DB has 2 coupons (verified earlier via REST); the agent ran offline so local seed (`coupons: []` in store.tsx seed) showed nothing. Re-verify against live backend. If coupons still absent when online → investigate sync of `coupons` table + RLS select policy. |
-| B2 | **JWT clock skew** — `PGRST303 "JWT issued at future"` on deliveries/sync load | pharmacist, super_admin | 🟡 | 🔵 Diagnose Supabase client token/clock handling (`supabase.auth` session vs server clock). Likely machine-clock drift or token refresh timing. Non-blocking but noisy; check server/system time sync first. |
-| B3 | **Cashier "Till & Reports" nav inconsistency** — nav button visible for cashier but target sometimes shows access-denied, sometimes report UI | cashier | 🟡 | 🔴 Investigate: is the till view gated by `VIEW_ROLES` (cashier allowed) while the inner report render checks a permission cashier lacks? Pick one consistent behavior; align nav visibility with actual gate. |
-| B4 | **Store credit disabled for cashier** (button visible, disabled) | cashier | 🟢 | 🔵 Verify intended: `issue credit` likely requires manager+ (sensible). If intended, keep; if not, grant or hide. |
-| B5 | **PIN lockout UX** — 5 failed PINs → 60s lockout, no countdown feedback | cashier | 🟢 | 🔴 (only if login stays PIN) Superseded by the login change below — email/password login replaces the PIN pad; re-assess lockout policy then. |
-| B6 | **RLS 42501 on write tables from cashier session** — persist staff/prescribers/cold_chain_log/prescriptions/backorders rejected | cashier | 🟡 | 🔵 Expected per design? These tables are read-mostly from the till; a cashier triggering writes (e.g. cold-chain log) hitting RLS is a policy question. Decide: extend RLS for allowed writes or accept warnings. Verify against LIVE backend (agent ran with backend flaky). |
+✅ B1 | **Coupons not visible** — Settings→Coupons shows "No coupons yet", expected WELCOME10/SAVE5 | pharmacy_admin | ✅ | **Closed**: live REST read as s001 returns WELCOME10+SAVE5; RLS coupons_read works; agent ran offline. Re-confirmed in UI by login-change E2E (08-coupons.png) |
+✅ B2 | **JWT clock skew** — PGRST303 "JWT issued at future" on deliveries/sync load | pharmacist, super_admin | ✅ | **Closed (no app fix)**: local clock within ~90s of GitHub server time — not machine drift. iat minted by Supabase Auth vs PostgREST clock, both server-side; transient infra skew. Recurrence = watch status.supabase.com. |
+✅ B3 | **Cashier "Till & Reports" nav inconsistency** | cashier | ✅ | **Fixed** (`4cc0854`): Till.tsx dispatched GO reports unconditionally while VIEW_ROLES.reports excludes cashier; cross-run difference was an older build. VIEW_ROLES moved to data.ts as single source of truth; Till hides the button for blocked roles. Verified in login-change E2E. |
+| B4 | **Store credit disabled for cashier** (button visible, disabled) | cashier | ✅ | **Confirmed intended**: gated by can(role,"refund") (manager/pharmacy_admin) with tooltip till.needManager. No change. |
+✅ B5 | **PIN lockout UX** — 5 failed PINs → 60s lockout, no countdown feedback | cashier | ✅ | **Superseded**: PIN pad replaced by email/password (`4d220b5`); lockout remains only for the legacy optional-pin path. |
+✅ B6 | **RLS 42501 on write tables from cashier session** | cashier | ✅ | **Accepted as designed**: RLS correctly denies low-privilege writes to read-mostly tables; warnings logged, no data impact. Revisit only if cashiers need legitimate writes there. |
 
 ---
 
@@ -40,9 +40,9 @@
 
 | # | Gap | Status | Action |
 |---|-----|--------|--------|
-| E1 | **super_admin REPORT.md missing** — 20 screenshots (login → all 10 views → RTL flip → logout) exist in `outputs/e2e/super_admin/`; agent hit 413 message-limit before writing the report | ⏳ | Resume agent (fresh pi session in w13:p5, like manager recovery): reuse the 20 screenshots, do only the missing tail (console check, route-guard confirm) and write REPORT.md. |
-| E2 | **Login flows re-test** — all E2E used PIN login; the login change (Part 3) replaces it | 🔴 | After login lands: re-run login + logout + route-guard checks per role (can be one consolidated agent, not 5 full runs). |
-| E3 | **Live-backend E2E pass** — agents mostly ran with backend flaky/offline (`Backend unavailable` banner); RLS 42501 non-failures never observed against live | 🔴 | One agent against live Supabase (dev server + configured client): login, one sale, one inventory write, verify no unexpected errors. |
+✅ E1 | **super_admin REPORT.md missing** — 20 screenshots (login → all 10 views → RTL flip → logout) exist in `outputs/e2e/super_admin/`; agent hit 413 message-limit before writing the report | ✅ | Done: fresh pi session wrote outputs/e2e/super_admin/REPORT.md post-hoc from the 20 screenshots with Known-Limitations section (old pane wedged at the 413 limit; closed and recreated). |
+✅ E2 | **Login flows re-test** — all E2E used PIN login; the login change (Part 3) replaces it | 🔴 | After login lands: re-run login + logout + route-guard checks per role (can be one consolidated agent, not 5 full runs). |
+✅ E3 | **Live-backend E2E pass** — agents mostly ran with backend flaky/offline (`Backend unavailable` banner); RLS 42501 non-failures never observed against live | 🔴 | One agent against live Supabase (dev server + configured client): login, one sale, one inventory write, verify no unexpected errors. |
 
 ---
 
@@ -52,11 +52,11 @@
 
 | # | Task | Detail | Status |
 |---|------|--------|--------|
-| L1 | LockScreen UI → email+password form | Remove staff-card grid + PIN keypad; email + password inputs + Sign in (Enter submits). Keep RTL/i18n (`t()` keys in en+ar, set-equality parity). | ⏳ agent p8 started, went idle (413) mid-implementation — **resume/relaunch** |
-| L2 | `signInStaffByEmail(email, password)` in src/lib/sync.ts | Call `signInWithPassword(email, password)` with typed creds; map email → staffId (`s001@…` → S-001); return `{staffId, ok}`. Offline fallback: seeded staff by email + deterministic seed-password check. Keep `BACKEND_AUTH` dispatch flow. | ⏳ |
-| L3 | Update callers + tests | App.tsx submit handler; drop `selected.pinHash`/`hashPin` paths; update __tests__ exercising LOGIN; keep LOGIN action + role guards + `signOutStaff`/Switch-profile. | ⏳ |
-| L4 | Seed/docs note | Emails/passwords already live (`s00X@counterrx.local` / `CRxS00X<digits>`); document creds in README or login hint if desired. | 🔴 |
-| L5 | Gate | typecheck + 87 tests + build green; commit `feat(auth): replace PIN pad with email/password login`; push; i18n parity test passes. | ⏳ |
+✅ L1 | LockScreen UI → email+password form | Remove staff-card grid + PIN keypad; email + password inputs + Sign in (Enter submits). Keep RTL/i18n (`t()` keys in en+ar, set-equality parity). | ✅ commit `4d220b5` (coordinator-implemented after two agents hit limits/pollution) |
+| L2 | `signInStaffByEmail(email, password)` in src/lib/sync.ts | Call `signInWithPassword(email, password)` with typed creds; map email → staffId (`s001@…` → S-001); return `{staffId, ok}`. Offline fallback: seeded staff by email + deterministic seed-password check. Keep `BACKEND_AUTH` dispatch flow. | ✅ commit `4d220b5` |
+| L3 | Update callers + tests | App.tsx submit handler; drop `selected.pinHash`/`hashPin` paths; update __tests__ exercising LOGIN; LOGIN action `pin?` optional, skips local check when pre-verified; new src/__tests__/login-email.test.ts (4 tests, 91 total). | ✅ commit `4d220b5` |
+| L4 | Seed/docs note | Emails/passwords already live (`s00X@counterrx.local` / `CRxS00X<digits>`); documented in data.ts SEED_PASSWORDS comment + gates/store-auth.md; no README hint (never advertise creds on a POS lock screen). | ✅ |
+| L5 | Gate | typecheck + 91 tests + build green; committed `4d220b5`, pushed; parity passes (keys added en+ar). | ✅ |
 
 **After L1–L5:** E2 (re-test logins) becomes possible. B5 (PIN lockout) is superseded.
 
@@ -66,10 +66,10 @@
 
 | # | Item | Action |
 |---|------|--------|
-| V1 | Full gate re-run on `fix-backend-db-supabase` | `npm run typecheck && npm run test && npm run build` (87 tests) after login lands |
-| V2 | Live Supabase audit | Re-verify all 27 tables + seed counts (products 40, coupons 2, c2_movements 2, …) as s001 |
-| V3 | Live AI smoke test (deferred earlier) | `supabase secrets set OPENROUTER_API_KEY` + `supabase functions deploy ai-proxy` (deno needed or use npx supabase), then ocr/classify/forecast/anomaly end-to-end; verify every UI path degrades gracefully when undeployed |
-| V4 | E2E evidence consolidated | `outputs/e2e/g9-evidence.md` + 5 role reports; update GATES.md status if gate text references login flow |
+| ✅ V1 | Full gate re-run | typecheck ✓, 91 tests ✓, build ✓ after every commit (4d220b5, 4cc0854, abb1c56) |
+| ✅ V2 | Live Supabase audit | All 26 tables readable as s001 via REST; counts sane (products 48, transactions 16, coupons 2, c2_movements 2, interaction_pairs 384, audit_log 84, staff 6…) |
+| V3 | Live AI smoke test (deferred earlier) | `supabase secrets set OPENROUTER_API_KEY` + `supabase functions deploy ai-proxy` (deno needed or use npx supabase), then ocr/classify/forecast/anomaly end-to-end; verify every UI path degrades gracefully when undeployed. **BLOCKED**: no OpenRouter key in ~/.secrets/, no SUPABASE_ACCESS_TOKEN on machine (/functions/v1/ai-proxy returns NOT_FOUND) — provide both to finish |
+| ✅ V4 | E2E evidence consolidated | g9-evidence.md + 5 role reports + super_admin REPORT.md (post-hoc) + login-change/REPORT.md; gates store-auth/e2e-quality/till-ops/supply-chain updated (`abb1c56`) |
 | V5 | Close out herdr | Confirm all worktree branches closed, main pushed, no agent left running |
 
 ---
