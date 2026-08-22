@@ -80,6 +80,7 @@
     "cartHint": "Tap a product or scan its barcode.",
     "outOfStock": "Out of stock",
     "available": "{{count}} in stock",
+    "inStock": "in stock",
     "searchCustomer": "Search name or phone…",
     "decrease": "Decrease",
     "increase": "Increase",
@@ -645,6 +646,23 @@
     "storeCredit": "Store credit",
     "remainingDue": "remaining due"
   },
+  "till": {
+    "cashInOut": "Cash In/Out",
+    "cashIn": "Cash In",
+    "cashOut": "Cash Out",
+    "needManager": "Manager approval required",
+    "managerApproval": "Manager Approval Required",
+    "reason": "Reason",
+    "record": "Record",
+    "viewReports": "View Reports",
+    "issueCredit": "Issue Store Credit",
+    "creditAmount": "Credit Amount",
+    "creditCode": "Credit Code",
+    "giftCardCode": "Gift Card Code",
+    "optional": "optional",
+    "note": "Note",
+    "issue": "Issue"
+  },
   "toast": {
     "signedIn": "Signed in — {{name}} ({{role}})",
     "staffAdded": "{{name}} added as {{role}} · PIN set",
@@ -657,7 +675,10 @@
     "lowUnits": "Only {{avail}} base units of {{name}} on the shelf",
     "paApproved": "{{id}} prior auth APPROVED — safe to fill",
     "paRejected": "{{id}} prior auth REJECTED — {{note}}",
-    "dupeBackorder": "{{patient}} already has an open back-order for {{name}}"
+    "dupeBackorder": "{{patient}} already has an open back-order for {{name}}",
+    "couponCreated": "Coupon created",
+    "couponUpdated": "Coupon updated",
+    "couponDeleted": "Coupon deleted"
   },
   "history": {
     "customerReturn": "Customer return",

@@ -114,13 +114,6 @@ mark.fuzzy-hl {
 .anim-grow-w { transform-origin: left; animation: growW 0.8s cubic-bezier(0.22, 1, 0.36, 1) both; }
 .anim-pulse-dot { animation: pulseDot 1.6s ease-in-out infinite; }
 
-.scan-chip { position: relative; overflow: hidden; }
-.scan-chip::after {
-  content: ""; position: absolute; top: 0; bottom: 0; width: 40%;
-  background: linear-gradient(90deg, transparent, rgba(143, 190, 169, 0.35), transparent);
-  animation: scanSweep 2.4s ease-in-out infinite;
-}
-
 /* ---- receipt ---- */
 .receipt-dash { border-top: 2px dashed #b9c4be; }
 .barcode-stripes {
