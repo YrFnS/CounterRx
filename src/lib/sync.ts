@@ -481,6 +481,19 @@ export function subscribeToBackend(onChange: (source: TableName | "auth") => voi
   }
 }
 
+/** True when the embedded Supabase session belongs to the given staff id. */
+export async function getSessionStaffId(): Promise<string | null> {
+  if (!isSupabaseConfigured) return null;
+  try {
+    const { data } = await supabase.auth.getSession();
+    const email = data.session?.user.email ?? "";
+    const compact = email.split("@")[0];
+    return /^s\d{3}$/i.test(compact) ? `S-${compact.slice(1).toUpperCase()}` : null;
+  } catch {
+    return null;
+  }
+}
+
 /** Sign in using the deterministic staff credentials defined by supabase/seed.sql. */
 /** Email+password sign-in (replaces PIN-pad flow). Verifies typed credentials
  *  against Supabase auth (seeded users: s00X@counterrx.local). Offline fallback:

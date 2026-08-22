@@ -21,7 +21,7 @@ import type {
 } from "./data";
 import { makeStaff, makeSettings, makeBackOrders, makeRxTransfers, SNAPS_KEY, hashPin, ROLE_LABEL } from "./data";
 import type { BackendData, LoadResult } from "./lib/sync";
-import { loadBackendData, persistBackendData, signOutStaff, subscribeToBackend } from "./lib/sync";
+import { loadBackendData, persistBackendData, signOutStaff, subscribeToBackend, getSessionStaffId } from "./lib/sync";
 import { setRuntimeInteractions } from "./lib/clinical";
 import i18n from "./i18n";
 
@@ -1715,6 +1715,27 @@ export function PosProvider({ children }: { children: ReactNode }) {
     if (previousUserRef.current && !state.user) void signOutStaff();
     previousUserRef.current = state.user;
   }, [state.user]);
+
+  /* Keep the seed/localStorage path immediate; RLS-backed hydration starts after Supabase auth.
+   * On reboot, load() restores the user but backendAuthenticated is false — recover the still-live
+   * Supabase session here so a page refresh hydrates from the DB instead of falling back to seed. */
+  useEffect(() => {
+    if (state.backendAuthenticated || !state.user) return;
+    let cancelled = false;
+    void getSessionStaffId().then((staffId) => {
+      if (!cancelled && staffId && staffId === state.user?.id) {
+        dispatch({ type: "BACKEND_AUTH", staffId, authenticated: true });
+      } else if (!cancelled && staffId && !state.user) {
+        // Session belongs to someone but local user is missing — rehydrate user from staff list.
+        const staff = state.staff.find((s) => s.id === staffId && s.active);
+        if (staff) {
+          dispatch({ type: "LOGIN", staffId });
+          dispatch({ type: "BACKEND_AUTH", staffId, authenticated: true });
+        }
+      }
+    });
+    return () => { cancelled = true; };
+  }, [state.backendAuthenticated, state.user?.id]);
 
   /* Keep the seed/localStorage path immediate; RLS-backed hydration starts after Supabase auth. */
   useEffect(() => {
