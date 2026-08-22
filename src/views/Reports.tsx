@@ -330,7 +330,6 @@ function PnlTab({ ledger }: { ledger: { sales: Transaction[]; refunds: Transacti
           <ul className="text-xs text-inksoft space-y-1.5 leading-relaxed">
             <li>· COGS uses the <span className="font-semibold text-ink">FIFO lot cost</span> captured when each unit sold.</li>
             <li>· Refunds in the window <span className="font-semibold text-ink">credit COGS</span> ({money(pnl.refunded)} refunded).</li>
-            <li>· Sales tax is collected on behalf of the tax authority and <span className="font-semibold text-ink">excluded</span> from revenue.</li>
           </ul>
         </div>
       </div>

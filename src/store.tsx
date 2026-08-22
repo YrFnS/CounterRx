@@ -4,7 +4,7 @@ import {
   makeProducts, makePrescriptions, makeTransactions, makeCustomers, makeTransfers, makePrescribers,
   makeSuppliers, makePurchaseOrders, makeApInvoices, makeExpenses, invoiceBalance,
   makeDeliveries, makeWebOrders, makeTimeEntries, makeColdChainLogs,
-  TAX_RATE, CASHIER,
+  CASHIER,
   stockOf, nearestExpiry, allocFEFO, fefoBatches, newBatchCode, daysUntil,
   bulkPct, REDEEM_CHUNK_PTS, REDEEM_CHUNK_VALUE, can, tenderTypeOf, applyStoreCredit, pruneExpiredHolds,
   createShift, recordShiftTransaction, recordCashMovement, closeShift, generateXReport, generateZReport,
@@ -313,7 +313,8 @@ export function cartTotals(state: State, discountPct: number, taxExempt = false,
   const loy = state.settings.loyalty;
   const payable = Math.max(0, subtotal - bulkSavings - discount - coupon);
   const loyaltyDeduct = round2(Math.min((state.redeemPoints / Math.max(1, loy.chunkPts)) * loy.chunkValue, payable));
-  const tax = taxExempt ? 0 : round2((payable - loyaltyDeduct) * TAX_RATE);
+  /* tax removed per product decision — field kept so persisted rows stay shape-stable */
+  const tax = 0;
   return {
     lines, subtotal, bulkSavings, discount, coupon, loyaltyDeduct, tax,
     total: round2(payable - loyaltyDeduct + tax),

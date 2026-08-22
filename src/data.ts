@@ -777,7 +777,6 @@ export interface Transfer {
 export const HOME_BRANCH = "Branch 04 — Maple & 9th";
 export const BRANCHES = ["Branch 02 — Cedar Mall", "Branch 07 — Northgate", "Branch 11 — Harbor East"];
 
-export const TAX_RATE = 0.08;
 export const CASHIER = "A. Okafor";
 
 const day = 86_400_000;
@@ -1028,7 +1027,7 @@ export function makeTransactions(products: Product[], now: number): Transaction[
       }
       const subtotal = lines.reduce((s, l) => s + l.price * l.qty, 0);
       const discount = rnd() < 0.15 ? Math.round(subtotal * 0.05 * 100) / 100 : 0;
-      const tax = Math.round((subtotal - discount) * TAX_RATE * 100) / 100;
+      const tax = 0;
       const total = Math.round((subtotal - discount + tax) * 100) / 100;
       const mRoll = rnd();
       const method: PayMethod = mRoll < 0.44 ? "cash" : mRoll < 0.86 ? "card" : "insurance";

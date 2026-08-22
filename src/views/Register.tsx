@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { usePos, money, relTime, unitPrice, cartTotals, uomFactor } from "../store";
-import { CATEGORIES, TAX_RATE, daysUntil, stockOf, nearestExpiry, bulkPct, fefoBatches, findInteractions, allergyConflicts } from "../data";
+import { CATEGORIES, daysUntil, stockOf, nearestExpiry, bulkPct, fefoBatches, findInteractions, allergyConflicts } from "../data";
 import type { CategoryId, Product } from "../data";
 import { aiClassify } from "../lib/ai";
 import { cartToInteractionPrompt, parseClassifyJson } from "../lib/ai-ui";
@@ -194,7 +194,6 @@ export default function Register() {
     if (totals.bulkSavings > 0) lines.push(`Bulk savings     -${money(totals.bulkSavings)}`);
     if (totals.loyaltyDeduct > 0) lines.push(`Points redeemed -${money(totals.loyaltyDeduct)}`);
     lines.push(`Subtotal        ${money(subtotal)}`);
-    lines.push(`Tax             ${money(tax)}`);
     lines.push(`TOTAL           ${money(total)}`);
     try {
       await printReceipt({
@@ -495,10 +494,6 @@ export default function Register() {
             {totals.loyaltyDeduct > 0 && (
               <div className="flex justify-between text-pine-700 font-semibold anim-fade-up"><span>Points · {state.redeemPoints} pts</span><span className="num">−{money(totals.loyaltyDeduct)}</span></div>
             )}
-            <div className="flex justify-between text-inksoft">
-              <span>Tax {TAX_RATE * 100}%{attachedCustomer?.taxExempt ? <span className="ms-1.5 px-1 py-px rounded bg-pine-700 text-pine-50 text-[9px] font-bold align-middle">EXEMPT</span> : null}</span>
-              <span className={cx("num", attachedCustomer?.taxExempt && "line-through text-inksoft/50")}>{money(tax)}</span>
-            </div>
             <div className="flex justify-between items-baseline pt-1.5 border-t border-dashed border-mist">
               <span className="font-display font-bold text-ink">Total</span>
               <span className="num text-[26px] font-bold text-pine-800">{money(total)}</span>
