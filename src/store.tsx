@@ -131,6 +131,8 @@ type Action =
   | { type: "DELETE_COUPON"; id: string }
   | { type: "SAVE_CATEGORY"; category: Category }
   | { type: "DELETE_CATEGORY"; id: string }
+  | { type: "SUPPLIER_SAVE"; supplier: Supplier }
+  | { type: "SUPPLIER_DELETE"; id: string }
   | { type: "EXPIRE_HELDS" }
   | { type: "OPEN_PAY"; open: boolean }
   | { type: "COMPLETE_SALE"; payments: PaymentLeg[]; tendered?: number; discountPct: number; taxExempt: boolean; idChecked: boolean; restricted?: { purchaser: string; idType: string; idLast4: string }; couponDiscount?: number; invoiceDiscountAmt?: number; approvedBy?: string }
@@ -909,6 +911,30 @@ export function reducer(state: State, a: Action): State {
       if (inUse) return withToast(state, "error", "Category still assigned to products — archive it instead");
       const categories = state.categories.filter((c) => c.id !== a.id);
       return withToast(withAudit({ ...state, categories }, "settings", `Category ${a.id} deleted`), "success", "Category deleted");
+    }
+
+    /* Suppliers (R5) — archived suppliers stay resolvable for PO/invoice history. */
+    case "SUPPLIER_SAVE": {
+      if (!can(state.user?.role, "manage_settings")) return withToast(state, "error", "Admin required to manage suppliers");
+      const exists = state.suppliers.findIndex((s) => s.id === a.supplier.id);
+      let supplier = a.supplier;
+      if (exists < 0 && !a.supplier.id) {
+        const seq = state.suppliers.length + 1;
+        supplier = { ...a.supplier, id: `SUP-${String(seq).padStart(2, "0")}` };
+      }
+      const suppliers = exists >= 0 ? state.suppliers.map((s) => (s.id === supplier.id ? supplier : s)) : [...state.suppliers, supplier];
+      return withToast(withAudit({ ...state, suppliers }, "settings", exists >= 0 ? `Supplier ${supplier.name} updated` : `Supplier ${supplier.name} created`), "success", exists >= 0 ? i18n.t("suppliers.updated", { name: supplier.name }) : i18n.t("suppliers.created", { name: supplier.name }));
+    }
+
+    case "SUPPLIER_DELETE": {
+      if (!can(state.user?.role, "manage_settings")) return withToast(state, "error", "Admin required to manage suppliers");
+      const sup = state.suppliers.find((s) => s.id === a.id);
+      if (!sup) return state;
+      const usedByProducts = state.products.some((p) => p.supplier === sup.name);
+      const usedByOrders = state.purchaseOrders.some((po) => po.supplierId === a.id);
+      if (usedByProducts || usedByOrders) return withToast(state, "error", i18n.t("suppliers.deleteBlocked"));
+      const suppliers = state.suppliers.filter((s) => s.id !== a.id);
+      return withToast(withAudit({ ...state, suppliers }, "settings", `Supplier ${sup.name} deleted`), "success", i18n.t("suppliers.deleted", { name: sup.name }));
     }
 
     case "RECALL_HELD": {

@@ -806,9 +806,32 @@
     "anomalyTypeOther": "Other pattern",
     "usageLabel": "AI activity · {{count}} calls logged"
   },
+<<<<<<< HEAD
   "discounts": {
     "pctRow": "Discount (%)",
     "invoiceRow": "Invoice discount"
+=======
+  "suppliers": {
+    "title": "Suppliers",
+    "subtitle": "Vendors you order from — manage terms, lead time and minimums.",
+    "name": "Name",
+    "namePh": "e.g. MediSource Ltd",
+    "contact": "Contact",
+    "phone": "Phone",
+    "email": "Email",
+    "terms": "Terms (net days)",
+    "leadDays": "Lead days",
+    "minOrder": "Min order",
+    "archived": "Archived — kept for PO/invoice history",
+    "create": "Create supplier",
+    "save": "Save supplier",
+    "created": "Supplier {{name}} created",
+    "updated": "Supplier {{name}} updated",
+    "deleted": "Supplier {{name}} deleted",
+    "deleteBlocked": "Supplier has products or orders — deactivate instead",
+    "empty": "No suppliers yet — add one above.",
+    "readOnly": "Admin role required to manage suppliers."
+>>>>>>> feat/suppliers-crud
   },
   "analytics": {
     "title": "Analytics",

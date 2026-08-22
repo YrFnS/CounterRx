@@ -312,6 +312,7 @@ export interface Supplier {
   leadDays: number;     // typical delivery lead time
   minOrder: number;     // minimum order quantity per line
   priceBook?: { productId: string; unitCost: number }[]; // vendor price book (§5) — compare when ordering
+  archived?: boolean;
 }
 
 export interface PoLine { productId: string; qty: number; unitCost: number; received: number; }
