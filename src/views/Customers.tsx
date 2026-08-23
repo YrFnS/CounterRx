@@ -9,7 +9,9 @@ import { VACCINATION_SITES, buildVaxCardData } from "../data";
 import { ALLERGENS, can, outstandingBalance, normalizeAllergies, medHistory } from "../data";
 import type { Customer, AllergyEntry, ConditionEntry, Vaccination, VaxCardData } from "../data";
 import { cx, Badge, Modal, Empty, CustomFieldsBlock } from "../ui";
-import { IUsers, ISearch, IPlus, IX, IChevD, IStar, IRegister, IHistory, IPill, ICheck, IAlert, IPrint, IEdit } from "../icons";
+import { IUsers, ISearch, IPlus, IX, IChevD, IStar, IRegister, IHistory, IPill, ICheck, IAlert, IPrint, IEdit, IScan, IUpload, IShield } from "../icons";
+import { checkEligibility, type EligibilityResult } from "../lib/eligibility";
+import { resizeToDataUrl } from "../lib/rxdocs";
 
 const day = 86_400_000;
 
@@ -450,6 +452,30 @@ function ProfileModal({ c, onClose }: { c: Customer; onClose: () => void }) {
     bloodType: c.bloodType ?? "", primaryPrescriberId: c.primaryPrescriberId ?? "",
     insurancePlan: c.insurancePlan ?? "", clinicalNotes: c.clinicalNotes ?? "",
   });
+  const [card, setCard] = useState<string | undefined>(c.insuranceCardImage);
+  const [elig, setElig] = useState<EligibilityResult | null>(null);
+  const [cardBusy, setCardBusy] = useState(false);
+  const [eligBusy, setEligBusy] = useState(false);
+
+  const onCardFile = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    setCardBusy(true);
+    resizeToDataUrl(file, 480)
+      .then((url) => { setCard(url); dispatch({ type: "CUSTOMER_CARD_ATTACH", id: c.id, dataUrl: url }); })
+      .catch(() => dispatch({ type: "TOAST", kind: "error", msg: "Couldn't read that image — try a JPG or PNG" }))
+      .finally(() => setCardBusy(false));
+  };
+  const runEligibility = () => {
+    setEligBusy(true);
+    // sandbox is synchronous; simulate latency so the UI shows a pending state
+    setTimeout(() => {
+      setElig(checkEligibility({ name: c.name, memberId: undefined, dob: c.dob }, c.insurancePlan ?? t("eligibility.unknownPayer")));
+      setEligBusy(false);
+    }, 250);
+  };
+
   const dirty = f.dob !== (c.dob ?? "") || f.gender !== (c.gender ?? "") || f.address !== (c.address ?? "")
     || f.bloodType !== (c.bloodType ?? "") || f.primaryPrescriberId !== (c.primaryPrescriberId ?? "")
     || f.insurancePlan !== (c.insurancePlan ?? "") || f.clinicalNotes !== (c.clinicalNotes ?? "");
@@ -528,6 +554,67 @@ function ProfileModal({ c, onClose }: { c: Customer; onClose: () => void }) {
           <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-inksoft">Insurance plan</span>
           <input value={f.insurancePlan} onChange={(e) => setF({ ...f, insurancePlan: e.target.value })} placeholder="e.g. BlueCross PBM" className={cx(pIn, "mt-1")} />
         </label>
+
+        {/* W4.2 — insurance card scan (photo/upload), stored as a resized data-URL */}
+        <div className="sm:col-span-2 rounded-lg border border-mist bg-paper/70 p-3">
+          <div className="flex items-center justify-between gap-2">
+            <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-inksoft flex items-center gap-1.5">
+              <IScan size={11} className="text-pine-700" /> {t("eligibility.cardLabel")}
+            </span>
+            {card && (
+              <button onClick={() => { setCard(undefined); setElig(null); dispatch({ type: "CUSTOMER_CARD_REMOVE", id: c.id }); }}
+                className="flex items-center gap-1 text-[11px] font-semibold text-brick-600 hover:text-brick-700 transition">
+                <IX size={11} /> {t("eligibility.removeCard")}
+              </button>
+            )}
+          </div>
+          {card ? (
+            <img src={card} alt={t("eligibility.cardAlt", { name: c.name })} className="mt-2 max-h-40 rounded-md border border-mist object-contain" />
+          ) : (
+            <label className="mt-2 flex cursor-pointer items-center justify-center gap-2 rounded-md border border-dashed border-mist px-3 py-4 text-[11px] font-semibold text-inksoft hover:border-pine-400 hover:text-pine-700 transition">
+              <IUpload size={14} /> {t("eligibility.uploadCard")}
+              <input type="file" accept="image/*" onChange={onCardFile} className="hidden" />
+            </label>
+          )}
+          {cardBusy && <p className="mt-1 text-[10px] text-inksoft">{t("eligibility.processing")}</p>}
+        </div>
+
+        {/* W4.2 — sandbox eligibility check (real-time payer connection deferred [EXTERNAL]) */}
+        <div className="sm:col-span-2 rounded-lg border border-mist bg-paper/70 p-3">
+          <div className="flex items-center justify-between gap-2">
+            <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-inksoft flex items-center gap-1.5">
+              <IShield size={11} className="text-pine-700" /> {t("eligibility.title")}
+            </span>
+            <button disabled={eligBusy || !c.insurancePlan}
+              onClick={runEligibility}
+              className={cx("flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-bold transition active:scale-95",
+                c.insurancePlan && !eligBusy ? "bg-pine-700 text-pine-50 hover:bg-pine-600" : "bg-mist text-inksoft cursor-not-allowed")}>
+              {eligBusy ? t("eligibility.checking") : t("eligibility.runCheck")}
+            </button>
+          </div>
+          {!c.insurancePlan && <p className="mt-1.5 text-[10px] text-inksoft">{t("eligibility.needPlan")}</p>}
+          {elig && (
+            <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-4 text-[11px]">
+              <div className={cx("rounded-md px-2 py-1.5 border", elig.active ? "bg-pine-50 border-pine-200 text-pine-700" : "bg-brick-100 border-brick-300/60 text-brick-700")}>
+                <p className="text-[9px] font-bold uppercase tracking-wide">{t("eligibility.status")}</p>
+                <p className="font-bold">{elig.active ? t("eligibility.active") : t("eligibility.inactive")}</p>
+              </div>
+              <div className="rounded-md px-2 py-1.5 border border-mist bg-card">
+                <p className="text-[9px] font-bold uppercase tracking-wide text-inksoft">{t("eligibility.copay")}</p>
+                <p className="font-bold text-ink num">{elig.active ? `${money(elig.copay)}` : "—"}</p>
+              </div>
+              <div className="rounded-md px-2 py-1.5 border border-mist bg-card">
+                <p className="text-[9px] font-bold uppercase tracking-wide text-inksoft">{t("eligibility.deductible")}</p>
+                <p className="font-bold text-ink num">{elig.active ? `${money(elig.deductible.remaining)}` : "—"}</p>
+              </div>
+              <div className="rounded-md px-2 py-1.5 border border-mist bg-card">
+                <p className="text-[9px] font-bold uppercase tracking-wide text-inksoft">{t("eligibility.formulary")}</p>
+                <p className="font-bold text-ink">{t(`eligibility.form.${elig.formulary}`)}</p>
+              </div>
+              <p className="col-span-2 sm:col-span-4 text-[9px] text-inksoft">{t("eligibility.sandboxNote")}</p>
+            </div>
+          )}
+        </div>
         <label className="block sm:col-span-2">
           <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-inksoft">Primary prescriber</span>
             <select value={f.primaryPrescriberId} onChange={(e) => setF({ ...f, primaryPrescriberId: e.target.value })} className={cx(pIn, "mt-1")}>

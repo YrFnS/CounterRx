@@ -14,6 +14,29 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 const BUCKET = "rx-docs";
 const MAX_BYTES = 512 * 1024;               // cap at ~500KB — 480px resize keeps us under this
 
+/** Client-side image resize → JPEG data-URL so hard-copy scans stay small enough for local storage.
+ *  Reused by Prescriptions (Rx hard-copy) and Customers (insurance card). */
+export function resizeToDataUrl(file: File, maxDim: number): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    const url = URL.createObjectURL(file);
+    img.onload = () => {
+      try {
+        const scale = Math.min(1, maxDim / Math.max(img.width, img.height));
+        const canvas = document.createElement("canvas");
+        canvas.width = Math.max(1, Math.round(img.width * scale));
+        canvas.height = Math.max(1, Math.round(img.height * scale));
+        const ctx = canvas.getContext("2d");
+        if (!ctx) throw new Error("no canvas");
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+        resolve(canvas.toDataURL("image/jpeg", 0.72));
+      } catch (e) { reject(e); } finally { URL.revokeObjectURL(url); }
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error("image decode")); };
+    img.src = url;
+  });
+}
+
 /** Convert a data-URL to a Blob. Returns null on parse failure. */
 function dataUrlToBlob(dataUrl: string): Blob | null {
   const m = dataUrl.match(/^data:(image\/[a-z]+);base64,(.+)$/);

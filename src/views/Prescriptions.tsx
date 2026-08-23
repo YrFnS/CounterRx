@@ -14,29 +14,7 @@ import type { RxStatus, Prescription, BackOrderStatus, Product, Prescriber } fro
 import { aiOcr, type OcrResult } from "../lib/ai";
 import { suggestProducts } from "../lib/ai-ui";
 import { cx, Badge, Modal } from "../ui";
-
-/* Client-side image resize → JPEG data-URL so hard-copy scans stay small enough for local storage.
-   (Superseded by Supabase Storage once the backend is connected — §3.) */
-function resizeToDataUrl(file: File, maxDim: number): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const img = new Image();
-    const url = URL.createObjectURL(file);
-    img.onload = () => {
-      try {
-        const scale = Math.min(1, maxDim / Math.max(img.width, img.height));
-        const canvas = document.createElement("canvas");
-        canvas.width = Math.max(1, Math.round(img.width * scale));
-        canvas.height = Math.max(1, Math.round(img.height * scale));
-        const ctx = canvas.getContext("2d");
-        if (!ctx) throw new Error("no canvas");
-        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-        resolve(canvas.toDataURL("image/jpeg", 0.72));
-      } catch (e) { reject(e); } finally { URL.revokeObjectURL(url); }
-    };
-    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error("bad image")); };
-    img.src = url;
-  });
-}
+import { resizeToDataUrl } from "../lib/rxdocs";
 import { IRx, ICheck, IClock, IRegister, IShield, IGrab, IRefresh, ISend, IRecall, IX, IBox, ISwap, IArrowIn, IArrowOut, IDownload, IPlus, IScan, IAlert, IPrint, ISpark, IUsers, ISearch, IEdit, IArchive, ITrash, IClipboard, IInfo } from "../icons";
 
 const FLOW: RxStatus[] = ["new", "verifying", "ready", "waiting", "dispensed"];

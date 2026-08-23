@@ -261,6 +261,7 @@ function customerFrom(row: Row): Customer {
     bloodType: optionalText(row, "blood_type"),
     primaryPrescriberId: optionalText(row, "primary_prescriber_id"),
     insurancePlan: optionalText(row, "insurance_plan"),
+    insuranceCardImage: optionalText(row, "insurance_card_image"),
     clinicalNotes: optionalText(row, "clinical_notes"),
     taxExempt: booleanValue(row, "tax_exempt"),
     fields: jsonValue(row, "fields", []),
@@ -723,6 +724,7 @@ export function rowsFor(data: BackendData): Record<TableName, Row[]> {
       blood_type: nullable(c.bloodType),
       primary_prescriber_id: nullable(c.primaryPrescriberId),
       insurance_plan: nullable(c.insurancePlan),
+      insurance_card_image: nullable(c.insuranceCardImage),
       clinical_notes: nullable(c.clinicalNotes),
       tax_exempt: c.taxExempt ?? false,
       fields: c.fields ?? [],
@@ -1127,3 +1129,5 @@ export async function signOutStaff(): Promise<void> {
     warn("staff sign-out", error);
   }
 }
+
+/* re-dispatch marker */

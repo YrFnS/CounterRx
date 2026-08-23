@@ -905,7 +905,9 @@
     "noteAdded": "تمت إضافة ملاحظة إلى ملف {{name}}",
     "vaccinationRecorded": "تم تسجيل التطعيم — {{patient}} · {{vaccine}}",
     "vaccinationUpdated": "تم تحديث سجل التطعيم",
-    "vaxDueNotified": "تم جدولة تذكير الاستحقاق لـ {{patient}} ({{count}} جرعة)"
+    "vaxDueNotified": "تم جدولة تذكير الاستحقاق لـ {{patient}} ({{count}} جرعة)",
+    "cardAttached": "تم حفظ بطاقة التأمين لـ {{name}}",
+    "cardRemoved": "تم إزالة بطاقة التأمين لـ {{name}}"
   },
   "history": {
     "customerReturn": "إرجاع عميل",
@@ -1185,5 +1187,29 @@
     "st_rejected": "مرفوضة",
     "st_resubmitted": "أُعيد إرسالها",
     "resubmit": "إعادة إرسال"
+  },
+  "eligibility": {
+    "cardLabel": "بطاقة التأمين",
+    "removeCard": "إزالة",
+    "cardAlt": "{{name}} — بطاقة التأمين",
+    "uploadCard": "تحميل صورة بطاقة التأمين",
+    "processing": "جارٍ المعالجة…",
+    "checking": "جارٍ الفحص…",
+    "runCheck": "فحص الأهلية",
+    "needPlan": "أدخل خطة تأمين لفحص الأهلية.",
+    "active": "نشطة",
+    "inactive": "غير نشطة",
+    "copay": "الاشتراك",
+    "deductible": "المبلغ المتبقي من الاستقطاع",
+    "formulary": "قائمة الأدوية",
+    "form": {
+      "preferred": "مفضلة",
+      "non-preferred": "غير مفضلة",
+      "not-covered": "غير مغطاة"
+    },
+    "unknownPayer": "مُصدر غير معروف",
+    "title": "فحص الأهلية",
+    "status": "الحالة",
+    "sandboxNote": "وضع تجريبي: فحص حتمي (معرف العضو المنتهي بـ 9 = غير نشط). اتصال الدفع الفعلي مؤجل."
   }
 }

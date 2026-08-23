@@ -1,0 +1,25 @@
+1185:     "st_paid": "Paid",
+1186:     "st_rejected": "Rejected",
+1187:     "st_resubmitted": "Resubmitted",
+1188:     "resubmit": "Resubmit"
+1189:   "eligibility": {
+1190:     "cardLabel": "Insurance card",
+1191:     "removeCard": "Remove",
+1192:     "cardAlt": "{{name}} — insurance card",
+1193:     "uploadCard": "Upload photo of insurance card",
+1194:     "processing": "Processing…",
+1195:     "checking": "Checking…",
+1196:     "runCheck": "Check eligibility",
+1197:     "needPlan": "Enter an insurance plan to check eligibility.",
+1198:     "active": "Active",
+1199:     "inactive": "Inactive",
+1200:     "copay": "Copay",
+1201:     "deductible": "Deductible remaining",
+1202:     "formulary": "Formulary",
+1203:     "form": {
+1204:       "preferred": "Preferred",
+1205:       "non-preferred": "Non-preferred",
+1206:       "not-covered": "Not covered"
+1207:     "unknownPayer": "Unknown payer"
+1208:   }
+1209: }
