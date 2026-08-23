@@ -33,7 +33,7 @@ function makeRecoveryState(overrides: Partial<State> = {}): State {
     flashKey: 0,
     snapshotVersion: 0,
     shifts: [],
-    storeCredits: [],
+    storeCredits: [], outboxCount: 0, conflicts: [],
     ...overrides,
   };
 }
