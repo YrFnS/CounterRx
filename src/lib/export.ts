@@ -8,11 +8,11 @@ function csvCell(value: unknown): string {
 }
 
 /** Convert row objects to a CSV string. Header row uses the first row's keys. */
-export function toCsv(rows: Record<string, unknown>[]): string {
+export function toCsv(rows: object[]): string {
   if (rows.length === 0) return "";
   const cols = Object.keys(rows[0]);
   const head = cols.map(csvCell).join(",");
-  const body = rows.map((r) => cols.map((c) => csvCell(r[c])).join(",")).join("\n");
+  const body = rows.map((r) => cols.map((c) => csvCell((r as Record<string, unknown>)[c])).join(",")).join("\n");
   return `${head}\n${body}`;
 }
 

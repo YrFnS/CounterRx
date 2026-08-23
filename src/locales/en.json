@@ -391,7 +391,11 @@
     "supplierBalance": "Supplier Balance",
     "newPo": "Create a purchase order",
     "requiresManager": "Requires manager or admin",
-    "chooseSupplier": "Choose a supplier"
+    "chooseSupplier": "Choose a supplier",
+    "exportAccounting": "Export to accounting",
+    "exportSales": "Sales (QBO)",
+    "exportExpenses": "Expenses (QBO)",
+    "exportAp": "AP bills (QBO)"
   },
   "reports": {
     "title": "Reports",
