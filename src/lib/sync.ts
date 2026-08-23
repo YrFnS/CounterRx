@@ -30,6 +30,7 @@ import type {
   Branch,
   Promotion,
   PromotionKind,
+  ConditionEntry,
 } from "../data";
 import type { NotificationLogEntry } from "./notify";
 import { makeSettings } from "../data";
@@ -247,6 +248,8 @@ function customerFrom(row: Row): Customer {
     notes: optionalText(row, "notes"),
     points: numberValue(row, "points"),
     allergies: jsonValue(row, "allergies", []),
+    conditions: jsonValue<ConditionEntry[]>(row, "conditions", []),
+    patientNotes: jsonValue<Customer["patientNotes"]>(row, "patient_notes", []),
     dob: optionalText(row, "dob"),
     gender: optionalText(row, "gender") as Customer["gender"],
     address: optionalText(row, "address"),
@@ -678,6 +681,8 @@ export function rowsFor(data: BackendData): Record<TableName, Row[]> {
       notes: nullable(c.notes),
       points: c.points,
       allergies: c.allergies ?? [],
+      conditions: c.conditions ?? [],
+      patient_notes: c.patientNotes ?? [],
       dob: nullable(c.dob),
       gender: nullable(c.gender),
       address: nullable(c.address),

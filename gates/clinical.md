@@ -37,3 +37,32 @@
   EVIDENCE: typecheck clean, 54 tests pass (21 new clinical), build OK.
 
 Deferred (documented in `src/views/__mount_clinical.md`): Register basket DDI mounting, restricted-OTC limit enforcement at the till, C-II logging at COMPLETE_SALE, scan-upload reducer hook — Phase A owns the till flow; wired when Register integration lands.
+
+## W3.6 Full patient profiles (`feat/patient-profiles`)
+
+- [x] Structured med history derived read-only from the ledger.
+  CHECK: `grep -n 'export function medHistory' src/data.ts`
+  EXPECT: derives product/qty/date/rxRef from dispensed Rx (name-matched) + ℞ sale lines (customerId-matched), refunds excluded, newest first; ProfileModal renders it.
+  EVIDENCE: `patient-profiles.test.ts` — derivation, ordering, refund exclusion.
+- [x] Allergies editor: structured entries (allergen/severity/reaction) with add/remove/archive; legacy strings still screen.
+  CHECK: `grep -n 'AllergyEntry\|normalizeAllergies' src/data.ts src/views/Customers.tsx`
+  EXPECT: `allergyConflicts` accepts strings + entries, archived never screen; Register + Prescriptions call sites unchanged (severity now propagated).
+  EVIDENCE: `patient-profiles.test.ts` — add/remove round-trip, legacy-string conflicts, archived exclusion.
+- [x] Register allergy warning at dispensing reuses the existing check.
+  CHECK: `grep -n 'allergyConflicts' src/views/Register.tsx`
+  EXPECT: cart-conflict banner unchanged, now severity-aware via shared helper.
+  EVIDENCE: typecheck green across both call sites after `AllergyInput` widening.
+- [x] Conditions list with optional ICD-style code + notes timeline (newest first).
+  CHECK: `grep -n 'PATIENT_CONDITIONS\|ADD_PATIENT_NOTE' src/store.tsx`
+  EXPECT: reducer actions persist `conditions` / `patientNotes`; note author from session staff; blank notes rejected.
+  EVIDENCE: `patient-profiles.test.ts` — conditions store/clear, timeline ordering + authorship.
+- [x] Print patient profile (demographics + meds + allergies + conditions + notes).
+  CHECK: `grep -n 'PrintProfile\|patientProfilePayload' src/views/Customers.tsx src/store.tsx`
+  EXPECT: hidden `#print-root` sheet rendered via portal, sole visible region under `@media print`; payload built by shared `patientProfilePayload()`.
+  EVIDENCE: `patient-profiles.test.ts` — payload assembly + unknown-customer null.
+- [x] Migration pushed live + i18n parity.
+  CHECK: `supabase/migrations/20260823000020_patient_profiles.sql`
+  EXPECT: `conditions jsonb default '[]'`, `patient_notes jsonb default '[]'` on customers; sync mapper reads/writes both columns; every new string keyed in en.json + ar.json.
+  EVIDENCE: pushed live 2026-08-23 ("Applying migration 20260823000020_patient_profiles.sql… Finished supabase db push"); PostgREST resolves both new columns (bogus-column control 42703); i18n-key-parity gate passes.
+
+Full gate: `npm run typecheck && npm run test && npm run build` — typecheck clean, 184 tests pass (7 new patient-profiles), build OK.

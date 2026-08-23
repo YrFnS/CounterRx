@@ -82,12 +82,8 @@ Build on Deliveries: patient delivery intake from sale (address book reuses cust
 
 `src/lib/outbox.ts` real per-op outbox ('counterrx:outbox:v1'), enqueue-on-offline, FIFO replay + clear on reconnect, LWW by `updatedAt` (createdAt fallback), conflict banner (View diff / keep-local); offline count banner. Tests: src/**tests**/offline-queue.test.ts (9 passing). Gates: offline-outbox.md all boxes checked.
 
-<<<<<<< HEAD
 ### W3.4 Promotions engine (beyond coupons) ✦ `feat/promotions`
-
-=======
 ### W3.4 Promotions engine (beyond coupons) ✦ `feat/promotions` — DONE
->>>>>>> feat/promotions
 Rules: birthday reward, first-visit, category % off window; stored in settings/promotions table (migration 0018); auto-applies at register with audit + manager override. Builds on coupon apply path.
 
 ### W3.5 Vaccination records ✦ `feat/vaccinations`
@@ -97,6 +93,7 @@ Migration 0019 `vaccinations` (patient, product, lot, dose#, site, administrator
 ### W3.6 Full patient profiles ✦ `feat/patient-profiles`
 
 Customers: structured med history (from dispensed Rx), allergies editor improvements, conditions list, notes timeline; print patient profile.
+### W3.6 Full patient profiles ✦ branch `feat/patient-profiles` — DONE
 
 ### W3.7 CSV catalog import ✦ `feat/catalog-import`
 

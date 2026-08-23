@@ -822,7 +822,8 @@
     "couponDeleted": "Coupon deleted",
     "promotionCreated": "Promotion created",
     "promotionUpdated": "Promotion updated",
-    "promotionDeleted": "Promotion deleted"
+    "promotionDeleted": "Promotion deleted",
+    "noteAdded": "Note added to {{name}}'s chart"
   },
   "history": {
     "customerReturn": "Customer return",
@@ -1040,5 +1041,35 @@
   "discounts": {
     "pctRow": "Discount (%)",
     "invoiceRow": "Invoice discount"
+  },
+  "patients": {
+    "profileTitle": "Patient profile",
+    "allergyFile": "Allergies on file",
+    "noAllergies": "No known allergies recorded.",
+    "otherAllergen": "+ other allergen",
+    "severity": "Severity",
+    "sev": {
+      "mild": "Mild",
+      "moderate": "Moderate",
+      "severe": "Severe"
+    },
+    "reactionPh": "Reaction (e.g. hives)",
+    "archived": "Archived",
+    "conditions": "Conditions",
+    "noConditions": "No conditions recorded.",
+    "conditionName": "Condition name",
+    "icdCode": "ICD code",
+    "notesTimeline": "Notes timeline",
+    "notePh": "Add a clinical note…",
+    "addNote": "Add note",
+    "medHistory": "Medication history",
+    "noMeds": "No prescriptions or ℞ purchases on record.",
+    "rxRef": "Rx",
+    "saleTag": "Sale",
+    "printProfile": "Print profile",
+    "printTitle": "Patient profile",
+    "productTh": "Product",
+    "qtyTh": "Qty",
+    "none": "None"
   }
 }

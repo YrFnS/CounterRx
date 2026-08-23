@@ -102,6 +102,7 @@ import type {
   Coupon,
   Branch,
   Promotion,
+  ConditionEntry,
 } from "./data";
 import {
   makeStaff,
@@ -111,7 +112,10 @@ import {
   SNAPS_KEY,
   hashPin,
   ROLE_LABEL,
+  normalizeAllergies,
+  medHistory,
 } from "./data";
+import type { AllergyInput } from "./data";
 import type { BackendData, LoadResult } from "./lib/sync";
 import {
   loadBackendData,
@@ -303,31 +307,15 @@ type Action =
       qty: number;
     }
   | { type: "BACKORDER_STATUS"; id: string; to: BackOrderStatus }
-  | { type: "CUSTOMER_ALLERGIES"; id: string; allergies: string[] }
-  | {
-      type: "COMPOUND";
-      name: string;
-      ingredients: { productId: string; qty: number }[];
-      fee: number;
-      price: number;
-    }
-  | {
-      type: "NEW_PRESCRIPTION";
-      intake: {
-        patient: string;
-        age: number;
-        phone?: string;
-        productId: string;
-        qty: number;
-        prescriberId: string;
-        daysSupply?: number;
-        refillsAuthorized?: number;
-        rxExpiry?: string;
-        note?: string;
-        insurancePlan?: string;
-        memberId?: string;
-      };
-    }
+  | { type: "CUSTOMER_ALLERGIES"; id: string; allergies: AllergyInput[] }
+  | { type: "PATIENT_CONDITIONS"; id: string; conditions: ConditionEntry[] }
+  | { type: "ADD_PATIENT_NOTE"; id: string; text: string }
+  | { type: "COMPOUND"; name: string; ingredients: { productId: string; qty: number }[]; fee: number; price: number }
+  | { type: "NEW_PRESCRIPTION"; intake: {
+      patient: string; age: number; phone?: string; productId: string; qty: number;
+      prescriberId: string; daysSupply?: number; refillsAuthorized?: number;
+      rxExpiry?: string; note?: string; insurancePlan?: string; memberId?: string;
+    } }
   | { type: "SCAN_ATTACH"; id: string; dataUrl: string }
   | { type: "SCAN_REMOVE"; id: string }
   | {
@@ -534,6 +522,21 @@ type Action =
   | { type: "HYDRATE_BACKEND"; data: BackendData }
   | { type: "BACKEND_OFFLINE" }
   | { type: "NOTIFY_SEND"; kind: NotificationKind; to: string; vars: Record<string, string | number> };
+
+/** Build the printable patient-profile payload (W3.6): demographics, derived med
+ * history, active allergies, conditions, notes timeline (already newest-first). */
+export function patientProfilePayload(state: Pick<State, "customers" | "prescriptions" | "transactions" | "products" | "settings">, customerId: string) {
+  const c = state.customers.find((x) => x.id === customerId);
+  if (!c) return null;
+  return {
+    customer: c,
+    orgName: state.settings.orgName,
+    meds: medHistory(c.name, c.id, state.prescriptions, state.transactions, state.products),
+    allergies: normalizeAllergies(c.allergies),
+    conditions: c.conditions ?? [],
+    notes: [...(c.patientNotes ?? [])].sort((x, y) => y.at - x.at),
+  };
+}
 
 let toastSeq = 1;
 let heldSeq = 1;
@@ -1826,16 +1829,27 @@ export function reducer(state: State, a: Action): State {
           : x,
       );
       return withToast(
-        withAudit(
-          { ...state, customers },
-          "rx",
-          `Allergy profile updated — ${c.name}: ${a.allergies.length ? a.allergies.join(", ") : "none on file"}`,
-        ),
-        "success",
-        a.allergies.length
-          ? `${c.name} — ${a.allergies.length} allergen${a.allergies.length === 1 ? "" : "s"} on file`
-          : `${c.name} — allergies cleared`,
-      );
+        withAudit({ ...state, customers }, "rx", `Allergy profile updated — ${c.name}: ${a.allergies.length ? a.allergies.map((x) => (typeof x === "string" ? x : x.allergen)).join(", ") : "none on file"}`),
+        "success", a.allergies.length ? `${c.name} — ${a.allergies.length} allergen${a.allergies.length === 1 ? "" : "s"} on file` : `${c.name} — allergies cleared`);
+    }
+
+    case "PATIENT_CONDITIONS": {
+      const c = state.customers.find((x) => x.id === a.id);
+      if (!c) return state;
+      const customers = state.customers.map((x) => (x.id === a.id ? { ...x, conditions: a.conditions.length ? a.conditions : undefined } : x));
+      return withToast(
+        withAudit({ ...state, customers }, "rx", `Condition list updated — ${c.name}: ${a.conditions.length ? a.conditions.map((x) => x.name).join(", ") : "none on file"}`),
+        "success", a.conditions.length ? `${c.name} — condition list saved (${a.conditions.length})` : `${c.name} — condition list cleared`);
+    }
+
+    case "ADD_PATIENT_NOTE": {
+      const c = state.customers.find((x) => x.id === a.id);
+      const text = a.text.trim();
+      if (!c || !text) return state;
+      /* newest first — the timeline is rendered in stored order */
+      const note = { at: Date.now(), author: state.user?.name ?? "", text };
+      const customers = state.customers.map((x) => (x.id === a.id ? { ...x, patientNotes: [note, ...(x.patientNotes ?? [])] } : x));
+      return withToast(withAudit({ ...state, customers }, "rx", `Patient note added — ${c.name}`), "success", i18n.t("toast.noteAdded", { name: c.name }));
     }
 
     case "COMPOUND": {
