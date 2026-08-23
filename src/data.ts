@@ -789,6 +789,7 @@ export interface OrgSettings {
   autoSnapshotMins: number;        // 0 = off
   terminalId: string;
   hardwareEnabled: boolean;        // Phase E: Web Serial hardware (printer/drawer/scale)
+  ndcLiveLookup: boolean;          // W3.8 — live openFDA/RxNorm NDC lookup (off → offline directory only)
   savedReportViews: import("./lib/report-filters").SavedReportView[]; // named report-builder views (JSONB via settings tail column — no migration)
 }
 
@@ -807,6 +808,7 @@ export function makeSettings(): OrgSettings {
     autoSnapshotMins: 15,
     terminalId: "T-01",
     hardwareEnabled: false,
+    ndcLiveLookup: true,
     savedReportViews: [],
   };
 }

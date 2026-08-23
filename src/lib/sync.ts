@@ -271,6 +271,7 @@ function settingsFrom(row: Row | undefined, fallback: OrgSettings): OrgSettings 
     scanBeep: booleanValue(row, "scan_beep", fallback.scanBeep), idleLockMins: numberValue(row, "idle_lock_mins", fallback.idleLockMins),
     autoSnapshotMins: numberValue(row, "auto_snapshot_mins", fallback.autoSnapshotMins), terminalId: text(row, "terminal_id", fallback.terminalId),
     hardwareEnabled: booleanValue(row, "hardware_enabled", fallback.hardwareEnabled),
+    ndcLiveLookup: booleanValue(row, "ndc_live_lookup", fallback.ndcLiveLookup),
     savedReportViews: Array.isArray(rawViews) ? (rawViews as OrgSettings["savedReportViews"]) : fallback.savedReportViews,
   };
 }

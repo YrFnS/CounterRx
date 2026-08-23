@@ -109,6 +109,7 @@ function LanguageTab() {
 
 /* ---------------------------------- profile ---------------------------------- */
 function ProfileTab({ admin }: { admin: boolean }) {
+  const { t } = useTranslation();
   const { state, dispatch } = usePos();
   const s = state.settings;
   const set = (patch: Partial<OrgSettings>) => admin && dispatch({ type: "UPDATE_SETTINGS", patch });
@@ -146,6 +147,8 @@ function ProfileTab({ admin }: { admin: boolean }) {
         </div>
         <ToggleRow disabled={!admin} on={s.scanBeep} onChange={(v) => set({ scanBeep: v })}
           icon={<IScan size={14} />} label="Scanner beep" hint="Audible chirp on a successful barcode scan" />
+        <ToggleRow disabled={!admin} on={s.ndcLiveLookup} onChange={(v) => set({ ndcLiveLookup: v })}
+          icon={<IPill size={14} />} label={t("settings.ndcLiveLookup")} hint={t("settings.ndcLiveLookupHint")} />
       </Card>
     </div>
   );

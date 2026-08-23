@@ -480,6 +480,8 @@
     "hwReq3": "A cash drawer wired to the printer's DK port (optional)",
     "hwOk": "{{op}} succeeded",
     "hwDisabled": "Hardware is disabled — turn on the Enable hardware switch",
+    "ndcLiveLookup": "Live NDC lookup",
+    "ndcLiveLookupHint": "Look up drugs live from openFDA/RxNorm (free, no key). Off falls back to the offline directory.",
     "clinical": "Clinical",
     "restrictedCatalog": "Restricted OTC catalog",
     "categoriesTitle": "Product categories",
@@ -830,7 +832,13 @@
     "ccBadge": "Cold chain — 2–8 °C",
     "lotCost": "cost",
     "lotRtv": "RTV",
-    "lotWriteOff": "write-off"
+    "lotWriteOff": "write-off",
+    "ndcTitle": "NDC · auto-fill",
+    "ndcLookUp": "Look up",
+    "ndcLooking": "Looking up…",
+    "ndcFound": "Catalog fields pre-filled — review before saving",
+    "ndcMiss": "No match — enter the product manually",
+    "ndcOffline": "Using offline directory"
   },
   "ai": {
     "ocrButton": "OCR prescription",

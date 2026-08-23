@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { usePos, money, relTime, clockTime } from "../store";
-import { daysUntil, fefoBatches, stockOf, nearestExpiry, newBatchCode, FIELD_SUGGESTIONS, BRANCHES_FALLBACK, can, ndcLookup, hashPin, tempInRange, patientsForLot, catSubtree } from "../data";
+import { daysUntil, fefoBatches, stockOf, nearestExpiry, newBatchCode, FIELD_SUGGESTIONS, BRANCHES_FALLBACK, can, hashPin, tempInRange, patientsForLot, catSubtree } from "../data";
 import type { Product, Batch, TransferStatus, Uom, Transaction, Supplier } from "../data";
 import { aiForecast } from "../lib/ai";
 import type { ForecastRow } from "../lib/ai";
+import { lookupNdc } from "../lib/ndc";
 import { buildForecastPayload, historyFromTransactions } from "../lib/ai-ui";
 import { cx, Badge, Modal, StockBar, Empty, CustomFieldsBlock } from "../ui";
 import { ISearch, IPlus, IBox, IAlert, IDownload, IEdit, IX, ICheck, IReport, ICalendar, IClipboard, ITag, ISwap, IScan, IUsers, IFlask, ICold, ITrendUp, IClock, IArchive, ITrash } from "../icons";
@@ -1528,6 +1529,7 @@ function AdjustModal({ p, onClose }: { p: Product; onClose: () => void }) {
 }
 
 function AddProductModal({ onClose }: { onClose: () => void }) {
+  const { t } = useTranslation();
   const { state, dispatch } = usePos();
   const categories = useMemo(() => (state.categories ?? []).filter((c) => !c.archived).sort((x, y) => x.sort - y.sort), [state.categories]);
   const [f, setF] = useState({
@@ -1536,16 +1538,20 @@ function AddProductModal({ onClose }: { onClose: () => void }) {
   });
   const set = (k: string, v: string | boolean) => setF((s) => ({ ...s, [k]: v }));
   const valid = f.name.trim() && parseFloat(f.price) > 0;
-  const [lookupState, setLookupState] = useState<"idle" | "found" | "miss">("idle");
+  const [lookupState, setLookupState] = useState<"idle" | "found" | "miss" | "loading">("idle");
+  const [offlineUsed, setOfflineUsed] = useState(false);
 
-  /* NDC directory auto-fill (§3) */
-  const runLookup = () => {
-    const hit = ndcLookup(f.ndc);
-    if (!hit) { setLookupState("miss"); return; }
+  /* NDC auto-fill (§3) — live openFDA/RxNorm lookup, offline directory fallback */
+  const runLookup = async () => {
+    if (lookupState === "loading") return;
+    setLookupState("loading");
+    const { result, source } = await lookupNdc(f.ndc, { live: state.settings.ndcLiveLookup });
+    if (!result) { setLookupState("miss"); setOfflineUsed(false); return; }
     setF((s) => ({
-      ...s, name: hit.name, generic: hit.generic, brand: hit.brand, form: hit.form,
-      category: hit.category, price: hit.price.toFixed(2), cost: hit.cost.toFixed(2), ndc: hit.ndc,
+      ...s, name: result.name || s.name, generic: result.genericName, brand: result.manufacturer || s.brand,
+      ndc: f.ndc.trim(),
     }));
+    setOfflineUsed(source === "offline");
     setLookupState("found");
   };
 
@@ -1588,19 +1594,20 @@ function AddProductModal({ onClose }: { onClose: () => void }) {
       </div>
       <div className="p-5 grid grid-cols-2 gap-3.5">
         <div className="col-span-2">
-          <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-inksoft">NDC · auto-fill from directory</span>
+          <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-inksoft">{t("supply.ndcTitle")}</span>
           <div className="mt-1 flex gap-1.5">
-            <input value={f.ndc} onChange={(e) => { set("ndc", e.target.value); setLookupState("idle"); }}
+            <input value={f.ndc} onChange={(e) => { set("ndc", e.target.value); setLookupState("idle"); setOfflineUsed(false); }}
               onKeyDown={(e) => e.key === "Enter" && runLookup()}
               placeholder="e.g. 50111-0362-01"
               className="num flex-1 px-2.5 py-2 rounded-lg border border-mist bg-card text-sm focus:border-pine-500 focus:outline-none transition" />
-            <button onClick={runLookup}
-              className="px-3 py-2 rounded-lg bg-ink text-paper text-xs font-bold hover:bg-pine-900 transition active:scale-95 shrink-0">
-              Look up
+            <button onClick={runLookup} disabled={lookupState === "loading"}
+              className="px-3 py-2 rounded-lg bg-ink text-paper text-xs font-bold hover:bg-pine-900 transition active:scale-95 shrink-0 disabled:opacity-60">
+              {lookupState === "loading" ? t("supply.ndcLooking") : t("supply.ndcLookUp")}
             </button>
           </div>
-          {lookupState === "found" && <p className="mt-1 text-[11px] font-semibold text-pine-700 anim-fade-up">✓ Catalog fields pre-filled — review before saving</p>}
-          {lookupState === "miss" && <p className="mt-1 text-[11px] font-semibold text-brick-700 anim-fade-up">No directory match — enter the product manually</p>}
+          {lookupState === "found" && <p className="mt-1 text-[11px] font-semibold text-pine-700 anim-fade-up">✓ {t("supply.ndcFound")}</p>}
+          {lookupState === "miss" && <p className="mt-1 text-[11px] font-semibold text-brick-700 anim-fade-up">{t("supply.ndcMiss")}</p>}
+          {offlineUsed && lookupState === "found" && <p className="mt-1 text-[11px] font-semibold text-amber-700 anim-fade-up">{t("supply.ndcOffline")}</p>}
         </div>
         <div className="col-span-2"><Field label="Product name" k="name" ph="e.g. Loratadine 10mg" /></div>
         <Field label="Generic / molecule" k="generic" ph="Loratadine" />
