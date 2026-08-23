@@ -3,7 +3,7 @@ import { useTranslation } from "react-i18next";
 import type { ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { usePos, money, cartTotals } from "./store";
-import { findInteractions, can, creditByCode } from "./data";
+import { findInteractions, can, creditByCode, deliveryFeeFor } from "./data";
 import type { PayMethod, PaymentLeg, Transaction, Product, StoreCredit } from "./data";
 import { Modal, cx } from "./ui";
 import { ICash, ICard, IShield, IX, IPrint, ICheck, ISplit, IUsers, IStar, IAlert, ICode, ICopy, IDownload } from "./icons";
@@ -27,8 +27,23 @@ export function PaymentModal() {
   const [rPurchaser, setRPurchaser] = useState("");
   const [rIdType, setRIdType] = useState(tr("modal.driverLicense"));
   const [rIdLast4, setRIdLast4] = useState("");
+  /* W3.2 — patient delivery intake from the payment step */
+  const [scheduleDelivery, setScheduleDelivery] = useState(false);
+  const [deliveryAddress, setDeliveryAddress] = useState("");
+  const [deliveryFeeStr, setDeliveryFeeStr] = useState("");
+  const [expectedDate, setExpectedDate] = useState(() => {
+    const d = new Date();
+    d.setDate(d.getDate() + 1);
+    return d.toISOString().split("T")[0];
+  });
 
   const customer = state.customers.find((c) => c.id === state.saleCustomerId) ?? null;
+  /* W3.2 — default delivery address from the linked customer's address book */
+  const deliveryDefaultAddress = customer?.address ?? "";
+  const deliveryAddressValue = deliveryAddress || deliveryDefaultAddress;
+  const deliveryFee = scheduleDelivery
+    ? Math.max(0, parseFloat(deliveryFeeStr) || 0)
+    : 0;
   const [dueDate, setDueDate] = useState(() => {
     const d = new Date();
     d.setDate(d.getDate() + 14);
@@ -82,6 +97,8 @@ export function PaymentModal() {
     : 0;
   const invoiceAmtInput = discMode === "amt" ? round2(Math.max(0, parseFloat(discVal) || 0)) : 0;
   const t = useMemo(() => cartTotals(state, discountPct, taxExempt, couponDiscount, invoiceAmtInput), [state, discountPct, taxExempt, couponDiscount, invoiceAmtInput]);
+  /* W3.2 — delivery fee after the free-delivery threshold policy (0 fee when order ≥ threshold) */
+  const deliveryFeeCharged = scheduleDelivery ? deliveryFeeFor(state.settings, t.subtotal) : 0;
   const hasControlled = state.cart.some((c) => product(c.productId)?.controlled);
   /* redeemable chunks: 100 pts = $5, capped by payable balance */
   const payableNow = Math.max(0, t.subtotal - t.bulkSavings - t.discount - t.coupon);
@@ -142,6 +159,9 @@ export function PaymentModal() {
       tendered: !split && leg1 === "cash" ? tenderedNum : undefined,
       restricted: restrictedLines.length > 0
         ? { purchaser: rPurchaser, idType: rIdType, idLast4: rIdLast4 }
+        : undefined,
+      delivery: scheduleDelivery
+        ? { address: deliveryAddressValue, fee: deliveryFeeCharged, scheduledAt: new Date(expectedDate + "T12:00:00").getTime() }
         : undefined,
     });
   };
@@ -479,6 +499,52 @@ export function PaymentModal() {
               <p className="text-xs text-inksoft">{tr("pos.payLaterDefaultDays")} — {tr("pos.payLaterNotice")} {formatDate(dueDateNum)}</p>
             </div>
           )}
+
+          {/* W3.2 — schedule a patient delivery from this sale */}
+          <div className="mt-4 rounded-lg border border-mist bg-card p-3">
+            <label className="flex items-center gap-2 cursor-pointer select-none">
+              <button type="button" onClick={() => setScheduleDelivery(!scheduleDelivery)} aria-pressed={scheduleDelivery}
+                className={cx("grid place-items-center w-5 h-5 rounded border-2 transition-all shrink-0",
+                  scheduleDelivery ? "bg-pine-700 border-pine-700 text-pine-50 scale-105" : "bg-card border-mist")}>
+                {scheduleDelivery && <ICheck size={11} />}
+              </button>
+              <span className="text-xs font-bold text-ink">{tr("modal.scheduleDelivery")}</span>
+            </label>
+            {scheduleDelivery && (
+              <div className="mt-2.5 anim-fade-up space-y-2">
+                <div>
+                  <label className="text-[11px] font-semibold uppercase tracking-[0.14em] text-inksoft">{tr("deliveries.deliveryAddress")}</label>
+                  <input value={deliveryAddress} onChange={(e) => setDeliveryAddress(e.target.value)}
+                    placeholder={deliveryDefaultAddress || tr("modal.deliveryAddressPlaceholder")}
+                    className="w-full mt-1 px-2.5 py-1.5 rounded-md border border-mist bg-paper text-xs focus:border-pine-500 focus:outline-none transition" />
+                  {deliveryDefaultAddress && deliveryAddress === "" && (
+                    <p className="text-[10px] text-inksoft mt-0.5">{tr("modal.addressFromCustomer")}</p>
+                  )}
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="text-[11px] font-semibold uppercase tracking-[0.14em] text-inksoft">{tr("deliveries.deliveryFee")}</label>
+                    <input value={deliveryFeeStr} onChange={(e) => setDeliveryFeeStr(e.target.value.replace(/[^\d.]/g, ""))}
+                      placeholder={deliveryFeeCharged > 0 ? money(deliveryFeeCharged).toString() : money(0).toString()}
+                      inputMode="decimal"
+                      className="num w-full mt-1 px-2.5 py-1.5 rounded-md border border-mist bg-paper text-xs focus:border-pine-500 focus:outline-none transition" />
+                  </div>
+                  <div>
+                    <label className="text-[11px] font-semibold uppercase tracking-[0.14em] text-inksoft">{tr("modal.expectedDate")}</label>
+                    <input type="date" value={expectedDate} onChange={(e) => setExpectedDate(e.target.value)} min={todayStr}
+                      className="w-full mt-1 px-2.5 py-1.5 rounded-md border border-mist bg-paper text-xs focus:border-pine-500 focus:outline-none transition" />
+                  </div>
+                </div>
+                {state.settings.freeThreshold > 0 && (
+                  <p className="text-[10px] font-semibold text-pine-700 bg-pine-100/50 rounded-md px-2.5 py-1.5">
+                    {t.subtotal >= state.settings.freeThreshold
+                      ? tr("modal.freeDeliveryApplied")
+                      : tr("modal.freeDeliveryAt", { amt: money(state.settings.freeThreshold) })}
+                  </p>
+                )}
+              </div>
+            )}
+          </div>
 
           <button onClick={confirm} disabled={!canConfirm}
             className={cx("w-full mt-5 py-3 rounded-lg font-display font-bold text-[15px] transition-all duration-200 flex items-center justify-center gap-2",

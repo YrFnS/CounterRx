@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 import i18n from "../i18n";
 import { usePos, money, relTime } from "../store";
 import type { Delivery, DeliveryStatus, WebOrder } from "../data";
+import { routeSequences } from "../data";
 import { cx, Badge, Empty, Modal } from "../ui";
 import { ITruck, IMapPin, IWeb, IX, ICheck, IChevD, ICash, IAlert } from "../icons";
 
@@ -97,6 +98,59 @@ export default function Deliveries() {
                     Decline
                   </button>
                 </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* route plans — pending deliveries grouped by driver (W3.2) */}
+      <div className="mt-4 rounded-xl border border-mist bg-card shadow-lift overflow-hidden">
+        <div className="flex items-center justify-between px-4 py-2.5 border-b border-mist bg-pine-50/60">
+          <h2 className="font-display font-bold text-ink text-[14px] flex items-center gap-2">
+            <IMapPin size={15} className="text-pine-700" /> {i18n.t("deliveries.routePlans")}
+          </h2>
+          <Badge tone="mist">{routeSequences(state.deliveries).length}</Badge>
+        </div>
+        {routeSequences(state.deliveries).length === 0 ? (
+          <p className="px-4 py-3 text-xs text-inksoft">{i18n.t("deliveries.noRoutes")}</p>
+        ) : (
+          <div className="grid md:grid-cols-2 xl:grid-cols-3 gap-3 p-4">
+            {routeSequences(state.deliveries).map(({ driver, stops }) => (
+              <div key={driver} className="rounded-lg border border-mist bg-paper p-3 flex flex-col">
+                <div className="flex items-center justify-between gap-2">
+                  <p className="text-xs font-bold text-ink truncate">⌁ {driver}</p>
+                  <button onClick={() => {
+                    for (const s of stops) {
+                      if (s.status === "assigned") dispatch({ type: "DELIVERY_STATUS", id: s.id, to: "out" });
+                    }
+                  }}
+                    className="px-2.5 py-1 rounded-md bg-pine-700 text-pine-50 text-[10px] font-bold hover:bg-pine-600 transition active:scale-[0.97]">
+                    {i18n.t("deliveries.startRoute")}
+                  </button>
+                </div>
+                <ol className="mt-2 space-y-1.5">
+                  {stops.map((s, idx) => (
+                    <li key={s.id} className="flex items-start gap-2 text-[11px]">
+                      <span className={cx("num shrink-0 grid place-items-center w-4.5 h-4.5 mt-px rounded-full text-[9px] font-bold",
+                        s.status === "out" ? "bg-pine-700 text-pine-50" : "bg-mist text-inksoft")}>{idx + 1}</span>
+                      <span className="min-w-0">
+                        <span className="font-semibold text-ink block truncate">{custName(s.customerId)}</span>
+                        <span className="text-inksoft block truncate">{s.address}</span>
+                      </span>
+                      <span className="ml-auto shrink-0">
+                        {s.status === "out" ? (
+                          <button onClick={() => { setPodFor(s); setPodText(""); }}
+                            className="px-2 py-0.5 rounded bg-honey-100 text-honey-800 text-[10px] font-bold hover:bg-honey-200 transition">
+                            {i18n.t("deliveries.capturePOD")}
+                          </button>
+                        ) : (
+                          <span className="num text-[10px] text-inksoft">{relTime(s.scheduledAt)}</span>
+                        )}
+                      </span>
+                    </li>
+                  ))}
+                </ol>
               </div>
             ))}
           </div>

@@ -141,7 +141,7 @@ type Action =
   | { type: "SUPPLIER_DELETE"; id: string }
   | { type: "EXPIRE_HELDS" }
   | { type: "OPEN_PAY"; open: boolean }
-  | { type: "COMPLETE_SALE"; payments: PaymentLeg[]; tendered?: number; discountPct: number; taxExempt: boolean; idChecked: boolean; restricted?: { purchaser: string; idType: string; idLast4: string }; couponDiscount?: number; invoiceDiscountAmt?: number; approvedBy?: string }
+  | { type: "COMPLETE_SALE"; payments: PaymentLeg[]; tendered?: number; discountPct: number; taxExempt: boolean; idChecked: boolean; restricted?: { purchaser: string; idType: string; idLast4: string }; couponDiscount?: number; invoiceDiscountAmt?: number; approvedBy?: string; delivery?: { address: string; fee: number; scheduledAt: number } }
   | { type: "SETTLE_PAY_LATER"; transactionId: string; legIndex: number; method: PayMethod; ref?: string }
   | { type: "OPEN_RECEIPT"; tx: Transaction | null }
   | { type: "ADJUST_BATCH"; productId: string; batch: string; newQty: number; reason: string }
@@ -1170,6 +1170,23 @@ export function reducer(state: State, a: Action): State {
       }
       if (controlledLines.length > 0 && customer) {
         next = withAudit(next, "rx", `⚠ Controlled sale ${tx.id} — ${controlledLines.map((l) => `${l.name} ×${l.qty}`).join(", ")} · ${customer.name} · ID verified ✓`);
+      }
+      /* W3.2 — patient delivery intake from sale: record linked to the transaction */
+      if (a.delivery) {
+        const delivery: Delivery = {
+          id: `DL-${304 + state.deliveries.length}`,
+          customerId: customer?.id ?? "WALK-IN",
+          address: a.delivery.address.trim() || (customer?.address ?? "Address on file"),
+          lines: t.lines.map((l) => ({ productId: l.productId, qty: l.qty })),
+          fee: a.delivery.fee,
+          mode: "delivery",
+          status: "queued",
+          scheduledAt: a.delivery.scheduledAt,
+          txId: tx.id,
+          createdAt: Date.now(),
+        };
+        next = { ...next, deliveries: [delivery, ...next.deliveries] };
+        next = withAudit(next, "sale", `${tx.id} → delivery ${delivery.id} · ${customer?.name ?? "walk-in"} · ${delivery.address} · fee ${money(delivery.fee)}`);
       }
       /* charge-on-pickup: any cart line stamped with an rxId dispenses that Rx on payment (W1.4) */
       const pickupRxIds = [...new Set(state.cart.map((c) => c.rxId).filter((id): id is string => !!id))]

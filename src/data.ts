@@ -789,6 +789,8 @@ export interface OrgSettings {
   autoSnapshotMins: number;        // 0 = off
   terminalId: string;
   hardwareEnabled: boolean;        // Phase E: Web Serial hardware (printer/drawer/scale)
+  deliveryFee: number;              // default delivery charge (W3.2)
+  freeThreshold: number;            // orders ≥ this amount ship free; 0 = no threshold (W3.2)
   savedReportViews: import("./lib/report-filters").SavedReportView[]; // named report-builder views (JSONB via settings tail column — no migration)
   notifications: {
     channel: string;               // provider key resolved by notifierFor() in lib/notify.ts
@@ -813,6 +815,8 @@ export function makeSettings(): OrgSettings {
     autoSnapshotMins: 15,
     terminalId: "T-01",
     hardwareEnabled: false,
+    deliveryFee: 0,
+    freeThreshold: 0,
     savedReportViews: [],
     notifications: {
       channel: "console",
@@ -1219,7 +1223,28 @@ export interface Delivery {
   driver?: string;
   scheduledAt: number;
   proof?: string;          // proof-of-delivery note / signature ref (§7)
+  txId?: string;           // linked sale transaction (W3.2)
   createdAt: number;
+}
+
+/** Delivery fee after applying free-delivery threshold. */
+export function deliveryFeeFor(settings: OrgSettings, subtotal: number): number {
+  if (settings.freeThreshold > 0 && subtotal >= settings.freeThreshold) return 0;
+  return settings.deliveryFee;
+}
+
+/** Group pending deliveries (queued/assigned/out) by driver, each sorted by scheduledAt. */
+export function routeSequences(deliveries: Delivery[]): { driver: string; stops: Delivery[] }[] {
+  const pending = deliveries.filter((d) => d.status !== "delivered" && d.driver);
+  const byDriver = new Map<string, Delivery[]>();
+  for (const d of pending) {
+    const list = byDriver.get(d.driver!) ?? [];
+    list.push(d);
+    byDriver.set(d.driver!, list);
+  }
+  return [...byDriver.entries()]
+    .map(([driver, stops]) => ({ driver, stops: stops.sort((a, b) => a.scheduledAt - b.scheduledAt) }))
+    .sort((a, b) => a.driver.localeCompare(b.driver));
 }
 
 export function makeDeliveries(now: number): Delivery[] {

@@ -11,11 +11,11 @@ import { buildOrgExport, validateOrgExport, type OrgExportBundle } from "../lib/
 import { toCsv } from "../lib/export";
 import { cx, Modal, Badge } from "../ui";
 import {
-  IGear, IPrint, IStar, IUsers, IDownload, IPlus, IX, ICheck, ITrash, IRecall, IAlert, IScan, IChevD, IClockIn, IPill, IEdit, ITag, IShield, ICopy, IUpload, IBell,
+  IGear, IPrint, IStar, IUsers, IDownload, IPlus, IX, ICheck, ITrash, IRecall, IAlert, IScan, IChevD, IClockIn, IPill, IEdit, ITag, IShield, ICopy, IUpload, IBell, ICash,
 } from "../icons";
 import { connectPrinter, printLabel, kickDrawer, HardwareError } from "../lib/hardware";
 
-type Tab = "profile" | "receipt" | "loyalty" | "team" | "clock" | "hardware" | "data" | "language" | "clinical" | "coupons" | "categories" | "backups" | "notifications";
+type Tab = "profile" | "receipt" | "loyalty" | "team" | "clock" | "hardware" | "data" | "language" | "clinical" | "coupons" | "categories" | "backups" | "notifications" | "delivery";
 
 export default function Settings() {
   const { t } = useTranslation();
@@ -34,6 +34,7 @@ export default function Settings() {
     { id: "data", label: t("settings.dataBackups"), icon: <IDownload size={14} /> },
     { id: "language", label: t("settings.language"), icon: <IX size={14} /> },
     { id: "clinical", label: t("settings.clinical"), icon: <IPill size={14} /> },
+    { id: "delivery", label: t("settings.delivery"), icon: <ICash size={14} /> },
     { id: "coupons", label: t("analytics.couponsTitle"), icon: <IPlus size={14} /> },
     { id: "categories", label: t("settings.categoriesTitle"), icon: <ITag size={14} /> },
     { id: "notifications", label: t("notifications.title"), icon: <IBell size={14} /> },
@@ -74,6 +75,7 @@ export default function Settings() {
         {tab === "data" && <DataTab />}
         {tab === "language" && <LanguageTab />}
         {tab === "clinical" && <ClinicalTab admin={admin} />}
+        {tab === "delivery" && <DeliveryTab admin={admin} />}
         {tab === "coupons" && <CouponsTab admin={admin} />}
         {tab === "categories" && <CategoriesTab admin={admin} />}
         {tab === "notifications" && <NotificationsTab admin={admin} />}
@@ -288,6 +290,34 @@ function LoyaltyTab({ admin }: { admin: boolean }) {
           <Field label="Silver tier at (pts)"><NumInput disabled={!admin} value={l.silverAt} min={1} onChange={(v) => set({ silverAt: v })} /></Field>
           <Field label="Gold tier at (pts)"><NumInput disabled={!admin} value={l.goldAt} min={1} onChange={(v) => set({ goldAt: v })} /></Field>
         </div>
+      </Card>
+    </div>
+  );
+}
+
+/* ---------------------------------- delivery (W3.2) ---------------------------------- */
+function DeliveryTab({ admin }: { admin: boolean }) {
+  const { t } = useTranslation();
+  const { state, dispatch } = usePos();
+  const s = state.settings;
+  const set = (patch: Partial<OrgSettings>) => admin && dispatch({ type: "UPDATE_SETTINGS", patch });
+
+  return (
+    <div className="grid lg:grid-cols-2 gap-4 max-w-[980px]">
+      <Card title={t("settings.delivery")} hint={t("settings.deliveryHint")}>
+        <div className="grid sm:grid-cols-2 gap-3">
+          <Field label={t("settings.deliveryFee")}>
+            <NumInput disabled={!admin} value={s.deliveryFee} min={0} step={0.5} onChange={(v) => set({ deliveryFee: v })} />
+          </Field>
+          <Field label={t("settings.freeThreshold")}>
+            <NumInput disabled={!admin} value={s.freeThreshold} min={0} step={5} onChange={(v) => set({ freeThreshold: v })} />
+          </Field>
+        </div>
+        <p className="mt-3 text-[11px] text-inksoft bg-mist/40 rounded-lg px-3 py-2">
+          {s.freeThreshold > 0
+            ? t("settings.deliveryExample", { fee: money(s.deliveryFee), threshold: money(s.freeThreshold) })
+            : t("settings.deliveryExampleNoThreshold", { fee: money(s.deliveryFee) })}
+        </p>
       </Card>
     </div>
   );
