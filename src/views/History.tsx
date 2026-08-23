@@ -147,6 +147,13 @@ export default function History() {
                   </td>
                   <td className="px-4 py-2.5">
                     <div className="flex justify-end items-center gap-1.5">
+                      {t.payments?.some((p) => p.method === "pay_later" && !p.settledAt) && (
+                        <button
+                          onClick={(e) => { e.stopPropagation(); setSettling({ transaction: t, legIndex: (t.payments ?? []).findIndex((p) => p.method === "pay_later" && !p.settledAt) }); }}
+                          className="px-2 py-1 rounded-md border border-mist text-[10px] font-bold text-inksoft hover:border-pine-700 hover:text-pine-800 hover:bg-pine-100/60 transition active:scale-95 opacity-0 hover-cell">
+                          Settle
+                        </button>
+                      )}
                       {!t.refundOf && !t.refundedAt && !t.voidedAt && canRefund && (
                         <>
                           <button
@@ -176,6 +183,7 @@ export default function History() {
 
       {refunding && <RefundModal tx={refunding} onClose={() => setRefunding(null)} />}
       {voiding && <VoidModal tx={voiding} onClose={() => setVoiding(null)} />}
+      {settling && <SettleModal tx={settling.transaction} legIndex={settling.legIndex} onClose={() => setSettling(null)} />}
       {shiftOpen && <ShiftModal onClose={() => setShiftOpen(false)} onOpenEodZ={() => setEodZOpen(true)} />}
       {eodZOpen && <AllTerminalsZModal onClose={() => setEodZOpen(false)} shifts={state.shifts} fallbackTerminalId={state.settings.terminalId} />}
       {auditOpen && <AuditTrail onClose={() => setAuditOpen(false)} />}
@@ -659,5 +667,61 @@ function MiniStat({ label, value, accent, sub }: { label: string; value: string;
       <p className={cx("num text-lg font-bold leading-tight", accent ? "text-pine-50" : "text-ink")}>{value}</p>
       {sub && <p className={cx("text-[10px] font-semibold", accent ? "text-pine-200" : "text-brick-700")}>{sub}</p>}
     </div>
+  );
+}
+
+function SettleModal({ tx, legIndex, onClose }: { tx: Transaction; legIndex: number; onClose: () => void }) {
+  const { t } = useTranslation();
+  const { dispatch } = usePos();
+  const [method, setMethod] = useState<PayMethod>("cash");
+  const [ref, setRef] = useState("");
+  const leg = tx.payments?.[legIndex];
+  const amount = leg?.amount ?? 0;
+  const confirm = () => {
+    dispatch({ type: "SETTLE_PAY_LATER", transactionId: tx.id, legIndex, method, ref: ref.trim() || undefined });
+    onClose();
+  };
+  return (
+    <Modal onClose={onClose} width={380} labelledBy="settle-title">
+      <div className="flex items-center justify-between px-5 py-3.5 border-b border-mist">
+        <h2 id="settle-title" className="font-display font-bold text-ink">{t("pos.payLaterSettle")}</h2>
+        <button onClick={onClose} className="p-2 rounded-lg hover:bg-mist/50 text-inksoft transition" aria-label="Close"><IX size={15} /></button>
+      </div>
+      <div className="p-5 space-y-4">
+        <div className="flex justify-between text-sm">
+          <span className="text-inksoft">Receipt</span>
+          <span className="num font-bold text-ink">{tx.id}</span>
+        </div>
+        <div className="flex justify-between text-sm">
+          <span className="text-inksoft">{t("pos.payLaterOutstanding")}</span>
+          <span className="num font-bold text-pine-800">{money(amount)}</span>
+        </div>
+        <div>
+          <label className="text-[11px] font-semibold uppercase tracking-[0.14em] text-inksoft">{t("pos.payMethod")}</label>
+          <div className="flex gap-2 mt-1.5">
+            {(["cash", "card", "store_credit"] as PayMethod[]).map((m) => (
+              <button key={m} onClick={() => setMethod(m)}
+                className={cx("px-3 py-1.5 rounded-lg border text-xs font-bold transition",
+                  method === m ? "bg-pine-800 border-pine-800 text-pine-50" : "border-mist text-inksoft hover:border-pine-600")}>
+                {m === "cash" ? "Cash" : m === "card" ? "Card" : "Store credit"}
+              </button>
+            ))}
+          </div>
+        </div>
+        {method === "card" && (
+          <div>
+            <label className="text-[11px] font-semibold uppercase tracking-[0.14em] text-inksoft">Reference</label>
+            <input value={ref} onChange={(e) => setRef(e.target.value)} placeholder="e.g. AUTH-4821"
+              className="mt-1.5 w-full px-3 py-2 rounded-lg border border-mist text-sm bg-paper focus:outline-none focus:ring-2 focus:ring-pine-600/30" />
+          </div>
+        )}
+      </div>
+      <div className="flex gap-2 px-5 py-4 border-t border-mist">
+        <button onClick={onClose} className="flex-1 py-2.5 rounded-lg border border-mist text-sm font-semibold text-inksoft hover:bg-mist/50 transition">Cancel</button>
+        <button onClick={confirm} className="flex-1 py-2.5 rounded-lg bg-pine-800 text-pine-50 font-display font-semibold text-sm hover:bg-pine-700 transition">
+          {t("pos.settleConfirm")} · {money(amount)}
+        </button>
+      </div>
+    </Modal>
   );
 }

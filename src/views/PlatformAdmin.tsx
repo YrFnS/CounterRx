@@ -118,7 +118,9 @@ export default function PlatformAdmin() {
         },
         products: [],
       });
-      // TODO: create owner staff, import catalog
+      // create owner staff account in state
+      dispatch({ type: "ADD_STAFF", name: provisionData.ownerName, role: "pharmacy_admin", pin: provisionData.ownerPin });
+      // TODO: import catalog from CSV
       setProvisionStep(1);
       setProvisionData({
         orgName: "", ownerEmail: "", ownerName: "", ownerPin: "",

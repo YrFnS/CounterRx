@@ -713,9 +713,12 @@ function ReceiptBody({ tx }: { tx: Transaction }) {
       <div className="receipt-dash my-3" />
       {(tx.payments ?? [{ method: tx.method, amount: tx.total }]).map((pg, i) => (
         <div key={i} className="flex justify-between">
-          <span className="uppercase">{i === 0 ? "Paid by" : "+ then"} {pg.method}</span>
+          <span className="uppercase">{i === 0 ? "Paid by" : "+ then"} {pg.method === "pay_later" ? "pay later" : pg.method}</span>
           <span>{money(pg.amount)}</span>
         </div>
+      ))}
+      {(tx.payments ?? []).filter((p) => p.method === "pay_later" && !p.settledAt).map((p, i) => (
+        <p key={i} className="mt-1 text-center font-bold text-[11px] tracking-[0.12em] text-brick-700">PAY LATER DUE — {new Date(p.dueDate ?? tx.at).toLocaleDateString("en-US", { month: "short", day: "numeric" })}</p>
       ))}
       {tx.pointsEarned !== undefined && (
         <div className="flex justify-between font-semibold"><span>Loyalty earned</span><span>+{tx.pointsEarned} pts</span></div>

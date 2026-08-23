@@ -164,7 +164,10 @@
     "promotionsApplied": "Auto-applied promotions",
     "promoOverride": "Override",
     "promoOverrideHint": "Dismiss this promotion — manager PIN required",
-    "promoOverrideConfirm": "Confirm"
+    "promoOverrideConfirm": "Confirm",
+    "payLaterOutstanding": "Outstanding",
+    "payMethod": "Payment method",
+    "settleConfirm": "Confirm settlement"
   },
   "prescriptions": {
     "title": "Prescriptions",

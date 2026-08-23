@@ -164,7 +164,10 @@
     "promotionsApplied": "العروض المطبقة تلقائياً",
     "promoOverride": "تجاهل",
     "promoOverrideHint": "تجاهل هذا العرض — يتطلب رقم تعريف المدير",
-    "promoOverrideConfirm": "تأكيد"
+    "promoOverrideConfirm": "تأكيد",
+    "payLaterOutstanding": "المستحق",
+    "payMethod": "طريقة الدفع",
+    "settleConfirm": "تأكيد التسوية"
   },
   "prescriptions": {
     "title": "الوصفات",

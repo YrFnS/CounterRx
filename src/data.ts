@@ -904,6 +904,7 @@ export interface OrgSettings {
   idleLockMins: number;            // 0 = never
   autoSnapshotMins: number;        // 0 = off
   terminalId: string;
+  homeBranchId: string;           // default branch for transfers, receipts, org identity
   hardwareEnabled: boolean;        // Phase E: Web Serial hardware (printer/drawer/scale)
   deliveryFee: number;              // default delivery charge (W3.2)
   freeThreshold: number;            // orders ≥ this amount ship free; 0 = no threshold (W3.2)
@@ -933,6 +934,7 @@ export function makeSettings(): OrgSettings {
     idleLockMins: 10,
     autoSnapshotMins: 15,
     terminalId: "T-01",
+    homeBranchId: "BR-01",
     hardwareEnabled: false,
     deliveryFee: 0,
     freeThreshold: 0,
@@ -1141,7 +1143,6 @@ export interface Transfer {
   toBranch: string; status: TransferStatus;
   createdAt: number; requestedBy: string; note?: string;
 }
-export const HOME_BRANCH = "Main branch";
 export const BRANCHES_FALLBACK: Branch[] = [
   { id: "BR-01", name: "Main Branch", address: "123 Main St, Capital City", phone: "+1-555-0101", active: true, sort: 0 },
   { id: "BR-02", name: "North Branch", address: "456 North Ave, Capital City", phone: "+1-555-0102", active: true, sort: 1 },
