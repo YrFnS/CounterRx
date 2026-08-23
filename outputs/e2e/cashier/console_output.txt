@@ -1,0 +1,16 @@
+[warning] [sync] persist staff failed {code: "42501", details: null, hint: null, message: "new row violates row-level security policy for table "staff""}
+[warning] [sync] persist prescribers failed {code: "42501", details: null, hint: null, message: "new row violates row-level security policy for table "prescribers""}
+[warning] [sync] persist cold_chain_log failed {code: "42501", details: null, hint: null, message: "new row violates row-level security policy for table "cold_chain_log""}
+[warning] [sync] persist prescriptions failed {code: "42501", details: null, hint: null, message: "new row violates row-level security policy for table "prescriptions""}
+[warning] [sync] persist backorders failed {code: "42501", details: null, hint: null, message: "new row violates row-level security policy for table "backorders""}
+[warning] [sync] persist suppliers failed {code: "42501", details: null, hint: null, message: "new row violates row-level security policy for table "suppliers""}
+[warning] [sync] persist transfers failed {code: "42501", details: null, hint: null, message: "new row violates row-level security policy for table "transfers""}
+[warning] [sync] persist ap_invoices failed {code: "42501", details: null, hint: null, message: "new row violates row-level security policy for table "ap_invoices""}
+[warning] [sync] persist purchase_orders failed {code: "42501", details: null, hint: null, message: "new row violates row-level security policy for table "purchase_orders""}
+[warning] [sync] persist settings failed {code: "42501", details: null, hint: null, message: "new row violates row-level security policy for table "settings""}
+[warning] [sync] persist coupons failed {code: "42501", details: null, hint: null, message: "new row violates row-level security policy for table "coupons""}
+[warning] [sync] persist expenses failed {code: "42501", details: null, hint: null, message: "new row violates row-level security policy for table "expenses""}
+[warning] [sync] persist rx_transfers failed {code: "42501", details: null, hint: null, message: "new row violates row-level security policy for table "rx_transfers""}
+[warning] [sync] persist audit_log failed {code: "21000", details: null, hint: "Ensure that no rows proposed for insertion within …e same command have duplicate constrained values.", message: "ON CONFLICT DO UPDATE command cannot affect row a second time"}
+[warning] [sync] persist products failed {code: "42501", details: null, hint: null, message: "new row violates row-level security policy for table "products""}
+[warning] [sync] persist interaction_pairs failed {code: "42501", details: null, hint: null, message: "new row violates row-level security policy for table "interaction_pairs""}

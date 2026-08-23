@@ -3,8 +3,9 @@ import { useTranslation } from "react-i18next";
 import type { ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { usePos, money, cartTotals } from "./store";
-import { findInteractions, can, creditByCode, deliveryFeeFor } from "./data";
+import { findInteractions, can, creditByCode, deliveryFeeFor, hashPin } from "./data";
 import type { PayMethod, PaymentLeg, Transaction, Product, StoreCredit } from "./data";
+import { applicablePromotions } from "./lib/promotions";
 import { Modal, cx } from "./ui";
 import { ICash, ICard, IShield, IX, IPrint, ICheck, ISplit, IUsers, IStar, IAlert, ICode, ICopy, IDownload } from "./icons";
 
@@ -69,6 +70,25 @@ export function PaymentModal() {
     couponMatch && couponMatch.customerId && couponMatch.customerId !== state.saleCustomerId ? tr("analytics.couponScope", "Coupon is for another customer") :
     undefined;
   const couponValid = !!couponMatch && !couponError;
+
+  /* W3.4 promotions engine — rules auto-apply to this cart; a manager PIN can dismiss each one */
+  const [dismissedPromos, setDismissedPromos] = useState<Set<string>>(new Set());
+  const [promoPin, setPromoPin] = useState<string | null>(null);
+  const [promoPinValue, setPromoPinValue] = useState("");
+  const appliedPromotions = useMemo(
+    () => applicablePromotions(state, state.cart, customer).filter((a) => !dismissedPromos.has(a.promotion.id)),
+    [state, state.cart, customer, dismissedPromos]);
+  const promoTotal = round2(appliedPromotions.reduce((s, a) => s + a.amount, 0));
+  /* dismiss needs a manager PIN unless the user already holds approve_discount */
+  const promoPinOk = promoPinValue.length > 0 && (can(state.user?.role, "approve_discount")
+    || state.staff.some((s) => can(s.role, "approve_discount") && s.pinHash === hashPin(promoPinValue)));
+  const requestDismiss = (id: string) => { setPromoPin(id); setPromoPinValue(""); };
+  const confirmDismiss = () => {
+    if (!promoPinOk || !promoPin) return;
+    dispatch({ type: "AUDIT_LOG", kind: "money", detail: `Promotion dismissed at register — ${state.promotions.find((p) => p.id === promoPin)?.name ?? promoPin} · by ${state.user?.name ?? "staff"} (manager PIN)` });
+    setDismissedPromos((prev) => new Set(prev).add(promoPin));
+    setPromoPin(null); setPromoPinValue("");
+  };
 
   /* drug–drug interaction check across the cart (§3/§4) */
   const interactions = useMemo(
@@ -156,6 +176,8 @@ export function PaymentModal() {
       type: "COMPLETE_SALE", payments, discountPct, taxExempt, idChecked,
       couponDiscount: couponDiscount > 0 ? couponDiscount : undefined,
       invoiceDiscountAmt: invoiceAmtInput > 0 ? invoiceAmtInput : undefined,
+      promotionDiscount: promoTotal > 0 ? promoTotal : undefined,
+      promotionNames: appliedPromotions.map((a) => a.promotion.name),
       tendered: !split && leg1 === "cash" ? tenderedNum : undefined,
       restricted: restrictedLines.length > 0
         ? { purchaser: rPurchaser, idType: rIdType, idLast4: rIdLast4 }
@@ -263,6 +285,7 @@ export function PaymentModal() {
             {t.invoiceAmt > 0 && (
               <Row k={tr("discounts.invoiceRow")} v={<span className="text-brick-700">−{money(t.invoiceAmt)}</span>} />
             )}
+            {t.promo > 0 && <Row k={<span className="text-pine-700 font-semibold">{tr("pos.promotionsApplied")}</span>} v={<span className="text-pine-700">−{money(t.promo)}</span>} />}
             {t.loyaltyDeduct > 0 && <Row k={<span className="text-pine-700 font-semibold">Points redeemed · {state.redeemPoints} pts</span>} v={<span className="text-pine-700">−{money(t.loyaltyDeduct)}</span>} />}
             <div className="receipt-dash pt-2 mt-2">
               <Row k={<span className="font-semibold text-ink">Total</span>} v={<span className="font-bold text-pine-800">{money(t.total)}</span>} />
@@ -487,6 +510,45 @@ export function PaymentModal() {
               )}
             </div>
           )}
+          {appliedPromotions.length > 0 && (
+            <div className="rounded-lg border border-pine-300 bg-pine-100/60 p-3 space-y-2">
+              <label className="text-[11px] font-semibold uppercase tracking-[0.14em] text-pine-800">{tr("pos.promotionsApplied")}</label>
+              {appliedPromotions.map((a) => (
+                <div key={a.promotion.id} className="flex items-center justify-between gap-2 text-sm bg-card rounded-md px-2.5 py-1.5">
+                  <span className="font-bold truncate">{a.promotion.name}</span>
+                  <span className="flex items-center gap-2 shrink-0">
+                    <span className="num font-bold text-pine-700">−{money(a.amount)}</span>
+                    {!split && (
+                      <button onClick={() => requestDismiss(a.promotion.id)}
+                        className="text-[10px] font-bold uppercase tracking-wide text-inksoft hover:text-brick-600 transition"
+                        title={tr("pos.promoOverrideHint")}>
+                        {tr("pos.promoOverride")}
+                      </button>
+                    )}
+                  </span>
+                </div>
+              ))}
+              {promoPin && (
+                <div className="anim-fade-up space-y-1.5">
+                  {promoPinValue.length > 0 && !promoPinOk && (
+                    <p className="text-[11px] text-brick-700 font-semibold">{tr("supply.woPinBad")}</p>
+                  )}
+                  <div className="flex gap-2">
+                    <input autoFocus value={promoPinValue}
+                      onChange={(e) => setPromoPinValue(e.target.value.replace(/[^0-9]/g, "").slice(0, 6))}
+                      onKeyDown={(e) => e.key === "Enter" && confirmDismiss()}
+                      inputMode="numeric" placeholder="••••"
+                      className="num flex-1 px-3 py-1.5 rounded-md border border-mist bg-card text-sm tracking-[0.3em] focus:border-pine-500 focus:outline-none" />
+                    <button onClick={confirmDismiss} disabled={!promoPinOk}
+                      className={cx("px-3 py-1.5 rounded-md text-xs font-bold transition whitespace-nowrap",
+                        promoPinOk ? "bg-brick-600 text-brick-50 hover:bg-brick-500" : "bg-mist text-inksoft cursor-not-allowed")}>
+                      {tr("pos.promoOverrideConfirm")}
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
           {!split && leg1 === "pay_later" && (
             <div className="mt-4 anim-fade-up space-y-2">
               <div className="flex items-center gap-2 text-xs font-bold text-honey-800 bg-honey-100 border border-honey-300 rounded-lg px-3 py-2">
@@ -641,6 +703,12 @@ function ReceiptBody({ tx }: { tx: Transaction }) {
         </>
       )}
       {tx.loyaltyDeduct && tx.loyaltyDeduct > 0 && <div className="flex justify-between"><span>Points · {tx.pointsRedeemed} pts</span><span>−{money(tx.loyaltyDeduct)}</span></div>}
+      {tx.promotionDiscount && tx.promotionDiscount > 0 && (
+        <div className="flex justify-between">
+          <span>{tx.promotionNames?.length ? `Promotions · ${tx.promotionNames.join(", ")}` : "Promotions"}</span>
+          <span>−{money(tx.promotionDiscount)}</span>
+        </div>
+      )}
       <div className="flex justify-between font-bold text-[14px] mt-1"><span>TOTAL</span><span>{money(tx.total)}</span></div>
       <div className="receipt-dash my-3" />
       {(tx.payments ?? [{ method: tx.method, amount: tx.total }]).map((pg, i) => (

@@ -47,6 +47,7 @@ function makeState(overrides: Record<string, unknown> = {}) {
     snapshotVersion: 0,
     outboxCount: 0,
     conflicts: [],
+    promotions: [],
     notificationLog: [] as NotificationLogEntry[],
     ...overrides,
   };

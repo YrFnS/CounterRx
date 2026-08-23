@@ -28,6 +28,8 @@ import type {
   Coupon,
   Category,
   Branch,
+  Promotion,
+  PromotionKind,
 } from "../data";
 import type { NotificationLogEntry } from "./notify";
 import { makeSettings } from "../data";
@@ -61,6 +63,7 @@ export interface BackendData {
   coupons: Coupon[];
   categories: Category[];
   branches: Branch[];
+  promotions: Promotion[];
   notificationLog: NotificationLogEntry[];
 }
 
@@ -69,7 +72,7 @@ const TABLES = [
   "products", "transactions", "prescriptions", "prescribers", "customers", "transfers",
   "backorders", "rx_transfers", "suppliers", "purchase_orders", "ap_invoices", "expenses",
   "deliveries", "web_orders", "time_entries", "staff", "settings", "restricted_log",
-  "audit_log", "shifts", "store_credits", "snapshots", "interaction_pairs", "cold_chain_log", "coupons", "categories", "branches",
+  "audit_log", "shifts", "store_credits", "snapshots", "interaction_pairs", "cold_chain_log", "coupons", "categories", "branches", "promotions",
   "notification_log",
 ] as const;
 
@@ -563,6 +566,21 @@ function notificationLogFrom(row: Row): NotificationLogEntry {
   };
 }
 
+function promotionFrom(row: Row): Promotion {
+  return {
+    id: text(row, "id"),
+    name: text(row, "name"),
+    kind: text(row, "kind") as PromotionKind,
+    categoryId: optionalText(row, "category_id"),
+    pct: numberValue(row, "pct"),
+    windowStart: optionalNumber(row, "window_start"),
+    windowEnd: optionalNumber(row, "window_end"),
+    active: booleanValue(row, "active", true),
+    createdAt: rowEpoch(row, "created_at"),
+    updatedAt: rowEpoch(row, "updated_at"),
+  };
+}
+
 export function rowsFor(data: BackendData): Record<TableName, Row[]> {
   return {
     products: data.products.map((p) => ({
@@ -692,6 +710,12 @@ export function rowsFor(data: BackendData): Record<TableName, Row[]> {
     coupons: data.coupons.map((c) => ({ id: c.id, code: c.code, type: c.type, value: c.value, expires_at: nullable(c.expiresAt), customer_id: nullable(c.customerId), active: c.active, created_at: timestamp(c.createdAt), updated_at: timestamp(c.updatedAt) })),
     categories: data.categories.map((c) => ({ id: c.id, label: c.label, color: c.color, group_id: c.groupId, sort: c.sort, archived: c.archived, parent_id: nullable(c.parentId), organization_id: "00000000-0000-0000-0000-000000000001" })),
     branches: data.branches.map((b) => ({ id: b.id, name: b.name, address: b.address ?? null, phone: b.phone ?? null, active: b.active, sort: b.sort, organization_id: "00000000-0000-0000-0000-000000000001" })),
+    promotions: data.promotions.map((p) => ({
+      id: p.id, name: p.name, kind: p.kind, category_id: nullable(p.categoryId), pct: p.pct,
+      window_start: nullable(p.windowStart), window_end: nullable(p.windowEnd), active: p.active,
+      created_at: timestamp(p.createdAt), updated_at: timestamp(p.updatedAt),
+      organization_id: "00000000-0000-0000-0000-000000000001",
+    })),
     /* log-only table: never upserted back (persistBackendData skips empty payloads) */
     notification_log: [],
   };
@@ -736,6 +760,7 @@ const TABLE_COLLECTION: Record<string, keyof BackendData> = {
   coupons: "coupons",
   categories: "categories",
   branches: "branches",
+  promotions: "promotions",
 };
 
 /** Build the full-org export bundle from a BackendData snapshot (single source of truth: rowsFor). */
@@ -868,6 +893,7 @@ export async function loadBackendData(seed: BackendData): Promise<LoadResult> {
         coupons: byTable.coupons.map(couponFrom),
         categories: byTable.categories.map(categoryFrom),
         branches: byTable.branches.map(branchFrom),
+        promotions: byTable.promotions.map(promotionFrom),
         notificationLog: byTable.notification_log.map(notificationLogFrom),
       },
     };

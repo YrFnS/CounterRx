@@ -101,6 +101,7 @@ import type {
   ColdChainLog,
   Coupon,
   Branch,
+  Promotion,
 } from "./data";
 import {
   makeStaff,
@@ -189,6 +190,7 @@ interface State {
   interactionPairs: InteractionPair[];
   coldChainLog: ColdChainLog[];
   coupons: Coupon[];
+  promotions: Promotion[];
   categories: Category[];
   branches: Branch[];
   notificationLog: NotificationLogEntry[];
@@ -357,13 +359,15 @@ type Action =
   | { type: "REDEEM_STORE_CREDIT"; id: string; amount: number }
   | { type: "SAVE_COUPON"; coupon: Coupon }
   | { type: "DELETE_COUPON"; id: string }
+  | { type: "SAVE_PROMOTION"; promotion: Promotion }
+  | { type: "DELETE_PROMOTION"; id: string }
   | { type: "SAVE_CATEGORY"; category: Category }
   | { type: "DELETE_CATEGORY"; id: string }
   | { type: "SUPPLIER_SAVE"; supplier: Supplier }
   | { type: "SUPPLIER_DELETE"; id: string }
   | { type: "EXPIRE_HELDS" }
   | { type: "OPEN_PAY"; open: boolean }
-  | { type: "COMPLETE_SALE"; payments: PaymentLeg[]; tendered?: number; discountPct: number; taxExempt: boolean; idChecked: boolean; restricted?: { purchaser: string; idType: string; idLast4: string }; couponDiscount?: number; invoiceDiscountAmt?: number; approvedBy?: string; delivery?: { address: string; fee: number; scheduledAt: number } }
+  | { type: "COMPLETE_SALE"; payments: PaymentLeg[]; tendered?: number; discountPct: number; taxExempt: boolean; idChecked: boolean; restricted?: { purchaser: string; idType: string; idLast4: string }; couponDiscount?: number; invoiceDiscountAmt?: number; approvedBy?: string; promotionDiscount?: number; promotionNames?: string[]; promotionOverridden?: boolean; delivery?: { address: string; fee: number; scheduledAt: number } }
   | { type: "SETTLE_PAY_LATER"; transactionId: string; legIndex: number; method: PayMethod; ref?: string }
   | { type: "OPEN_RECEIPT"; tx: Transaction | null }
   | {
@@ -562,6 +566,7 @@ export const seed = (): Pick<
   | "coupons"
   | "categories"
   | "branches"
+  | "promotions"
 > => {
   const now = Date.now();
   const products = makeProducts(now);
@@ -592,6 +597,7 @@ export const seed = (): Pick<
     shifts: [],
     interactionPairs: [],
     coupons: [],
+    promotions: [],
     categories: CATEGORIES_FALLBACK,
     branches: BRANCHES_FALLBACK,
     staff: makeStaff(now),
@@ -670,6 +676,7 @@ function load(): State {
           coupons: saved.coupons ?? [],
           categories: saved.categories ?? CATEGORIES_FALLBACK,
           branches: saved.branches ?? BRANCHES_FALLBACK,
+          promotions: saved.promotions ?? [],
         };
       }
     }
@@ -715,6 +722,7 @@ export function cartTotals(
   taxExempt = false,
   couponDiscount = 0,
   invoiceDiscountAmt = 0,
+  promoDiscount = 0,
 ) {
   const lines: TxLine[] = state.cart.map((c) => {
     const p = state.products.find((x) => x.id === c.productId)!;
@@ -784,10 +792,12 @@ export function cartTotals(
   );
   const totalInvoiceDiscount = round2(discount + invoiceAmt);
   const coupon = round2(Math.max(0, couponDiscount));
+  /* W3.4 auto-applied promotions ride the same capped path as coupons */
+  const promo = round2(Math.max(0, Math.min(promoDiscount, Math.max(0, subtotal - lineDiscounts - totalInvoiceDiscount - coupon))));
   /* loyalty redemption — org-configurable chunks (§7), capped by the payable balance */
   const loy = state.settings.loyalty;
   const payable = round2(
-    Math.max(0, subtotal - lineDiscounts - totalInvoiceDiscount - coupon),
+    Math.max(0, subtotal - lineDiscounts - totalInvoiceDiscount - coupon - promo),
   );
   const loyaltyDeduct = round2(
     Math.min(
@@ -805,6 +815,7 @@ export function cartTotals(
     lineDiscounts,
     invoiceAmt,
     coupon,
+    promo,
     loyaltyDeduct,
     tax,
     total: round2(payable - loyaltyDeduct + tax),
@@ -2037,6 +2048,19 @@ export function reducer(state: State, a: Action): State {
       );
     }
 
+    case "SAVE_PROMOTION": {
+      if (!can(state.user?.role, "manage_settings")) return withToast(state, "error", "Admin required to manage promotions");
+      const exists = state.promotions.findIndex((p) => p.id === a.promotion.id);
+      const promotions = exists >= 0 ? state.promotions.map((p) => (p.id === a.promotion.id ? a.promotion : p)) : [...state.promotions, a.promotion];
+      return withToast(withAudit({ ...state, promotions }, "settings", exists >= 0 ? `Promotion ${a.promotion.name} updated` : `Promotion ${a.promotion.name} created`), "success", exists >= 0 ? i18n.t("toast.promotionUpdated", { name: a.promotion.name }) : i18n.t("toast.promotionCreated", { name: a.promotion.name }));
+    }
+
+    case "DELETE_PROMOTION": {
+      if (!can(state.user?.role, "manage_settings")) return withToast(state, "error", "Admin required to manage promotions");
+      const promotions = state.promotions.filter((p) => p.id !== a.id);
+      return withToast(withAudit({ ...state, promotions }, "settings", `Promotion ${a.id} deleted`), "success", i18n.t("toast.promotionDeleted"));
+    }
+
     /* Dynamic categories (P4) — archived categories stay resolvable for history. */
     case "SAVE_CATEGORY": {
       if (!can(state.user?.role, "manage_settings"))
@@ -2180,6 +2204,7 @@ export function reducer(state: State, a: Action): State {
         a.taxExempt,
         a.couponDiscount ?? 0,
         a.invoiceDiscountAmt ?? 0,
+        a.promotionDiscount ?? 0,
       );
       const customer =
         state.customers.find((c) => c.id === state.saleCustomerId) ?? null;
@@ -2292,6 +2317,8 @@ export function reducer(state: State, a: Action): State {
         subtotal: t.subtotal,
         discount: t.discount,
         couponDiscount: t.coupon > 0 ? t.coupon : undefined,
+        promotionDiscount: t.promo > 0 ? t.promo : undefined,
+        promotionNames: a.promotionNames,
         tax: t.tax,
         total: t.total,
         invoiceDiscountAmt:
@@ -2354,6 +2381,14 @@ export function reducer(state: State, a: Action): State {
         "sale",
         `${tx.id} · $${t.total.toFixed(2)} · ${tenderLabel}${customer ? ` · ${customer.name}` : ""}${a.taxExempt ? " · TAX EXEMPT" : ""}`,
       );
+      /* W3.4 — auto-applied promotions are audited with the rule names that fired */
+      if (t.promo > 0 && a.promotionNames && a.promotionNames.length > 0) {
+        next = withAudit(
+          next,
+          "sale",
+          `${tx.id} · promotion auto-applied: ${a.promotionNames.join(", ")} — −$${t.promo.toFixed(2)}${a.promotionOverridden ? ` · overridden by ${state.user?.name ?? "staff"}` : ""}`,
+        );
+      }
       /* record the sale on the open shift ledger so X/Z reports reflect it (Phase A) */
       if (next.currentShift) {
         const updated = recordShiftTransaction(
@@ -4054,6 +4089,7 @@ export const backendDataFromState = (state: State): BackendData => ({
   coupons: state.coupons ?? [],
   categories: state.categories ?? [],
   branches: state.branches ?? [],
+  promotions: state.promotions ?? [],
   notificationLog: state.notificationLog ?? [],
 });
 

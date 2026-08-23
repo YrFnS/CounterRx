@@ -324,6 +324,8 @@ export interface Transaction {
   loyaltyDeduct?: number;    // value of redeemed points
   couponDiscount?: number;    // coupon applied (Phase F)
   invoiceDiscountAmt?: number; // fixed-amount invoice discount (on top of % discount)
+  promotionDiscount?: number;   // auto-applied promotions total (W3.4)
+  promotionNames?: string[];    // which promotion rules fired (audit trail)
   pointsEarned?: number;
   pointsRedeemed?: number;
 }
@@ -558,6 +560,23 @@ export interface Coupon {
   value: number;
   expiresAt?: number;
   customerId?: string;
+  active: boolean;
+  createdAt: number;
+  updatedAt: number;
+}
+
+/** Promotion kinds (W3.4 — rules engine, beyond coupons). */
+export type PromotionKind = "birthday" | "first_visit" | "category_pct";
+
+/** Promotion rule — auto-applied at the register. Mirrors the `promotions` table (migration 0018). */
+export interface Promotion {
+  id: string;
+  name: string;
+  kind: PromotionKind;
+  categoryId?: string;        // category_pct → matches product.category slug
+  pct: number;                // 1–100
+  windowStart?: number;       // epoch ms — nullable = open-ended
+  windowEnd?: number;
   active: boolean;
   createdAt: number;
   updatedAt: number;
@@ -1679,7 +1698,7 @@ export function allTerminalsZReport(shifts: Shift[], day: Date, fallbackTerminal
 }
 
 /** Analytics helpers for Phase F — LTV, supplier performance, expiry at-risk */
-export function calculateLTV(customers: Customer[], transactions: Transaction[], now: number = Date.now()): { customerId: string; ltv: number; visits: number; avgBasket: number; lastVisit: number }[] {
+export function calculateLTV(customers: Customer[], transactions: Transaction[], _now: number = Date.now()): { customerId: string; ltv: number; visits: number; avgBasket: number; lastVisit: number }[] {
   const results: { customerId: string; ltv: number; visits: number; avgBasket: number; lastVisit: number }[] = [];
   
   for (const customer of customers) {
@@ -1697,7 +1716,7 @@ export function calculateLTV(customers: Customer[], transactions: Transaction[],
   return results.sort((a, b) => b.ltv - a.ltv);
 }
 
-export function supplierPerformance(purchaseOrders: PurchaseOrder[], apInvoices: ApInvoice[], deliveries: Delivery[], suppliers: Supplier[], now: number = Date.now()): { supplierId: string; supplierName: string; onTimeRate: number; avgLeadDays: number; totalSpend: number; invoiceCount: number }[] {
+export function supplierPerformance(purchaseOrders: PurchaseOrder[], apInvoices: ApInvoice[], _deliveries: Delivery[], suppliers: Supplier[], _now: number = Date.now()): { supplierId: string; supplierName: string; onTimeRate: number; avgLeadDays: number; totalSpend: number; invoiceCount: number }[] {
   const results: { supplierId: string; supplierName: string; onTimeRate: number; avgLeadDays: number; totalSpend: number; invoiceCount: number }[] = [];
   
   for (const supplier of suppliers) {
@@ -1733,8 +1752,7 @@ export function supplierPerformance(purchaseOrders: PurchaseOrder[], apInvoices:
 
 export function expiryAtRisk(products: Product[], windowDays: number = 90, now: number = Date.now()): { productId: string; productName: string; batch: string; qty: number; expiryDate: number; daysUntilExpiry: number; valueAtRisk: number }[] {
   const results: { productId: string; productName: string; batch: string; qty: number; expiryDate: number; daysUntilExpiry: number; valueAtRisk: number }[] = [];
-  const windowMs = windowDays * 24 * 60 * 60 * 1000;
-  
+
   for (const product of products) {
     for (const batch of product.batches) {
       if (batch.qty <= 0) continue;
