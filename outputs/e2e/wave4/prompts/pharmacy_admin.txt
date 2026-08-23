@@ -1,0 +1,15 @@
+You are running browser E2E verification for CounterRx (https://counterrx.vercel.app), a pharmacy POS. Load the agent-browser skill (C:\Users\Itokoro\.pi\agent\skills\agent-browser\SKILL.md) and follow it to drive a real browser.
+
+TASK: log in as pharmacy_admin and verify the admin access surface end-to-end.
+
+LOGIN: s001@counterrx.local / CRxS0013333. Click into the email+password login form, type them, click Sign In. If you see "Backend unavailable", click "Retry connection" once. Take a screenshot of the logged-in home screen.
+
+VERIFY (screenshot each step, save under C:\Users\Itokoro\CounterRx\outputs\e2e\wave4\pharmacy_admin\):
+1. Confirm header shows "D. Whitfield" (or "S-001").
+2. Navigate each nav item: Register, Dashboard, Inventory, Prescriptions, Customers, History, Finance, Reports, Settings. Every view should open and render data (tables/list non-empty). Register should show products, Dashboard should show stats, Inventory should list products, etc.
+3. Navigate to Settings → Platform tab. Confirm it says "Access denied" or is hidden (pharmacy_admin is NOT super_admin).
+4. Open Register, search for a product, add to cart, open Payment modal — verify it shows. Do NOT complete the payment.
+5. Open Reports → Till, view X/Z report data.
+6. Write report: C:\Users\Itokoro\CounterRx\outputs\e2e\wave4\pharmacy_admin\REPORT.md with: login ok?, each nav item verified (title, data visible), denied items, screenshot file names, and any failures.
+
+Do NOT modify source files, delete data, or create test patients/customers.

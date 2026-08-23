@@ -1,0 +1,18 @@
+You are running browser E2E verification for CounterRx (https://counterrx.vercel.app), a pharmacy POS. Load the agent-browser skill (C:\Users\Itokoro\.pi\agent\skills\agent-browser\SKILL.md) and follow it to drive a real browser.
+
+TASK: log in as super_admin and verify the platform-owner access surface end-to-end.
+
+LOGIN: s005@counterrx.local / CRxS0055555. Click into the email+password login form, type them, click Sign In. If you see "Backend unavailable", click "Retry connection" once. Take a screenshot of the logged-in home screen.
+
+VERIFY (screenshot each step, save under C:\Users\Itokoro\CounterRx\outputs\e2e\wave4\super_admin\):
+1. Confirm header shows "T. Okoye".
+2. Navigate Register, Dashboard, Inventory, Prescriptions, Customers, History, Finance, Reports, Settings. Every view should open and render data.
+3. CRITICAL: Settings → Platform tab MUST be visible (only super_admin sees it). Open it and verify:
+   - Organizations table lists orgs (should show at least 4: Default org + demo tenants, one suspended).
+   - Suspend/activate buttons visible.
+   - Feature flag selects/checkboxes (Claims mode, NDC live lookup, Delivery, AI) present.
+   - Provision wizard (New organization → org info → catalog CSV upload + column mapping) accessible.
+4. Verify Settings → Staff management works (add/edit staff).
+5. Write report: C:\Users\Itokoro\CounterRx\outputs\e2e\wave4\super_admin\REPORT.md with login ok?, each nav item verified, Platform tab verified in detail (org rows, flags, provision wizard), actions taken, screenshot file names, and any failures.
+
+Do NOT modify source files, delete data, or create test patients/customers. DO NOT actually suspend an org or provision a tenant in the live DB — just verify the UI renders and controls are present.

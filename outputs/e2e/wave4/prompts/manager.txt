@@ -1,0 +1,16 @@
+You are running browser E2E verification for CounterRx (https://counterrx.vercel.app), a pharmacy POS. Load the agent-browser skill (C:\Users\Itokoro\.pi\agent\skills\agent-browser\SKILL.md) and follow it to drive a real browser.
+
+TASK: log in as manager and verify the manager access surface end-to-end.
+
+LOGIN: s006@counterrx.local / CRxS0066666. Click into the email+password login form, type them, click Sign In. If you see "Backend unavailable", click "Retry connection" once. Take a screenshot of the logged-in home screen.
+
+VERIFY (screenshot each step, save under C:\Users\Itokoro\CounterRx\outputs\e2e\wave4\manager\):
+1. Confirm header shows "K. Asante".
+2. Navigate each nav item you can see: Register, Dashboard, Inventory, Prescriptions, Customers, History, Finance, Reports, Settings. Every view should open and render data.
+3. Open Till (if in nav): verify Till & Reports opens with shift ledger / X-Z reports.
+4. Open Reports: verify X/Z report viewer with per-terminal breakdown (multi-terminal recon), Recall tab, Report builder filter bar.
+5. Open Inventory: verify Products/Suppliers tabs, cycle count, transfer pickers reading branches (BR-01/02/03).
+6. Settings: verify you CAN manage staff (Team tab) but NOT the Platform tab (Access denied).
+7. Write report: C:\Users\Itokoro\CounterRx\outputs\e2e\wave4\manager\REPORT.md with login ok?, each nav item verified, denied items, actions taken, screenshot file names, and any failures.
+
+Do NOT modify source files, delete data, or create test patients/customers.

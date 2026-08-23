@@ -1,0 +1,16 @@
+You are running browser E2E verification for CounterRx (https://counterrx.vercel.app), a pharmacy POS. Load the agent-browser skill (C:\Users\Itokoro\.pi\agent\skills\agent-browser\SKILL.md) and follow it to drive a real browser.
+
+TASK: log in as pharmacist and verify the clinical access surface end-to-end.
+
+LOGIN: s002@counterrx.local / CRxS0022222. Click into the email+password login form, type them, click Sign In. If you see "Backend unavailable", click "Retry connection" once. Take a screenshot of the logged-in home screen.
+
+VERIFY (screenshot each step, save under C:\Users\Itokoro\CounterRx\outputs\e2e\wave4\pharmacist\):
+1. Confirm header shows "R. Mensah, RPh".
+2. Navigate each nav item you can see: Register, Dashboard, Inventory, Prescriptions, Customers, History, Finance, Reports, Settings. Every view should open and render data. Focus on Prescriptions: it should show the Rx queue with prescriptions, and the Claims tab should exist (NCPDP sandbox). 
+3. In Prescriptions, verify the Rx list renders, and Claims tab shows claim records (sandbox).
+4. Open Customers, pick a customer, view their profile (eligibility check button visible if applicable).
+5. Open Reports, verify Till/Reports load.
+6. Settings: confirm you do NOT see a Platform tab and cannot access Staff management if not permitted (Access denied).
+7. Write report: C:\Users\Itokoro\CounterRx\outputs\e2e\wave4\pharmacist\REPORT.md with login ok?, each nav item verified, denied items, actions taken, screenshot file names, and any failures.
+
+Do NOT modify source files, delete data, or create test patients/customers.

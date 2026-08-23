@@ -24,11 +24,13 @@ describe("PERMS matrix integrity", () => {
     }
   });
 
-  it("super_admin is not explicitly in PERMS matrix (gap - Phase 2 will address)", () => {
+  it("super_admin bypasses the PERMS matrix (all perms granted)", () => {
     const allPerms: Perm[] = Object.keys(PERMS) as Perm[];
     for (const perm of allPerms) {
-      expect(can("super_admin", perm)).toBe(false);
+      expect(can("super_admin", perm)).toBe(true);
     }
+    expect(can("super_admin", "platform_admin")).toBe(true);
+    expect(can("pharmacy_admin", "platform_admin")).toBe(false);
   });
 
   it("cashier has minimal permissions", () => {

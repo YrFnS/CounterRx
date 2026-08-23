@@ -740,7 +740,8 @@ export const PERMS: Record<Exclude<Perm, "platform_admin">, Role[]> = {
 
 export const can = (role: Role | undefined, perm: Perm): boolean => {
   if (!role) return false;
-  if (perm === "platform_admin") return role === "super_admin";
+  if (role === "super_admin") return true;
+  if (perm === "platform_admin") return false;
   return (PERMS as Record<Perm, Role[]>)[perm].includes(role);
 };
 

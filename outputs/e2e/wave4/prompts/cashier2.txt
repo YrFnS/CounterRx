@@ -1,0 +1,15 @@
+You are running browser E2E verification for CounterRx (https://counterrx.vercel.app), a pharmacy POS. Load the agent-browser skill (C:\Users\Itokoro\.pi\agent\skills\agent-browser\SKILL.md) and follow it to drive a real browser.
+
+TASK: log in as the second cashier and verify multi-user/offline-resilience basics.
+
+LOGIN: s004@counterrx.local / CRxS0044444. Click into the email+password login form, type them, click Sign In. If you see "Backend unavailable", click "Retry connection" once. Take a screenshot of the logged-in home screen.
+
+VERIFY (screenshot each step, save under C:\Users\Itokoro\CounterRx\outputs\e2e\wave4\cashier2\):
+1. Confirm header shows "J. Boateng".
+2. Verify Register default view: search product, add to cart, verify total.
+3. Verify the "live" connection badge in the header shows connected (green) — NOT "Backend unavailable" and NOT "local ledger". Confirm there is NO "SCANNER LIVE" chip and NO "Reset demo data" button anywhere.
+4. Open the payment modal: verify cash/card/pay-later legs render. Do NOT complete payment.
+5. Verify History loads and shows settled sales.
+6. Write report: C:\Users\Itokoro\CounterRx\outputs\e2e\wave4\cashier2\REPORT.md with login ok?, each nav item verified, connection badge status, absence of demo artifacts confirmed, actions taken, screenshot file names, and any failures.
+
+Do NOT modify source files, delete data, or create test patients/customers.
