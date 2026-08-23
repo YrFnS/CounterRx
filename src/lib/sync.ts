@@ -32,6 +32,7 @@ import type {
   PromotionKind,
   ConditionEntry,
   Vaccination,
+  Organization,
 } from "../data";
 import type { NotificationLogEntry } from "./notify";
 import type { RxClaim } from "./claims";
@@ -70,6 +71,7 @@ export interface BackendData {
   vaccinations: Vaccination[];
   rxClaims: RxClaim[];
   notificationLog: NotificationLogEntry[];
+  organizations: Organization[];
 }
 
 type Row = Record<string, unknown>;
@@ -80,6 +82,7 @@ const TABLES = [
   "audit_log", "shifts", "store_credits", "snapshots", "interaction_pairs", "cold_chain_log", "coupons", "categories", "branches", "promotions", "vaccinations",
   "notification_log",
   "rx_claims",
+  "organizations",
 ] as const;
 
 type TableName = (typeof TABLES)[number];
@@ -580,6 +583,20 @@ function couponFrom(row: Row): Coupon {
   };
 }
 
+function organizationFrom(row: Row): Organization {
+  return {
+    id: text(row, "id"),
+    name: text(row, "name"),
+    ownerEmail: optionalText(row, "owner_email") ?? null,
+    status: text(row, "status", "active") as Organization["status"],
+    createdAt: rowEpoch(row, "created_at"),
+    claimsMode: text(row, "claims_mode", "sandbox") as Organization["claimsMode"],
+    ndcLiveLookup: booleanValue(row, "ndc_live_lookup", false),
+    deliveryEnabled: booleanValue(row, "delivery_enabled", false),
+    aiEnabled: booleanValue(row, "ai_enabled", false),
+  };
+}
+
 function notificationLogFrom(row: Row): NotificationLogEntry {
   return {
     id: text(row, "id"), recipient: text(row, "recipient"), channel: text(row, "channel", "console"),
@@ -772,6 +789,11 @@ export function rowsFor(data: BackendData): Record<TableName, Row[]> {
       amount: c.amount, adjudication: nullable(c.adjudication),
       organization_id: "00000000-0000-0000-0000-000000000001",
     })),
+    organizations: data.organizations.map((o) => ({
+      id: o.id, name: o.name, owner_email: nullable(o.ownerEmail), status: o.status,
+      created_at: timestamp(o.createdAt), claims_mode: o.claimsMode, ndc_live_lookup: o.ndcLiveLookup,
+      delivery_enabled: o.deliveryEnabled, ai_enabled: o.aiEnabled,
+    })),
   };
 }
 
@@ -817,6 +839,7 @@ const TABLE_COLLECTION: Record<string, keyof BackendData> = {
   promotions: "promotions",
   vaccinations: "vaccinations",
   rx_claims: "rxClaims",
+  organizations: "organizations",
 };
 
 /** Build the full-org export bundle from a BackendData snapshot (single source of truth: rowsFor). */
@@ -953,6 +976,7 @@ export async function loadBackendData(seed: BackendData): Promise<LoadResult> {
         vaccinations: byTable.vaccinations.map(vaccinationFrom),
         notificationLog: byTable.notification_log.map(notificationLogFrom),
         rxClaims: byTable.rx_claims.map(claimFrom),
+        organizations: byTable.organizations.map(organizationFrom),
       },
     };
   } catch (error) {

@@ -104,10 +104,12 @@ import type {
   Promotion,
   ConditionEntry,
   Vaccination,
+  Organization,
 } from "./data";
 import {
   makeStaff,
   makeSettings,
+  makeOrganizations,
   makeBackOrders,
   makeRxTransfers,
   SNAPS_KEY,
@@ -155,7 +157,8 @@ export type View =
   | "prescriptions"
   | "deliveries"
   | "history"
-  | "settings";
+  | "settings"
+  | "platform";
 export type InventoryPreset = "all" | "low" | "expiring";
 
 export interface Toast {
@@ -171,6 +174,7 @@ interface State {
   /** Backend is unavailable; UI should show offline banner and never present seed as live-synced. */
   backendOffline: boolean;
   staff: Staff[];
+  organizations: Organization[];
   settings: OrgSettings;
   lockouts: Record<string, { fails: number; until: number }>;
   restrictedLog: RestrictedLogEntry[];
@@ -283,6 +287,9 @@ type Action =
   | { type: "SNAPSHOT_DELETE"; id: string }
   | { type: "SNAPSHOT_RESTORE"; id: string }
   | { type: "GO"; view: View; invPreset?: InventoryPreset }
+  | { type: "ORG_SET_STATUS"; id: string; status: "active" | "suspended" }
+  | { type: "ORG_SET_FLAGS"; id: string; patch: Partial<Pick<Organization, "claimsMode" | "ndcLiveLookup" | "deliveryEnabled" | "aiEnabled">> }
+  | { type: "ORG_PROVISION"; org: Organization; products: Product[] }
   | {
       type: "ADD_CART";
       productId: string;
@@ -576,6 +583,7 @@ export const seed = (): Pick<
   | "webOrders"
   | "timeEntries"
   | "staff"
+  | "organizations"
   | "settings"
   | "shifts"
   | "storeCredits"
@@ -623,6 +631,7 @@ export const seed = (): Pick<
     categories: CATEGORIES_FALLBACK,
     branches: BRANCHES_FALLBACK,
     staff: makeStaff(now),
+    organizations: makeOrganizations(now),
     settings: makeSettings(),
     storeCredits: [],
     audit: [],
@@ -688,6 +697,7 @@ function load(): State {
           webOrders: saved.webOrders ?? makeWebOrders(Date.now()),
           timeEntries: saved.timeEntries ?? makeTimeEntries(Date.now()),
           staff: saved.staff ?? makeStaff(Date.now()),
+          organizations: saved.organizations ?? makeOrganizations(Date.now()),
           settings: { ...makeSettings(), ...(saved.settings ?? {}) },
           restrictedLog: saved.restrictedLog ?? [],
           audit: saved.audit ?? [],
@@ -1442,6 +1452,45 @@ export function reducer(state: State, a: Action): State {
         ),
         "success",
         `Restored from “${snap.meta.label}” (${new Date(snap.meta.at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })})`,
+      );
+    }
+
+    case "ORG_SET_STATUS": {
+      const org = state.organizations.find((o) => o.id === a.id);
+      if (!org || org.status === a.status) return state;
+      return withAudit(
+        withToast(
+          { ...state, organizations: state.organizations.map((o) => (o.id === a.id ? { ...o, status: a.status } : o)) },
+          a.status === "suspended" ? "warn" : "success",
+          i18n.t(a.status === "suspended" ? "platform.orgSuspended" : "platform.orgActivated", { name: org.name }),
+        ),
+        "settings",
+        `Org ${org.name} ${a.status}`,
+      );
+    }
+
+    case "ORG_SET_FLAGS": {
+      const org = state.organizations.find((o) => o.id === a.id);
+      if (!org) return state;
+      return {
+        ...state,
+        organizations: state.organizations.map((o) => (o.id === a.id ? { ...o, ...a.patch } : o)),
+      };
+    }
+
+    case "ORG_PROVISION": {
+      const exists = state.organizations.some((o) => o.id === a.org.id);
+      const next = exists
+        ? state.organizations.map((o) => (o.id === a.org.id ? a.org : o))
+        : [...state.organizations, a.org];
+      return withAudit(
+        withToast(
+          { ...state, organizations: next, products: [...state.products, ...a.products] },
+          "success",
+          i18n.t("platform.orgProvisioned", { name: a.org.name, count: a.products.length }),
+        ),
+        "settings",
+        `Provisioned tenant ${a.org.name} with ${a.products.length} catalog items`,
       );
     }
 
@@ -3999,6 +4048,7 @@ export function reducer(state: State, a: Action): State {
       );
     }
 
+
     case "HYDRATE_BACKEND": {
       const hydratedUser = state.user
         ? (a.data.staff.find(
@@ -4011,6 +4061,7 @@ export function reducer(state: State, a: Action): State {
         ...state,
         user: hydratedUser,
         backendOffline: false,
+        organizations: a.data.organizations ?? state.organizations,
         products: a.data.products,
         transactions: a.data.transactions,
         prescriptions: a.data.prescriptions,
@@ -4266,6 +4317,7 @@ promotions: state.promotions ?? [],
   notificationLog: state.notificationLog ?? [],
   vaccinations: state.vaccinations ?? [],
   rxClaims: state.rxClaims ?? [],
+  organizations: state.organizations ?? [],
 });
 
 export function PosProvider({ children }: { children: ReactNode }) {
