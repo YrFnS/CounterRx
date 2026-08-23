@@ -98,10 +98,8 @@ Customers: structured med history (from dispensed Rx), allergies editor improvem
 ### W3.7 CSV catalog import — DONE ✦ `feat/catalog-import`
 Inventory: import products/CSV with column mapping preview, validation report, dry-run mode; matches export headers.
 
-### W3.8 NDC live lookup ✦ `feat/ndc-lookup`
-
-Replace fake `NDC_DIRECTORY` with RxNorm/openFDA API lookup (free, no key) + cache table (migration 0020); graceful offline fallback to cached/local directory. Flag in settings.
-
+### W3.8 NDC live lookup ✦ `feat/ndc-lookup` — DONE
+Replace fake `NDC_DIRECTORY` with RxNorm/openFDA API lookup (free, no key) + localStorage cache (TTL 30d); graceful offline fallback to local directory + `settings.ndcLiveLookup` flag. UI: Inventory Add product NDC “Look up” button (offline hint) + Settings toggle.
 ## WAVE 4 — platform + external integrations (adapters/sandbox first)
 
 ### W4.1 Claims adapter interface + sandbox ✦ `feat/claims-adapter`

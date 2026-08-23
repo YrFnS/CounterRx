@@ -879,6 +879,8 @@ export interface OrgSettings {
   hardwareEnabled: boolean;        // Phase E: Web Serial hardware (printer/drawer/scale)
   deliveryFee: number;              // default delivery charge (W3.2)
   freeThreshold: number;            // orders ≥ this amount ship free; 0 = no threshold (W3.2)
+  ndcLiveLookup: boolean;          // W3.8 — live openFDA/RxNorm NDC lookup (off → offline directory only)
+
   savedReportViews: import("./lib/report-filters").SavedReportView[]; // named report-builder views (JSONB via settings tail column — no migration)
   notifications: {
     channel: string;               // provider key resolved by notifierFor() in lib/notify.ts
@@ -905,6 +907,7 @@ export function makeSettings(): OrgSettings {
     hardwareEnabled: false,
     deliveryFee: 0,
     freeThreshold: 0,
+    ndcLiveLookup: true,
     savedReportViews: [],
     notifications: {
       channel: "console",

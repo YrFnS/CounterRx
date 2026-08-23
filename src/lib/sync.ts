@@ -421,6 +421,8 @@ function settingsFrom(
     hardwareEnabled: booleanValue(row, "hardware_enabled", fallback.hardwareEnabled),
     deliveryFee: numberValue(row, "delivery_fee", fallback.deliveryFee),
     freeThreshold: numberValue(row, "free_threshold", fallback.freeThreshold),
+    ndcLiveLookup: booleanValue(row, "ndc_live_lookup", fallback.ndcLiveLookup),
+
     savedReportViews: Array.isArray(rawViews) ? (rawViews as OrgSettings["savedReportViews"]) : fallback.savedReportViews,
     notifications: mergeNotifications(jsonValue(row, "notifications", null), fallback.notifications),
   };
