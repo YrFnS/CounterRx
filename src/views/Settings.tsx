@@ -3,7 +3,7 @@ import { useTranslation } from "react-i18next";
 import type { ReactNode } from "react";
 import { usePos, listSnapshots, money } from "../store";
 import i18n from "../i18n";
-import { CURRENCIES, ROLE_LABEL, can, randomPin, Coupon } from "../data";
+import { CURRENCIES, ROLE_LABEL, can, randomPin, Coupon, catChildren, catPathLabel } from "../data";
 import { supabase } from "../lib/supabase";
 import type { Category } from "../data";
 import type { OrgSettings, Role, Staff, Snapshot, Product } from "../data";
@@ -996,16 +996,28 @@ function CategoriesTab({ admin }: { admin: boolean }) {
   const [color, setColor] = useState("#3b8668");
   const [groupId, setGroupId] = useState("technical");
   const [archived, setArchived] = useState(false);
+  const [parentId, setParentId] = useState<string>("");
 
   const categories = useMemo(
     () => [...(state.categories ?? [])].sort((a, b) => a.sort - b.sort),
     [state.categories]);
   const usage = (cid: string) => state.products.filter((p) => p.category === cid).length;
 
-  const reset = () => { setCreating(false); setEditingId(null); setId(""); setLabel(""); setColor("#3b8668"); setGroupId("technical"); setArchived(false); };
+  /* W2.1 — parent candidates: top-level only (depth ≤ 2), never self/descendants when editing.
+   * A category with children can't become a child (would create depth 3). */
+  const parentOptions = useMemo(() => {
+    const hasKids = new Set(categories.map((c) => c.parentId).filter(Boolean));
+    return [
+      { id: "", label: t("settings.categoryParentNone") },
+      ...categories.filter((c) => !c.parentId && c.id !== editingId && !hasKids.has(c.id))
+        .map((c) => ({ id: c.id, label: `${c.label} (${c.id})` })),
+    ];
+  }, [categories, editingId, t]);
+
+  const reset = () => { setCreating(false); setEditingId(null); setId(""); setLabel(""); setColor("#3b8668"); setGroupId("technical"); setArchived(false); setParentId(""); };
   const openEdit = (c: Category) => {
     setCreating(true); setEditingId(c.id); setId(c.id); setLabel(c.label);
-    setColor(c.color); setGroupId(c.groupId); setArchived(c.archived);
+    setColor(c.color); setGroupId(c.groupId); setArchived(c.archived); setParentId(c.parentId ?? "");
   };
 
   const save = () => {
@@ -1021,6 +1033,7 @@ function CategoriesTab({ admin }: { admin: boolean }) {
         groupId,
         sort: editingId ? categories.find((c) => c.id === editingId)?.sort ?? categories.length + 1 : categories.length + 1,
         archived,
+        parentId: parentId || undefined,
       },
     });
     reset();
@@ -1062,6 +1075,14 @@ function CategoriesTab({ admin }: { admin: boolean }) {
               </select>
             </label>
           </div>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            <label className="block text-[11px] font-bold text-inksoft md:col-span-2">{t("settings.categoryParent")}
+              <select value={parentId} onChange={(e) => setParentId(e.target.value)} disabled={!parentOptions.some((o) => o.id !== "")}
+                className="mt-1 w-full px-2.5 py-1.5 rounded-lg border border-mist bg-card text-sm font-bold focus:border-pine-500 focus:outline-none">
+                {parentOptions.map((o) => <option key={o.id} value={o.id}>{o.label}</option>)}
+              </select>
+            </label>
+          </div>
           {editingId && (
             <label className="flex items-center gap-2 text-xs font-semibold text-inksoft">
               <input type="checkbox" checked={archived} onChange={(e) => setArchived(e.target.checked)} />
@@ -1094,13 +1115,16 @@ function CategoriesTab({ admin }: { admin: boolean }) {
             </tr>
           </thead>
           <tbody>
-            {categories.map((c) => (
+            {categories.map((c) => {
+              const kids = catChildren(c.id, categories);
+              const kidQty = kids.reduce((s, k) => s + usage(k), 0);
+              return (
               <tr key={c.id} className={cx("border-t border-mist/60", c.archived && "opacity-45")}>
                 <td className="px-4 py-2"><span className="w-2.5 h-2.5 rounded-full inline-block" style={{ background: c.color }} /></td>
-                <td className="px-4 py-2 font-semibold text-ink">{c.label}{c.archived && <span className="ms-2 text-[9px] font-bold uppercase text-inksoft">archived</span>}</td>
+                <td className="px-4 py-2 font-semibold text-ink">{c.parentId && <span className="me-1.5 text-[10px] text-inksoft">↳</span>}{catPathLabel(c.id, categories)}{c.archived && <span className="ms-2 text-[9px] font-bold uppercase text-inksoft">archived</span>}</td>
                 <td className="px-4 py-2 num text-inksoft">{c.id}</td>
                 <td className="px-4 py-2 text-inksoft">{CATEGORY_GROUP_OPTIONS.find((g) => g.id === c.groupId)?.label ?? c.groupId}</td>
-                <td className="px-4 py-2 num text-inksoft">{usage(c.id)}</td>
+                <td className="px-4 py-2 num text-inksoft">{usage(c.id)}{kidQty > 0 && <span className="ms-1 text-[10px] text-pine-700" title={kids.join(", ")}>+{kidQty}</span>}</td>
                 <td className="px-4 py-2 text-end whitespace-nowrap">
                   <button onClick={() => openEdit(c)} disabled={!admin}
                     className="p-1.5 rounded-md text-inksoft hover:text-pine-700 hover:bg-pine-100 transition disabled:opacity-30" aria-label="Edit category"><IEdit size={13} /></button>
@@ -1108,7 +1132,8 @@ function CategoriesTab({ admin }: { admin: boolean }) {
                     className="p-1.5 rounded-md text-inksoft hover:text-brick-700 hover:bg-brick-100 transition disabled:opacity-30" aria-label="Delete category"><ITrash size={13} /></button>
                 </td>
               </tr>
-            ))}
+              );
+            })}
           </tbody>
         </table>
       </div>

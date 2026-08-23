@@ -323,6 +323,7 @@ function categoryFrom(row: Row): Category {
     groupId: text(row, "group_id", "technical"),
     sort: numberValue(row, "sort", 100),
     archived: booleanValue(row, "archived", false),
+    parentId: optionalText(row, "parent_id") ?? undefined,
   };
 }
 
@@ -399,7 +400,7 @@ function rowsFor(data: BackendData): Record<TableName, Row[]> {
     interaction_pairs: data.interactionPairs.map((i) => ({ a: i.a, b: i.b, severity: i.severity, effect: i.effect, action: i.action })),
     cold_chain_log: data.coldChainLog.map((c) => ({ id: c.id, product_id: c.productId, temp_c: c.tempC, in_range: c.inRange, staff: nullable(c.staff), note: nullable(c.note), created_at: timestamp(c.at) })),
     coupons: data.coupons.map((c) => ({ id: c.id, code: c.code, type: c.type, value: c.value, expires_at: nullable(c.expiresAt), customer_id: nullable(c.customerId), active: c.active, created_at: timestamp(c.createdAt), updated_at: timestamp(c.updatedAt) })),
-    categories: data.categories.map((c) => ({ id: c.id, label: c.label, color: c.color, group_id: c.groupId, sort: c.sort, archived: c.archived, organization_id: "00000000-0000-0000-0000-000000000001" })),
+    categories: data.categories.map((c) => ({ id: c.id, label: c.label, color: c.color, group_id: c.groupId, sort: c.sort, archived: c.archived, parent_id: nullable(c.parentId), organization_id: "00000000-0000-0000-0000-000000000001" })),
     branches: data.branches.map((b) => ({ id: b.id, name: b.name, address: b.address ?? null, phone: b.phone ?? null, active: b.active, sort: b.sort, organization_id: "00000000-0000-0000-0000-000000000001" })),
   };
 }

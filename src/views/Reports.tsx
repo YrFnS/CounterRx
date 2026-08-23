@@ -122,11 +122,17 @@ function MarginTab({ ledger }: { ledger: { sales: Transaction[]; refunds: Transa
     const keyOf = (l: TxLine) => groupBy === "product"
       ? l.productId
       : state.products.find((p) => p.id === l.productId)?.category ?? "other";
+    /* W2.1 — when grouping by category, child-category sales fold into the parent row. */
+    const rollUp = (k: string) => {
+      if (groupBy !== "category") return k;
+      const c = state.categories?.find((x) => x.id === k);
+      return c?.parentId ?? k;
+    };
     const labelOf = (k: string) => groupBy === "product"
       ? state.products.find((p) => p.id === k)?.name ?? k
       : catLabel(k, state.categories);
     const add = (l: TxLine, sign: 1 | -1) => {
-      const k = keyOf(l);
+      const k = rollUp(keyOf(l));
       const cur = agg.get(k) ?? { key: k, label: labelOf(k), units: 0, revenue: 0, cogs: 0 };
       cur.units += sign * l.qty;
       cur.revenue += sign * l.qty * l.price;
@@ -369,6 +375,12 @@ function BuilderTab({ from, to, preset }: { from: number; to: number; preset: Pr
         case "method": return t.method;
       }
     };
+    /* W2.1 — category rows fold child categories into their parent. */
+    const rollUp = (k: string) => {
+      if (cfg.groupBy !== "category") return k;
+      const parent = state.categories?.find((x) => x.id === k)?.parentId;
+      return parent ?? k;
+    };
     const labelOf = (k: string): string => {
       switch (cfg.groupBy) {
         case "product": return state.products.find((p) => p.id === k)?.name ?? k;
@@ -383,7 +395,7 @@ function BuilderTab({ from, to, preset }: { from: number; to: number; preset: Pr
       for (const l of t.lines) {
         if (cfg.kind === "rx" && !l.rx) continue;
         if (cfg.kind === "otc" && l.rx) continue;
-        const k = keyOf(t, l);
+        const k = rollUp(keyOf(t, l));
         const cur = agg.get(k) ?? { label: labelOf(k), count: 0, units: 0, revenue: 0, cogs: 0 };
         cur.count += sign;
         cur.units += sign * l.qty;

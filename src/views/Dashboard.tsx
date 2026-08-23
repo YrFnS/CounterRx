@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { usePos, money, clockTime } from "../store";
-import { daysUntil, nearestExpiry, stockOf, fefoBatches } from "../data";
+import { daysUntil, nearestExpiry, stockOf, fefoBatches, catLabel } from "../data";
 import type { Customer } from "../data";
 import { aiAnomaly } from "../lib/ai";
 import type { Anomaly } from "../lib/ai";
@@ -60,6 +60,33 @@ export default function Dashboard() {
 
   const maxQty = Math.max(...topSellers.map((t) => t.qty), 1);
   const recent = state.transactions.slice(0, 7);
+
+  /* W2.1 roll-up — revenue per top-level category over the selected range.
+   * Child-category sales walk up to their root parent so totals nest cleanly. */
+  const catBreakdown = useMemo(() => {
+    const cats = state.categories ?? [];
+    const rootOf = (id: string): string => {
+      let cur = id;
+      for (let guard = 0; guard < 3; guard++) {
+        const parent = cats.find((x) => x.id === cur)?.parentId;
+        if (!parent) break;
+        cur = parent;
+      }
+      return cur;
+    };
+    const m = new Map<string, number>();
+    for (const tr of state.transactions) {
+      if (tr.refundOf || tr.at < t0 - (range - 1) * DAY) continue;
+      for (const l of tr.lines) {
+        const c = state.products.find((p) => p.id === l.productId)?.category;
+        if (!c) continue;
+        const root = rootOf(c);
+        m.set(root, (m.get(root) ?? 0) + l.qty * l.price);
+      }
+    }
+    return [...m.entries()].sort((a, b) => b[1] - a[1]).slice(0, 6);
+  }, [state.transactions, state.products, state.categories, t0, range]);
+  const maxCatRevenue = Math.max(...catBreakdown.map(([, r]) => r), 1);
 
   /* inventory trends (4.2) — 14-day sell-through burn vs shelf stock */
   const burn = useMemo(() => {
@@ -275,6 +302,33 @@ export default function Dashboard() {
             ))}
           </div>
         </div>
+
+        {/* W2.1 — sales by category, children rolled up into their parent */}
+        {catBreakdown.length > 0 && (
+          <div className="bg-card border border-mist rounded-xl shadow-lift p-5">
+            <div className="flex items-center justify-between">
+              <h2 className="font-display font-bold text-ink text-[15px]">{t("dashboard.catBreakdown")} · {range}d</h2>
+              <button onClick={() => dispatch({ type: "GO", view: "reports" })}
+                className="text-xs font-bold text-pine-700 hover:text-pine-600 transition">{t("dashboard.catBreakdownAll")} →</button>
+            </div>
+            <div className="mt-4 space-y-3">
+              {catBreakdown.map(([cid, revenue], i) => {
+                const c = state.categories?.find((x) => x.id === cid);
+                return (
+                  <div key={cid}>
+                    <div className="flex justify-between text-xs mb-1">
+                      <span className="font-semibold text-ink truncate">{c?.color && <span className="w-2 h-2 rounded-full inline-block me-1.5" style={{ background: c.color }} />}{catLabel(cid, state.categories)}</span>
+                      <span className="num text-inksoft shrink-0 ms-2">{money(revenue)}</span>
+                    </div>
+                    <div className="h-2 rounded-full bg-mist/60 overflow-hidden">
+                      <div className="anim-grow-w h-full rounded-full" style={{ width: `${(revenue / maxCatRevenue) * 100}%`, animationDelay: `${i * 70}ms`, background: c?.color ?? "#3b8668" }} />
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
 
         {/* recent transactions */}
         <div className="bg-card border border-mist rounded-xl shadow-lift p-5">
