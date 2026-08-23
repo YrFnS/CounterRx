@@ -5,6 +5,7 @@ import {
   makeSuppliers, makePurchaseOrders, makeApInvoices, makeExpenses, invoiceBalance,
   makeDeliveries, makeWebOrders, makeTimeEntries, makeColdChainLogs,
   stockOf, nearestExpiry, allocFEFO, fefoBatches, newBatchCode, daysUntil,
+  genericSubstituteFor, substitutionSaving,
   bulkPct, REDEEM_CHUNK_PTS, REDEEM_CHUNK_VALUE, can, tenderTypeOf, applyStoreCredit, pruneExpiredHolds,
   LINE_DISCOUNT_PIN_THRESHOLD, CATEGORIES_FALLBACK,
   type Category,
@@ -62,7 +63,7 @@ interface State {
   coupons: Coupon[];
   categories: Category[];
   currentShift: Shift | null;
-  cart: { productId: string; qty: number; note?: string; priceOverride?: number; daw?: number; substitutedFrom?: string; uom?: string; lineDiscount?: { mode: "amt" | "pct"; value: number } }[];
+  cart: { productId: string; qty: number; note?: string; priceOverride?: number; daw?: number; substitutedFrom?: string; uom?: string; lineDiscount?: { mode: "amt" | "pct"; value: number }; rxId?: string }[];
   held: HeldSale[];
   storeCredits: StoreCredit[];
   customers: Customer[];
@@ -163,6 +164,9 @@ type Action =
   | { type: "REFUND_TX"; txId: string; reason: string }
   | { type: "RX_STATUS"; id: string; status: RxStatus }
   | { type: "RX_TO_CART"; id: string }
+  | { type: "CHARGE_RX_PICKUP"; rxId: string }
+  | { type: "SUBSTITUTE_GENERIC"; brandId: string; genericId: string; uom?: string }
+  | { type: "SET_DAW"; productId: string; daw: number; uom?: string }
   | { type: "TOAST"; kind: Toast["kind"]; msg: string }
   | { type: "AUDIT_LOG"; kind: AuditKind; detail: string }
   | { type: "DISMISS_TOAST"; id: number }
@@ -1097,6 +1101,25 @@ export function reducer(state: State, a: Action): State {
       if (controlledLines.length > 0 && customer) {
         next = withAudit(next, "rx", `⚠ Controlled sale ${tx.id} — ${controlledLines.map((l) => `${l.name} ×${l.qty}`).join(", ")} · ${customer.name} · ID verified ✓`);
       }
+      /* charge-on-pickup: any cart line stamped with an rxId dispenses that Rx on payment (W1.4) */
+      const pickupRxIds = [...new Set(state.cart.map((c) => c.rxId).filter((id): id is string => !!id))]
+        .filter((id) => next.prescriptions.some((x) => x.id === id && x.status !== "dispensed"));
+      if (pickupRxIds.length > 0) {
+        next = {
+          ...next,
+          prescriptions: next.prescriptions.map((x) => (pickupRxIds.includes(x.id)
+            ? {
+                ...x, status: "dispensed" as RxStatus,
+                dispensedAt: x.dispensedAt ?? tx.at,
+                refillsRemaining: x.refillsRemaining !== undefined ? Math.max(0, x.refillsRemaining - 1) : x.refillsRemaining,
+              }
+            : x)),
+        };
+        for (const rxId of pickupRxIds) {
+          const rx = state.prescriptions.find((x) => x.id === rxId)!;
+          next = withAudit(next, "rx", `${rxId} dispensed on pickup via ${tx.id} — ${rx.patient} · ${rx.qty} × ${state.products.find((p) => p.id === rx.productId)?.name ?? rx.productId}`);
+        }
+      }
       /* restricted / behind-the-counter OTC — mandatory purchase log with ID capture (§3) */
       if (a.restricted && a.restricted.purchaser.trim()) {
         let logSeq = (next.restrictedLog[0]?.id ?? 9000) + 1;
@@ -1471,6 +1494,78 @@ export function reducer(state: State, a: Action): State {
         { ...state, cart, view: "register", flashId: p.id, flashKey: state.flashKey + 1 },
         "info", `${rx.id} attached to register — ${qty} × ${p.name}`,
       );
+    }
+
+    case "SUBSTITUTE_GENERIC": {
+      /* Swap a cart line brand → generic, keeping qty and stamping substitutedFrom (W1.4).
+         Guards: both SKUs must exist, the pair must be a real cheaper in-stock
+         substitution, and the generic must cover the qty already on the ticket. */
+      const brand = state.products.find((x) => x.id === a.brandId);
+      const gen = state.products.find((x) => x.id === a.genericId);
+      if (!brand || !gen) return state;
+      if (genericSubstituteFor(brand, state.products)?.id !== gen.id) {
+        return withToast(state, "error", `${gen.name} is not a cheaper in-stock generic for ${brand.name}`);
+      }
+      const same = (c: { productId: string; uom?: string }) => c.productId === brand.id && (c.uom ?? "") === (a.uom ?? "");
+      const line = state.cart.find(same);
+      if (!line) return state;
+      const avail = stockOf(gen, state.products);
+      const factor = uomFactor(state, gen.id, a.uom);
+      const maxUom = Math.max(1, Math.floor(avail / factor));
+      if (line.qty > maxUom) return withToast(state, "error", `Only ${maxUom} × ${gen.name} on the shelf — keeping ${brand.name}`);
+      /* merge onto an existing generic line if one is already on the ticket */
+      const genSame = (c: { productId: string; uom?: string }) => c.productId === gen.id && (c.uom ?? "") === (a.uom ?? "");
+      const genLine = state.cart.find(genSame);
+      const swapped = { ...line, productId: gen.id, daw: undefined, substitutedFrom: brand.id, priceOverride: undefined };
+      const cart = genLine
+        ? state.cart.filter((c) => !same(c)).map((c) => (genSame(c) ? { ...c, qty: Math.min(c.qty + line.qty, maxUom), substitutedFrom: brand.id } : c))
+        : state.cart.map((c) => (same(c) ? swapped : c));
+      const saving = substitutionSaving(brand, gen) * line.qty;
+      return withToast(
+        withAudit({ ...state, cart, flashId: gen.id, flashKey: state.flashKey + 1 }, "rx",
+          `Generic substitution — ${gen.name} (${gen.brand}) dispensed for ${brand.name} (${brand.brand}) ×${line.qty} · patient saves ${money(saving)}`),
+        "success", `${gen.name} substituted for ${brand.name} — saves ${money(saving)}`);
+    }
+
+    case "SET_DAW": {
+      /* Dispense-as-written: stamp the DAW code on the line so it prints on the receipt (§3). */
+      const p = state.products.find((x) => x.id === a.productId);
+      if (!p) return state;
+      const same = (c: { productId: string; uom?: string }) => c.productId === p.id && (c.uom ?? "") === (a.uom ?? "");
+      if (!state.cart.some(same)) return state;
+      const code = a.daw === 2 ? 2 : 1;
+      const cart = state.cart.map((c) => (same(c) ? { ...c, daw: code, substitutedFrom: undefined } : c));
+      return withToast(
+        withAudit({ ...state, cart }, "rx",
+          `DAW-${code} documented — ${p.name} dispensed as written (${code === 1 ? "prescriber directed" : "patient requested brand"})`),
+        "info", `DAW-${code} recorded for ${p.name}`);
+    }
+
+    case "CHARGE_RX_PICKUP": {
+      /* Waiting-bin charge-on-pickup: pre-fill the cart from the Rx at Rx price/qty,
+         attach the patient as the sale customer, and stamp rxId on the cart line so
+         COMPLETE_SALE marks the Rx dispensed. Guards: unknown Rx/product,
+         out-of-stock (FEFO on-hand), and already-dispensed (double-charge). */
+      const rx = state.prescriptions.find((x) => x.id === a.rxId);
+      if (!rx) return withToast(state, "error", `Rx ${a.rxId} not found`);
+      if (rx.status === "dispensed") return withToast(state, "error", `${rx.id} already dispensed — cannot charge twice`);
+      const p = state.products.find((x) => x.id === rx.productId);
+      if (!p) return withToast(state, "error", `Product for ${rx.id} is not in the catalog`);
+      const avail = stockOf(p, state.products);
+      if (avail <= 0) return withToast(state, "error", `${p.name} out of stock — cannot charge ${rx.id} on pickup`);
+      const qty = Math.min(rx.qty, avail);
+      /* Seat the patient as the sale customer (name match against the book); walk-in stays otherwise. */
+      const match = state.customers.find((c) => c.name.toLowerCase() === rx.patient.toLowerCase());
+      const customerId = state.saleCustomerId ?? match?.id ?? null;
+      const same = (c: { productId: string; rxId?: string }) => c.productId === p.id && c.rxId === rx.id;
+      const cart = state.cart.some(same)
+        ? state.cart.map((c) => (same(c) ? { ...c, qty: Math.min(qty, avail) } : c))
+        : [...state.cart, { productId: p.id, qty, rxId: rx.id }];
+      const next = withAudit(
+        { ...state, cart, saleCustomerId: customerId, redeemPoints: 0, view: "register" as View, flashId: p.id, flashKey: state.flashKey + 1 },
+        "rx", `${rx.id} queued for charge-on-pickup — ${qty} × ${p.name} · ${rx.patient}`);
+      return withToast(next, "info",
+        `${rx.id} on the register — ${qty} × ${p.name}${customerId ? ` · ${state.customers.find((c) => c.id === customerId)?.name}` : ""}`);
     }
 
     case "TOAST":

@@ -147,6 +147,29 @@ export const stockOf = (p: Product, catalog?: Product[]): number => {
   return p.batches.reduce((s, b) => s + b.qty, 0);
 };
 
+/**
+ * Generic-substitution candidate (§3 DAW, W1.4): the cheaper in-stock generic
+ * equivalent of `brand`, or null when there is none worth offering.
+ *
+ * Linkage is one-directional in the catalog — the generic SKU carries
+ * `genericOf: "<brandId>"` — so a brand finds its generic by reverse lookup.
+ * A candidate must be strictly cheaper and actually on the shelf, and a SKU that
+ * is itself a generic is never offered a substitution.
+ */
+export function genericSubstituteFor(brand: Product, catalog: Product[]): Product | null {
+  if (brand.genericOf) return null;                     // already the generic — nothing to swap
+  const candidates = catalog.filter((x) =>
+    x.genericOf === brand.id && x.id !== brand.id &&
+    x.price < brand.price && stockOf(x, catalog) > 0);
+  if (candidates.length === 0) return null;
+  // ponytail: cheapest wins; add prescriber/formulary preference here if that ever matters
+  return candidates.reduce((best, x) => (x.price < best.price ? x : best));
+}
+
+/** Per-unit saving from dispensing `gen` instead of `brand` (§3 DAW). */
+export const substitutionSaving = (brand: Product, gen: Product): number =>
+  Math.round(Math.max(0, brand.price - gen.price) * 100) / 100;
+
 /** Lots sorted first-expiry-first-out (earliest expiry sells first). */
 export const fefoBatches = (p: { batches: Batch[] }): Batch[] =>
   [...p.batches].sort((a, b) => a.expiry.localeCompare(b.expiry) || a.batch.localeCompare(b.batch));
