@@ -47,8 +47,8 @@ Migration 0016: `parent_id text references categories(id)` + tree helpers; Setti
 ### W2.2 Patient–lot recall lookup ✦ `feat/recall-lookup` — DONE
 Inventory/Reports: enter lot/batch → returns patients (customers) who received units from that lot via `TxLine.alloc`, with qty/date; printable contact sheet + CSV/XLSX export.
 
-### W2.3 Multi-terminal X/Z + reconciliation ✦ `feat/terminal-recon`
-Shift records already carry terminalId: Till/History shift summary gains per-terminal breakdown, expected-vs-counted variance report, end-of-day all-terminals Z. No migration.
+### W2.3 Multi-terminal X/Z + reconciliation ✦ `feat/terminal-recon` — DONE
+Shift records already carry terminalId: Till/History shift summary gains per-terminal breakdown, expected-vs-counted variance report, end-of-day all-terminals Z. No migration. (terminalId falls back to `state.settings.terminalId` for legacy shifts that lack one.)
 
 ### W2.4 Custom report builder ✦ `feat/report-builder`
 Reports: date-range + filters (category, supplier, cashier, method, Rx/OTC) applied across existing tabs; save/load named views into org settings JSONB (no migration); export respects filters.

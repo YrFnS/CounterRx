@@ -523,7 +523,19 @@
     "refundsTotal": "Refunds Total",
     "salesTotal": "Sales Total",
     "status": "Status",
-    "transactions": "Transactions"
+    "transactions": "Transactions",
+    "perTerminal": "Per-terminal breakdown",
+    "terminal": "Terminal",
+    "varianceReport": "Variance report",
+    "expectedVsCounted": "Expected vs counted",
+    "variance": "Variance",
+    "counted": "Counted",
+    "expected": "Expected",
+    "endOfDayAllTerminals": "End of day — all terminals",
+    "allTerminalsZ": "All-terminals Z report",
+    "allTerminals": "All terminals",
+    "totalOverShort": "Total over/short",
+    "noTerminalData": "No shift data for this date"
   },
   "auth": {
     "login": "Login",

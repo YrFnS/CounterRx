@@ -3,8 +3,8 @@ import { useTranslation } from "react-i18next";
 import i18n from "../i18n";
 import type { ReactNode } from "react";
 import { usePos, money, clockTime, relTime } from "../store";
-import { can, hashPin } from "../data";
-import type { PayMethod, Transaction, PaymentLeg } from "../data";
+import { can, hashPin, allTerminalsZReport, groupShiftsByTerminal, terminalVariance } from "../data";
+import type { PayMethod, Transaction, PaymentLeg, Shift } from "../data";
 import { cx, Badge, Empty, Modal } from "../ui";
 import { IHistory, ISearch, ICash, ICard, IShield, IPill, IX, IRecall, ICalendar, IDownload, IReport, IAlert, IUsers } from "../icons";
 import type { AuditKind } from "../data";
@@ -22,6 +22,7 @@ export default function History() {
   const [auditOpen, setAuditOpen] = useState(false);
   const [btcOpen, setBtcOpen] = useState(false);
   const [settling, setSettling] = useState<{ transaction: Transaction; legIndex: number } | null>(null);
+  const [eodZOpen, setEodZOpen] = useState(false);
   const canRefund = can(state.user?.role, "refund");
 
   const rows = useMemo(() => {
@@ -175,14 +176,16 @@ export default function History() {
 
       {refunding && <RefundModal tx={refunding} onClose={() => setRefunding(null)} />}
       {voiding && <VoidModal tx={voiding} onClose={() => setVoiding(null)} />}
-      {shiftOpen && <ShiftModal onClose={() => setShiftOpen(false)} />}
+      {shiftOpen && <ShiftModal onClose={() => setShiftOpen(false)} onOpenEodZ={() => setEodZOpen(true)} />}
+      {eodZOpen && <AllTerminalsZModal onClose={() => setEodZOpen(false)} shifts={state.shifts} fallbackTerminalId={state.settings.terminalId} />}
       {auditOpen && <AuditTrail onClose={() => setAuditOpen(false)} />}
       {btcOpen && <BtcLog onClose={() => setBtcOpen(false)} />}
     </div>
   );
 }
 
-function ShiftModal({ onClose }: { onClose: () => void }) {
+function ShiftModal({ onClose, onOpenEodZ }: { onClose: () => void; onOpenEodZ: () => void }) {
+  const { t } = useTranslation();
   const { state, dispatch } = usePos();
   const FLOAT = 150;
 
@@ -256,8 +259,14 @@ function ShiftModal({ onClose }: { onClose: () => void }) {
           </h2>
           <p className="text-[11px] text-pine-300 mt-1 num">{state.settings.terminalId} · cashier {state.user?.name ?? "—"} · {new Date().toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" })}</p>
         </div>
-        <button onClick={onClose} className="p-1.5 rounded-md hover:bg-white/10 text-pine-200" aria-label="Close"><IX size={14} /></button>
-      </div>
+          <button onClick={onClose} className="p-1.5 rounded-md hover:bg-white/10 text-pine-200" aria-label="Close"><IX size={14} /></button>
+        </div>
+        <div className="px-5 py-2 bg-pine-900/60 flex justify-end">
+          <button onClick={onOpenEodZ}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-ink text-paper text-[11px] font-bold hover:bg-pine-900 transition active:scale-95">
+            <ICalendar size={12} /> {t("shift.endOfDayAllTerminals")}
+          </button>
+        </div>
 
       <div className="p-5">
         <div className="grid grid-cols-3 gap-2.5">
@@ -324,6 +333,68 @@ function ShiftModal({ onClose }: { onClose: () => void }) {
             <IDownload size={13} /> Export Z-read
           </button>
         </div>
+      </div>
+    </Modal>
+  );
+}
+
+function AllTerminalsZModal({ onClose, shifts, fallbackTerminalId }: { onClose: () => void; shifts: Shift[]; fallbackTerminalId: string }) {
+  const { t } = useTranslation();
+  const z = allTerminalsZReport(shifts, new Date(), fallbackTerminalId);
+  return (
+    <Modal onClose={onClose} width={560} labelledBy="eodz-title">
+      <div className="px-5 py-4 border-b border-mist flex items-center justify-between">
+        <div>
+          <h2 id="eodz-title" className="font-display font-bold text-ink flex items-center gap-2"><ICash size={17} className="text-pine-700" /> {t("shift.allTerminalsZ")}</h2>
+          <p className="text-[11px] text-inksoft mt-0.5 num">{z.date} · {z.terminals.length} {t("shift.terminal").toLowerCase()}{z.terminals.length === 1 ? "" : "s"}</p>
+        </div>
+        <button onClick={onClose} className="p-1.5 rounded-md hover:bg-mist/60 text-inksoft" aria-label="Close"><IX size={14} /></button>
+      </div>
+      <div className="p-5 space-y-4 text-sm">
+        {z.terminals.length === 0 ? (
+          <p className="text-xs text-inksoft">{t("shift.noTerminalData")}</p>
+        ) : (
+          <>
+            <div className="overflow-auto scroll-slim">
+              <table className="w-full text-sm border-collapse">
+                <thead>
+                  <tr className="text-[10px] uppercase tracking-[0.12em] text-inksoft">
+                    <th className="text-start px-2 py-1.5 font-bold">{t("shift.terminal")}</th>
+                    <th className="text-end px-2 py-1.5 font-bold">{t("shift.expected")}</th>
+                    <th className="text-end px-2 py-1.5 font-bold">{t("shift.counted")}</th>
+                    <th className="text-end px-2 py-1.5 font-bold">{t("shift.variance")}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {z.terminals.map((tr) => {
+                    const v = terminalVariance(tr.expectedCash, tr.countedCash);
+                    return (
+                      <tr key={tr.terminalId} className="border-t border-mist/70">
+                        <td className="px-2 py-1.5 font-semibold text-ink">{tr.terminalId}</td>
+                        <td className="num px-2 py-1.5 text-end text-ink">{money(tr.expectedCash)}</td>
+                        <td className="num px-2 py-1.5 text-end text-ink">{money(tr.countedCash)}</td>
+                        <td className={cx("num px-2 py-1.5 text-end font-bold", v >= 0 ? "text-pine-700" : "text-brick-700")}>{v >= 0 ? "+" : "−"}{money(Math.abs(v))}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+                <tfoot>
+                  <tr className="border-t-2 border-ink/20 font-bold">
+                    <td className="px-2 py-2 text-ink">{t("shift.allTerminals")}</td>
+                    <td className="num px-2 py-2 text-end text-ink">{money(z.totalExpectedCash)}</td>
+                    <td className="num px-2 py-2 text-end text-ink">{money(z.totalCountedCash)}</td>
+                    <td className={cx("num px-2 py-2 text-end", z.totalOverShort >= 0 ? "text-pine-700" : "text-brick-700")}>{z.totalOverShort >= 0 ? "+" : "−"}{money(Math.abs(z.totalOverShort))}</td>
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+            <div className="grid grid-cols-3 gap-2">
+              <div className="rounded-lg bg-paper border border-mist px-3 py-2"><p className="text-[9px] font-bold uppercase tracking-wide text-inksoft">{t("shift.totalSales")}</p><p className="num font-bold text-ink">{money(z.totalSales)}</p></div>
+              <div className="rounded-lg bg-paper border border-mist px-3 py-2"><p className="text-[9px] font-bold uppercase tracking-wide text-inksoft">{t("shift.transactionCount")}</p><p className="num font-bold text-ink">{z.transactionCount}</p></div>
+              <div className={cx("rounded-lg border px-3 py-2", z.totalOverShort >= 0 ? "bg-pine-100 border-pine-300" : "bg-brick-100 border-brick-300")}><p className="text-[9px] font-bold uppercase tracking-wide text-inksoft">{t("shift.totalOverShort")}</p><p className="num font-bold">{z.totalOverShort >= 0 ? "+" : "−"}{money(Math.abs(z.totalOverShort))}</p></div>
+            </div>
+          </>
+        )}
       </div>
     </Modal>
   );

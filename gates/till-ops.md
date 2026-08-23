@@ -31,6 +31,32 @@
   CHECK: `npm run typecheck && npm run test && npm run build`
   EVIDENCE: typecheck clean, 33 tests pass (incl. till-ops suite), build OK.
 
+## W2.3 Multi-terminal X/Z + reconciliation (feat/terminal-recon)
+
+- [x] Per-terminal breakdown groups cash movement / sales by terminalId in the shift summary.
+  CHECK: `grep -n 'groupShiftsByTerminal' src/data.ts src/views/Reports.tsx src/views/History.tsx`
+  EXPECT: `groupShiftsByTerminal(shifts, fallbackTerminalId)` rolls sales/refunds/card/paid-in-out/expected/over-short up per `terminalId`; `Shift` already carries `terminalId` (`src/data.ts`); legacy shifts missing it fall back to `state.settings.terminalId` via `terminalIdOf`.
+  EVIDENCE: `data.ts` `groupShiftsByTerminal` + `terminalIdOf`; `Reports.tsx` `TerminalBreakdown` (rendered inside every X/Z viewer) and `History.tsx` per-terminal rows.
+- [x] Variance report: expected drawer vs counted cash per terminal.
+  CHECK: `grep -n 'terminalVariance\|varianceReport\|expectedVsCounted' src/data.ts src/views/Reports.tsx src/views/History.tsx`
+  EXPECT: `terminalVariance(expectedCash, countedCash) = counted - expected` (rounded to cents); UI shows expected → counted and the signed variance per terminal.
+  EVIDENCE: `data.ts` `terminalVariance`; per-terminal variance rows in `Reports.tsx` `TerminalBreakdown` and `AllTerminalsZModal`, mirrored in `History.tsx`.
+- [x] End-of-day all-terminals Z aggregates across terminals for the date.
+  CHECK: `grep -n 'allTerminalsZReport' src/data.ts src/views/Reports.tsx src/views/History.tsx`
+  EXPECT: `allTerminalsZReport(shifts, date, fallbackTerminalId)` filters shifts opened on `date`, groups by terminal, sums sales/refunds/paid-in-out/expected/counted/over-short across terminals; off-day shifts excluded.
+  EVIDENCE: `data.ts` `allTerminalsZReport` + `AllTerminalsZModal` reachable from `Reports.tsx` Till tab and `History.tsx` Shift summary.
+- [x] Unit tests cover variance math, per-terminal grouping, and all-terminals aggregation.
+  CHECK: `src/__tests__/terminal-recon.test.ts`
+  EXPECT: 9 tests — variance rounding, terminalId fallback, per-terminal roll-up (cash vs card expectedCash), open=expected/closed=counted, date-scoped all-terminals aggregation, and integration against `generateZReport` over/short.
+  EVIDENCE: `terminal-recon.test.ts` passes (9/9).
+- [x] i18n: every new string via `t()` with keys in both `src/locales/en.json` and `ar.json`.
+  CHECK: `src/__tests__/i18n-key-parity.test.ts` (en/ar key-set + all dotted `t()` literals resolve).
+  EXPECT: keys `shift.perTerminal`, `shift.terminal`, `shift.varianceReport`, `shift.expectedVsCounted`, `shift.variance`, `shift.counted`, `shift.expected`, `shift.endOfDayAllTerminals`, `shift.allTerminalsZ`, `shift.allTerminals`, `shift.totalOverShort`, `shift.noTerminalData` present in both locales.
+  EVIDENCE: parity test passes; both locales updated.
+- [x] Full gate green.
+  CHECK: `npm run typecheck && npm run test && npm run build`
+  EVIDENCE: typecheck clean, 138 tests pass (incl. terminal-recon suite), build OK.
+
 ## Discount & tax gate (P2/P3 — added 2026-08-22)
 
 - [x] Tax removed: no UI surface renders tax; `Transaction.tax` persists as 0 for shape stability.
