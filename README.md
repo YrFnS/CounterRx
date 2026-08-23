@@ -10,7 +10,7 @@ CounterRx keeps your data safe with two complementary mechanisms: a manual **ful
 
 Every synchronized table is included in the export/backup bundle:
 
-`products`, `transactions`, `prescriptions`, `prescribers`, `customers`, `transfers`, `backorders`, `rx_transfers`, `suppliers`, `purchase_orders`, `ap_invoices`, `expenses`, `deliveries`, `web_orders`, `time_entries`, `staff`, `settings`, `restricted_log`, `audit_log`, `shifts`, `store_credits`, `snapshots`, `interaction_pairs`, `cold_chain_log`, `coupons`, `categories`, `branches`.
+`products`, `transactions`, `prescriptions`, `prescribers`, `customers`, `transfers`, `backorders`, `rx_transfers`, `suppliers`, `purchase_orders`, `ap_invoices`, `expenses`, `deliveries`, `web_orders`, `time_entries`, `staff`, `settings`, `restricted_log`, `audit_log`, `shifts`, `store_credits`, `snapshots`, `interaction_pairs`, `cold_chain_log`, `coupons`, `categories`, `branches`, `rx_claims`.
 
 The bundle is shaped as:
 
@@ -47,6 +47,18 @@ The confirm dialog states the backup's timestamp; restoring replaces all current
 ### Restore-drill checklist (verify periodically)
 
 1. Export full org → confirm `counterrx-backup-<date>.json` downloaded.
-2. Open it: confirm `version`, `organization_id`, and all 27 `tables` keys are present.
+2. Open it: confirm `version`, `organization_id`, and all 28 `tables` keys are present.
 3. Settings → Backups & restore → Restore a snapshot → confirm a success toast and that data reflects the snapshot.
 4. Restore from a tampered file (delete a table) → confirm it is rejected, not applied.
+
+## Claims adapter (W4.1)
+
+Prescriptions → **Claims** submits NCPDP D.0-style claims (submit → adjudicate → reverse) through `src/lib/claims.ts`. Today the org runs in **sandbox mode** (`settings.claimsMode = "sandbox"`): the adapter adjudicates locally with a deterministic rule (claims under $500 pay, otherwise reject) — no payer is contacted and no credentials are needed.
+
+**Going live (blocked on a partner account):** real NCPDP D.0 requires a trading-partner gateway (e.g. a pharmacy switch such as Change Healthcare / RelayHealth). When one is onboarded:
+
+1. Implement `ClaimsAdapter` in `src/lib/claims.ts` that POSTs D.0 segments through a Supabase Edge Function (partner credentials stay server-side).
+2. Select it inside `makeClaimsAdapter()` when `settings.claimsMode === "live"`.
+3. Flip the org setting to `live` (Settings → org settings). No reducer/UI changes needed — they already talk only through the adapter.
+
+Until step 1–2 land, `claimsMode: "live"` throws "not configured" deliberately.

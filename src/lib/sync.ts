@@ -34,6 +34,7 @@ import type {
   Vaccination,
 } from "../data";
 import type { NotificationLogEntry } from "./notify";
+import type { RxClaim } from "./claims";
 import { makeSettings } from "../data";
 
 /** The persisted part of the reducer state. UI/session-only state stays local. */
@@ -67,6 +68,7 @@ export interface BackendData {
   branches: Branch[];
   promotions: Promotion[];
   vaccinations: Vaccination[];
+  rxClaims: RxClaim[];
   notificationLog: NotificationLogEntry[];
 }
 
@@ -77,6 +79,7 @@ const TABLES = [
   "deliveries", "web_orders", "time_entries", "staff", "settings", "restricted_log",
   "audit_log", "shifts", "store_credits", "snapshots", "interaction_pairs", "cold_chain_log", "coupons", "categories", "branches", "promotions", "vaccinations",
   "notification_log",
+  "rx_claims",
 ] as const;
 
 type TableName = (typeof TABLES)[number];
@@ -424,6 +427,7 @@ function settingsFrom(
     deliveryFee: numberValue(row, "delivery_fee", fallback.deliveryFee),
     freeThreshold: numberValue(row, "free_threshold", fallback.freeThreshold),
     ndcLiveLookup: booleanValue(row, "ndc_live_lookup", fallback.ndcLiveLookup),
+    claimsMode: text(row, "claims_mode", fallback.claimsMode) as OrgSettings["claimsMode"],
 
     savedReportViews: Array.isArray(rawViews) ? (rawViews as OrgSettings["savedReportViews"]) : fallback.savedReportViews,
     notifications: mergeNotifications(jsonValue(row, "notifications", null), fallback.notifications),
@@ -583,6 +587,22 @@ function notificationLogFrom(row: Row): NotificationLogEntry {
   };
 }
 
+function claimFrom(row: Row): RxClaim {
+  return {
+    id: text(row, "id"),
+    prescriptionId: text(row, "prescription_id"),
+    patient: text(row, "patient"),
+    drug: text(row, "drug"),
+    qty: numberValue(row, "qty", 0),
+    submittedAt: rowEpoch(row, "submitted_at"),
+    status: text(row, "status", "submitted") as RxClaim["status"],
+    payer: text(row, "payer"),
+    amount: numberValue(row, "amount", 0),
+    adjudication: jsonValue(row, "adjudication", {}),
+    organizationId: text(row, "organization_id"),
+  };
+}
+
 function promotionFrom(row: Row): Promotion {
   return {
     id: text(row, "id"),
@@ -718,7 +738,7 @@ export function rowsFor(data: BackendData): Record<TableName, Row[]> {
     web_orders: data.webOrders.map((o) => ({ id: o.id, customer_name: o.customerName, phone: o.phone, items: o.items, type: o.type, channel: o.channel, pickup: o.pickup, status: o.status, note: nullable(o.note), decline_reason: nullable(o.declineReason), created_at: o.createdAt })),
     time_entries: data.timeEntries.map((t) => ({ id: t.id, staff_id: nullable(t.staffId), in_at: t.inAt, out_at: nullable(t.outAt) })),
     staff: data.staff.map((s) => ({ id: s.id, name: s.name, role: s.role, pin_hash: s.pinHash, initials: s.initials, active: s.active, created_at: timestamp(s.createdAt) })),
-    settings: [{ id: 1, org_name: data.settings.orgName, branch: data.settings.branch, address: data.settings.address, phone: data.settings.phone, license: data.settings.license, currency: data.settings.currency, receipt_footer: data.settings.receiptFooter, receipt_terms: data.settings.receiptTerms, show_barcode: data.settings.showBarcode, loyalty: { ...data.settings.loyalty, savedReportViews: data.settings.savedReportViews }, scan_beep: data.settings.scanBeep, idle_lock_mins: data.settings.idleLockMins, auto_snapshot_mins: data.settings.autoSnapshotMins, terminal_id: data.settings.terminalId, hardware_enabled: data.settings.hardwareEnabled, notifications: data.settings.notifications ?? makeSettings().notifications }],
+    settings: [{ id: 1, org_name: data.settings.orgName, branch: data.settings.branch, address: data.settings.address, phone: data.settings.phone, license: data.settings.license, currency: data.settings.currency, receipt_footer: data.settings.receiptFooter, receipt_terms: data.settings.receiptTerms, show_barcode: data.settings.showBarcode, loyalty: { ...data.settings.loyalty, savedReportViews: data.settings.savedReportViews }, scan_beep: data.settings.scanBeep, idle_lock_mins: data.settings.idleLockMins, auto_snapshot_mins: data.settings.autoSnapshotMins, terminal_id: data.settings.terminalId, hardware_enabled: data.settings.hardwareEnabled, claims_mode: data.settings.claimsMode, notifications: data.settings.notifications ?? makeSettings().notifications }],
     restricted_log: data.restrictedLog.map((r) => ({ id: r.id, at: r.at, product_id: nullable(r.productId), qty: r.qty, purchaser: r.purchaser, id_type: r.idType, id_last4: r.idLast4, cashier: r.cashier })),
     audit_log: data.audit.map((a) => ({ id: a.id, at: a.at, actor: a.actor, kind: a.kind, detail: a.detail })),
     shifts: data.shifts.map((s) => ({ id: s.id, terminal_id: s.terminalId, cashier_id: nullable(s.cashierId), cashier_name: s.cashierName, opened_at: s.openedAt, closed_at: nullable(s.closedAt), status: s.status, opening_balance: s.openingBalance, closing_balance: nullable(s.closingBalance), counted_cash: nullable(s.countedCash), transactions: s.transactions, cash_movements: s.cashMovements, sales_total: s.salesTotal, refunds_total: s.refundsTotal, card_total: s.cardTotal, insurance_total: s.insuranceTotal, store_credit_total: s.storeCreditTotal, paid_in_total: s.paidInTotal, paid_out_total: s.paidOutTotal, expected_cash: s.expectedCash, over_short: nullable(s.overShort), notes: nullable(s.notes) })),
@@ -744,6 +764,12 @@ export function rowsFor(data: BackendData): Record<TableName, Row[]> {
     })),
     /* log-only table: never upserted back (persistBackendData skips empty payloads) */
     notification_log: [],
+    rx_claims: data.rxClaims.map((c) => ({
+      id: c.id, prescription_id: c.prescriptionId, patient: c.patient, drug: c.drug,
+      qty: c.qty, submitted_at: timestamp(c.submittedAt), status: c.status, payer: c.payer,
+      amount: c.amount, adjudication: nullable(c.adjudication),
+      organization_id: "00000000-0000-0000-0000-000000000001",
+    })),
   };
 }
 
@@ -788,6 +814,7 @@ const TABLE_COLLECTION: Record<string, keyof BackendData> = {
   branches: "branches",
   promotions: "promotions",
   vaccinations: "vaccinations",
+  rx_claims: "rxClaims",
 };
 
 /** Build the full-org export bundle from a BackendData snapshot (single source of truth: rowsFor). */
@@ -923,6 +950,7 @@ export async function loadBackendData(seed: BackendData): Promise<LoadResult> {
         promotions: byTable.promotions.map(promotionFrom),
         vaccinations: byTable.vaccinations.map(vaccinationFrom),
         notificationLog: byTable.notification_log.map(notificationLogFrom),
+        rxClaims: byTable.rx_claims.map(claimFrom),
       },
     };
   } catch (error) {

@@ -880,6 +880,7 @@ export interface OrgSettings {
   deliveryFee: number;              // default delivery charge (W3.2)
   freeThreshold: number;            // orders ≥ this amount ship free; 0 = no threshold (W3.2)
   ndcLiveLookup: boolean;          // W3.8 — live openFDA/RxNorm NDC lookup (off → offline directory only)
+  claimsMode: "sandbox" | "live";  // W4.1 — claims gateway: sandbox until a live NCPDP partner is onboarded
 
   savedReportViews: import("./lib/report-filters").SavedReportView[]; // named report-builder views (JSONB via settings tail column — no migration)
   notifications: {
@@ -908,6 +909,7 @@ export function makeSettings(): OrgSettings {
     deliveryFee: 0,
     freeThreshold: 0,
     ndcLiveLookup: true,
+    claimsMode: "sandbox",
     savedReportViews: [],
     notifications: {
       channel: "console",
