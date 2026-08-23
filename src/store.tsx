@@ -142,6 +142,7 @@ import {
 } from "./lib/outbox";
 import { setRuntimeInteractions } from "./lib/clinical";
 import { sendNotification, notifierFor, type NotificationKind, type NotificationLogEntry } from "./lib/notify";
+import { makeClaimsAdapter, claimFromRx, DEFAULT_ORG_ID, type RxClaim } from "./lib/claims";
 import i18n from "./i18n";
 
 export type View =
@@ -201,6 +202,7 @@ interface State {
   branches: Branch[];
   notificationLog: NotificationLogEntry[];
   vaccinations: Vaccination[];
+  rxClaims: RxClaim[];
   currentShift: Shift | null;
   cart: {
     productId: string;
@@ -272,6 +274,9 @@ type Action =
     }
   | { type: "ADD_VACCINATION"; vax: Omit<Vaccination, "id" | "createdAt"> }
   | { type: "UPDATE_VACCINATION"; id: string; patch: Partial<Pick<Vaccination, "lot" | "doseNumber" | "site" | "administeredAt" | "nextDue" | "notes">> }
+  | { type: "CLAIM_SUBMIT"; prescriptionId: string; plan?: string }
+  | { type: "CLAIM_ADJUDICATE"; id: string }
+  | { type: "CLAIM_REVERSE"; id: string }
   | { type: "TOGGLE_RESTRICTED"; productId: string; restricted: { limitPerSale: number } | undefined }
   | { type: "UPDATE_SETTINGS"; patch: Partial<Omit<OrgSettings, "loyalty">> & { loyalty?: Partial<OrgSettings["loyalty"]> } }
   | { type: "SNAPSHOT_SAVE"; label: string; auto: boolean }
@@ -579,6 +584,7 @@ export const seed = (): Pick<
   | "branches"
   | "promotions"
   | "vaccinations"
+  | "rxClaims"
 > => {
   const now = Date.now();
   const products = makeProducts(now);
@@ -607,6 +613,7 @@ export const seed = (): Pick<
     timeEntries: makeTimeEntries(now),
     coldChainLog: makeColdChainLogs(now),
     vaccinations: makeVaccinations(now),
+    rxClaims: [],
     shifts: [],
     interactionPairs: [],
     coupons: [],
@@ -687,6 +694,7 @@ function load(): State {
           interactionPairs: saved.interactionPairs ?? [],
           coldChainLog: saved.coldChainLog ?? [],
           vaccinations: saved.vaccinations ?? [],
+          rxClaims: saved.rxClaims ?? [],
           coupons: saved.coupons ?? [],
           categories: saved.categories ?? CATEGORIES_FALLBACK,
           branches: saved.branches ?? BRANCHES_FALLBACK,
@@ -3910,6 +3918,50 @@ export function reducer(state: State, a: Action): State {
       return withToast(next, "success", i18n.t("toast.vaccinationUpdated"));
     }
 
+    /* W4.1 — insurance claims (NCPDP D.0 via the claims adapter; sandbox payer until live).
+       The sandbox adapter is deterministic + synchronous, so the reducer stays synchronous. */
+    case "CLAIM_SUBMIT": {
+      const rx = state.prescriptions.find((x) => x.id === a.prescriptionId);
+      if (!rx || rx.status !== "dispensed") return state;
+      const p = state.products.find((x) => x.id === rx.productId);
+      if (!p) return state;
+      const adapter = makeClaimsAdapter(state.settings);
+      const claim = adapter.submit(
+        claimFromRx(rx, p, a.plan ?? rx.insurance?.plan ?? "Cash", DEFAULT_ORG_ID),
+      );
+      return withAudit(
+        withToast({ ...state, rxClaims: [claim, ...state.rxClaims] }, "success", i18n.t("claims.submitted", { id: claim.id })),
+        "rx",
+        `Claim submitted — ${claim.id} · ${claim.patient} · ${claim.payer} · ${money(claim.amount / 100)}`,
+      );
+    }
+
+    case "CLAIM_ADJUDICATE": {
+      const claim = state.rxClaims.find((x) => x.id === a.id);
+      if (!claim || claim.status !== "submitted") return state;
+      const done = makeClaimsAdapter(state.settings).adjudicate(claim);
+      const rxClaims = state.rxClaims.map((x) => (x.id === a.id ? done : x));
+      const ok = done.status === "paid";
+      return withAudit(
+        withToast({ ...state, rxClaims }, ok ? "success" : "warn",
+          ok ? i18n.t("claims.paid", { id: done.id }) : i18n.t("claims.rejected", { id: done.id })),
+        "rx",
+        `Claim ${done.status} — ${done.id} · ${done.patient} · ${done.payer} · ${String(done.adjudication.rejectCode ?? "")}`,
+      );
+    }
+
+    case "CLAIM_REVERSE": {
+      const claim = state.rxClaims.find((x) => x.id === a.id);
+      if (!claim || claim.status !== "paid") return state;
+      const done = makeClaimsAdapter(state.settings).reverse(claim);
+      return withAudit(
+        withToast({ ...state, rxClaims: state.rxClaims.map((x) => (x.id === a.id ? done : x)) }, "info",
+          i18n.t("claims.resubmitted", { id: done.id })),
+        "rx",
+        `Claim reversed — ${done.id} · ${done.patient} · ${done.payer}`,
+      );
+    }
+
     case "HYDRATE_BACKEND": {
       const hydratedUser = state.user
         ? (a.data.staff.find(
@@ -3950,6 +4002,7 @@ export function reducer(state: State, a: Action): State {
         branches: a.data.branches ?? BRANCHES_FALLBACK,
 notificationLog: a.data.notificationLog ?? [],
         vaccinations: a.data.vaccinations ?? [],
+        rxClaims: a.data.rxClaims ?? [],
       } as State;
       /* W2.5 — each successful hydration rotates a local full-org backup snapshot */
       rotateBackup(hydrated);
@@ -4175,6 +4228,7 @@ export const backendDataFromState = (state: State): BackendData => ({
 promotions: state.promotions ?? [],
   notificationLog: state.notificationLog ?? [],
   vaccinations: state.vaccinations ?? [],
+  rxClaims: state.rxClaims ?? [],
 });
 
 export function PosProvider({ children }: { children: ReactNode }) {

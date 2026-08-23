@@ -1155,5 +1155,31 @@
     "productTh": "Product",
     "qtyTh": "Qty",
     "none": "None"
+  },
+  "claims": {
+    "title": "Claims",
+    "subtitle": "NCPDP D.0 insurance claims — sandbox payer until a live partner is onboarded.",
+    "sandboxNote": "Sandbox mode: claims are adjudicated locally with a deterministic rule (under $500 pays, otherwise rejected). No real payer is contacted.",
+    "submit": "Submit claim",
+    "adjudicate": "Adjudicate",
+    "reverse": "Reverse",
+    "empty": "No claims yet — submit one from a dispensed Rx.",
+    "noDispensed": "No dispensed prescriptions to bill.",
+    "patient": "Patient",
+    "drug": "Drug",
+    "qty": "Qty",
+    "payer": "Payer",
+    "amount": "Amount",
+    "submittedAt": "Submitted",
+    "status": "Status",
+    "submitted": "Claim {{id}} submitted",
+    "paid": "Claim {{id}} paid",
+    "rejected": "Claim {{id}} rejected",
+    "resubmitted": "Claim {{id}} reversed & resubmitted",
+    "st_submitted": "Submitted",
+    "st_paid": "Paid",
+    "st_rejected": "Rejected",
+    "st_resubmitted": "Resubmitted",
+    "resubmit": "Resubmit"
   }
 }

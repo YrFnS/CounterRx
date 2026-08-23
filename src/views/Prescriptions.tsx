@@ -37,7 +37,7 @@ function resizeToDataUrl(file: File, maxDim: number): Promise<string> {
     img.src = url;
   });
 }
-import { IRx, ICheck, IClock, IRegister, IShield, IGrab, IRefresh, ISend, IRecall, IX, IBox, ISwap, IArrowIn, IArrowOut, IDownload, IPlus, IScan, IAlert, IPrint, ISpark, IUsers, ISearch, IEdit, IArchive, ITrash } from "../icons";
+import { IRx, ICheck, IClock, IRegister, IShield, IGrab, IRefresh, ISend, IRecall, IX, IBox, ISwap, IArrowIn, IArrowOut, IDownload, IPlus, IScan, IAlert, IPrint, ISpark, IUsers, ISearch, IEdit, IArchive, ITrash, IClipboard, IInfo } from "../icons";
 
 const FLOW: RxStatus[] = ["new", "verifying", "ready", "waiting", "dispensed"];
 const LABEL: Record<RxStatus, string> = {
@@ -66,7 +66,7 @@ export default function Prescriptions() {
   const [xferIn, setXferIn] = useState(false);
   const [intake, setIntake] = useState(false);
   const [ocrIntake, setOcrIntake] = useState(false);
-  const [tab, setTab] = useState<"workflow" | "prescribers">("workflow");
+  const [tab, setTab] = useState<"workflow" | "prescribers" | "claims">("workflow");
   const mayTransfer = can(state.user?.role, "transfer_rx");
 
   /* Refill radar: maintenance fills whose days-supply runs out within 7 days */
@@ -106,9 +106,16 @@ export default function Prescriptions() {
             tab === "prescribers" ? "bg-pine-700 text-pine-50 shadow-lift" : "border border-mist bg-card text-ink hover:border-pine-400")}>
           <IUsers size={13} className="inline me-1" /> {t("prescribers.title")}
         </button>
+        <button onClick={() => setTab("claims")}
+          className={cx("px-3 py-1.5 rounded-lg text-xs font-bold transition active:scale-95",
+            tab === "claims" ? "bg-pine-700 text-pine-50 shadow-lift" : "border border-mist bg-card text-ink hover:border-pine-400")}>
+          <IClipboard size={13} className="inline me-1" /> {t("claims.title")} · {state.rxClaims.length}
+        </button>
       </div>
       {tab === "prescribers" ? (
         <PrescribersTab onClose={() => setTab("workflow")} />
+      ) : tab === "claims" ? (
+        <ClaimsTab />
       ) : (
       <>
       <div className="flex items-center gap-3 flex-wrap">
@@ -1678,5 +1685,172 @@ export function RxLabel({ rx, p, patient, onClose }: { rx: Prescription; p?: Pro
           </body></html>`}
       />
     </Modal>
+  );
+}
+
+/* ================================================================== */
+/*  W4.1 — Claims tab (sandbox payer)                                 */
+/* ================================================================== */
+
+function ClaimsTab() {
+  const { t } = useTranslation();
+  const { state, dispatch, product, money } = usePos();
+  const [rxId, setRxId] = useState<string>("");
+  const [plan, setPlan] = useState("");
+
+  const dispensed = useMemo(
+    () => state.prescriptions.filter((r) => r.status === "dispensed"),
+    [state.prescriptions],
+  );
+
+  const claims = useMemo(
+    () => [...state.rxClaims].sort((a, b) => b.submittedAt - a.submittedAt),
+    [state.rxClaims],
+  );
+
+  const submitClaim = () => {
+    if (!rxId) return;
+    dispatch({ type: "CLAIM_SUBMIT", prescriptionId: rxId, plan: plan || undefined });
+    setRxId("");
+    setPlan("");
+  };
+
+  const statusLabel: Record<string, string> = {
+    submitted: t("claims.st_submitted"),
+    paid: t("claims.st_paid"),
+    rejected: t("claims.st_rejected"),
+    resubmitted: t("claims.st_resubmitted"),
+  };
+
+  const statusChip: Record<string, string> = {
+    submitted: "bg-honey-100 text-honey-700",
+    paid: "bg-pine-100 text-pine-700",
+    rejected: "bg-brick-100 text-brick-700",
+    resubmitted: "bg-indigo-100 text-indigo-700",
+  };
+
+  return (
+    <div className="h-full flex flex-col min-h-0">
+      <div className="flex items-center gap-3 flex-wrap">
+        <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-inksoft flex items-center gap-1.5">
+          <IClipboard size={12} /> {t("claims.subtitle")}
+        </p>
+        <div className="flex-1" />
+        <p className="text-[10px] text-inksoft flex items-center gap-1">
+          <IInfo size={12} className="inline" /> {t("claims.sandboxNote")}
+        </p>
+      </div>
+
+      {/* Submit a claim from a dispensed Rx */}
+      <div className="mt-3 rounded-xl border border-mist bg-card p-3.5 flex items-end gap-3 flex-wrap">
+        <div className="flex flex-col gap-1 min-w-[180px]">
+          <label className="text-[10px] font-bold uppercase tracking-[0.14em] text-inksoft">{t("claims.submittedAt")}</label>
+          <select
+            value={rxId}
+            onChange={(e) => {
+              setRxId(e.target.value);
+              const rx = dispensed.find((r) => r.id === e.target.value);
+              setPlan(rx?.insurance?.plan ?? "");
+            }}
+            className="rounded-lg border border-mist bg-paper px-2.5 py-2 text-sm focus:border-pine-500 focus:outline-none"
+          >
+            <option value="">{t("claims.noDispensed")}</option>
+            {dispensed.map((r) => {
+              const p = product(r.productId);
+              return (
+                <option key={r.id} value={r.id}>
+                  {r.id} — {r.patient} · {p?.name ?? r.productId} · {r.insurance?.plan ?? "No insurance"}
+                </option>
+              );
+            })}
+          </select>
+        </div>
+        <div className="flex flex-col gap-1 min-w-[120px]">
+          <label className="text-[10px] font-bold uppercase tracking-[0.14em] text-inksoft">{t("claims.payer")}</label>
+          <input
+            value={plan}
+            onChange={(e) => setPlan(e.target.value)}
+            onFocus={(e) => e.target.select()}
+            placeholder="BlueCross PBM"
+            className="rounded-lg border border-mist bg-paper px-2.5 py-2 text-sm focus:border-pine-500 focus:outline-none"
+          />
+        </div>
+        <button
+          onClick={submitClaim}
+          disabled={!rxId}
+          className="shrink-0 flex items-center gap-1.5 px-4 py-2 rounded-lg bg-pine-700 text-pine-50 text-xs font-bold hover:bg-pine-600 transition active:scale-95 shadow-lift disabled:opacity-40"
+        >
+          <IPlus size={14} /> {t("claims.submit")}
+        </button>
+      </div>
+
+      {/* Claims list */}
+      <div className="mt-3.5 flex-1 min-h-0 overflow-y-auto scroll-slim pb-4">
+        {claims.length === 0 ? (
+          <p className="text-xs text-inksoft px-1">{t("claims.empty")}</p>
+        ) : (
+          <table className="w-full text-xs">
+            <thead>
+              <tr className="text-inksoft font-bold uppercase tracking-[0.12em] text-[10px] border-b border-mist">
+                <th className="text-start py-2 px-1">{t("claims.patient")}</th>
+                <th className="text-start py-2 px-1">{t("claims.drug")}</th>
+                <th className="text-end py-2 px-1">{t("claims.qty")}</th>
+                <th className="text-end py-2 px-1">{t("claims.amount")}</th>
+                <th className="text-start py-2 px-1">{t("claims.payer")}</th>
+                <th className="text-start py-2 px-1">{t("claims.status")}</th>
+                <th className="text-end py-2 px-1">{t("claims.submittedAt")}</th>
+                <th className="text-end py-2 px-1" />
+              </tr>
+            </thead>
+            <tbody>
+              {claims.map((c) => (
+                <tr key={c.id} className="border-b border-mist/60 hover:bg-mist/20 transition">
+                  <td className="py-2.5 px-1 font-semibold text-ink">{c.patient}</td>
+                  <td className="py-2.5 px-1 text-inksoft">{c.drug}</td>
+                  <td className="py-2.5 px-1 text-end num text-ink">{c.qty}</td>
+                  <td className="py-2.5 px-1 text-end num text-ink">{money(c.amount / 100)}</td>
+                  <td className="py-2.5 px-1 text-inksoft">{c.payer}</td>
+                  <td className="py-2.5 px-1">
+                    <span className={cx("inline-block px-1.5 py-0.5 rounded text-[10px] font-bold", statusChip[c.status] ?? "")}>
+                      {statusLabel[c.status] ?? c.status}
+                    </span>
+                    {Boolean(c.adjudication?.rejectCode) && (
+                      <span className="ms-1 text-[10px] text-brick-700">({String(c.adjudication?.rejectCode)})</span>
+                    )}
+                  </td>
+                  <td className="py-2.5 px-1 text-end num text-inksoft">{relTime(c.submittedAt)}</td>
+                  <td className="py-2.5 px-1 text-end">
+                    {c.status === "submitted" && (
+                      <button
+                        onClick={() => dispatch({ type: "CLAIM_ADJUDICATE", id: c.id })}
+                        className="px-2 py-1 rounded-md bg-pine-700 text-pine-50 text-[10px] font-bold hover:bg-pine-600 transition active:scale-95"
+                      >
+                        {t("claims.adjudicate")}
+                      </button>
+                    )}
+                    {c.status === "paid" && (
+                      <button
+                        onClick={() => dispatch({ type: "CLAIM_REVERSE", id: c.id })}
+                        className="px-2 py-1 rounded-md border border-honey-400 bg-honey-100/50 text-honey-700 text-[10px] font-bold hover:bg-honey-100 transition active:scale-95"
+                      >
+                        {t("claims.reverse")}
+                      </button>
+                    )}
+                    {c.status === "rejected" && (
+                      <button
+                        onClick={() => dispatch({ type: "CLAIM_SUBMIT", prescriptionId: c.prescriptionId, plan: c.payer })}
+                        className="px-2 py-1 rounded-md border border-mist bg-card text-ink text-[10px] font-bold hover:border-pine-400 hover:text-pine-700 transition active:scale-95"
+                      >
+                        {t("claims.resubmit")}
+                      </button>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
+    </div>
   );
 }
