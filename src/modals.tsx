@@ -29,6 +29,14 @@ export function PaymentModal() {
   const [rIdLast4, setRIdLast4] = useState("");
 
   const customer = state.customers.find((c) => c.id === state.saleCustomerId) ?? null;
+  const [dueDate, setDueDate] = useState(() => {
+    const d = new Date();
+    d.setDate(d.getDate() + 14);
+    return d.toISOString().split('T')[0];
+  });
+  const todayStr = new Date().toISOString().split('T')[0];
+  const dueDateNum = new Date(dueDate).getTime();
+  const formatDate = (ms: number) => new Date(ms).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
   const [creditCode, setCreditCode] = useState("");
   const creditMatch: StoreCredit | undefined = creditCode.trim()
     ? creditByCode(state.storeCredits, creditCode)
@@ -92,7 +100,8 @@ export function PaymentModal() {
   const interactionOk = major.length === 0 || overrideAck;
   /* behind-the-counter sales need purchaser name + ID last-4 */
   const restrictedOk = restrictedLines.length === 0 || (rPurchaser.trim().length >= 2 && /^\d{4}$/.test(rIdLast4));
-  const canConfirm = paymentOk && controlledOk && interactionOk && restrictedOk
+  const payLaterOk = leg1 !== "pay_later" || !!customer;
+  const canConfirm = paymentOk && controlledOk && interactionOk && restrictedOk && payLaterOk
     && (leg1 !== "store_credit" || !!creditMatch);
   const hasRx = state.cart.some((c) => product(c.productId)?.rx);
 
@@ -101,11 +110,17 @@ export function PaymentModal() {
     { id: "card", label: "Card", icon: <ICard size={17} />, hint: tr("modal.terminal2") },
     { id: "insurance", label: "Insurance", icon: <IShield size={17} />, hint: tr("modal.claimAutoFiled") },
     { id: "store_credit", label: "Store Credit", icon: <ICard size={17} />, hint: tr("modal.giftOrCredit") },
+    { id: "pay_later", label: tr("pos.payLater"), icon: <IUsers size={17} />, hint: tr("pos.payLaterDueDate") },
   ];
   const labelOf = (m: PayMethod) => methods.find((x) => x.id === m)?.label ?? m;
 
   const confirm = () => {
     if (!canConfirm) return;
+    /* pay later requires a customer */
+    if (leg1 === "pay_later" && !customer) {
+      dispatch({ type: "TOAST", kind: "error", msg: tr("pos.payLaterBlocked") });
+      return;
+    }
     /* pharmacist override of a major interaction — documented + audited (§3) */
     if (major.length > 0 && overrideAck) {
       dispatch({
@@ -117,6 +132,8 @@ export function PaymentModal() {
       ? [{ method: leg1, amount: round2(l1) }, { method: leg2, amount: l2 }]
       : leg1 === "store_credit"
         ? [{ method: "store_credit", amount: t.total, ref: creditMatch!.id }]
+        : leg1 === "pay_later"
+        ? [{ method: "pay_later", amount: t.total, dueDate: dueDateNum }]
         : [{ method: leg1, amount: t.total }];
     dispatch({
       type: "COMPLETE_SALE", payments, discountPct, taxExempt, idChecked,
@@ -448,6 +465,18 @@ export function PaymentModal() {
                   <span className="num font-bold">−{money(couponDiscount)}</span>
                 </div>
               )}
+            </div>
+          )}
+          {!split && leg1 === "pay_later" && (
+            <div className="mt-4 anim-fade-up space-y-2">
+              <div className="flex items-center gap-2 text-xs font-bold text-honey-800 bg-honey-100 border border-honey-300 rounded-lg px-3 py-2">
+                <IAlert size={14} className="shrink-0" />
+                <span>{tr("pos.payLaterRequiresCustomer")}</span>
+              </div>
+              <label className="text-[11px] font-semibold uppercase tracking-[0.14em] text-inksoft">{tr("pos.payLaterDueDate")}</label>
+              <input type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} min={todayStr}
+                className="w-full px-3 py-2.5 rounded-lg border-2 border-mist bg-card text-lg font-semibold text-ink focus:border-pine-500 focus:outline-none transition" />
+              <p className="text-xs text-inksoft">{tr("pos.payLaterDefaultDays")} — {tr("pos.payLaterNotice")} {formatDate(dueDateNum)}</p>
             </div>
           )}
 

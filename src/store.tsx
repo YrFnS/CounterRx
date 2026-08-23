@@ -7,7 +7,7 @@ import {
   stockOf, nearestExpiry, allocFEFO, fefoBatches, newBatchCode, daysUntil,
   genericSubstituteFor, substitutionSaving,
   bulkPct, REDEEM_CHUNK_PTS, REDEEM_CHUNK_VALUE, can, tenderTypeOf, applyStoreCredit, pruneExpiredHolds,
-  LINE_DISCOUNT_PIN_THRESHOLD, CATEGORIES_FALLBACK,
+  LINE_DISCOUNT_PIN_THRESHOLD, CATEGORIES_FALLBACK, outstandingBalance,
   type Category,
   createShift, recordShiftTransaction, recordCashMovement, closeShift, generateXReport, generateZReport,
   deductFromLot, tempInRange,
@@ -139,6 +139,7 @@ type Action =
   | { type: "EXPIRE_HELDS" }
   | { type: "OPEN_PAY"; open: boolean }
   | { type: "COMPLETE_SALE"; payments: PaymentLeg[]; tendered?: number; discountPct: number; taxExempt: boolean; idChecked: boolean; restricted?: { purchaser: string; idType: string; idLast4: string }; couponDiscount?: number; invoiceDiscountAmt?: number; approvedBy?: string }
+  | { type: "SETTLE_PAY_LATER"; transactionId: string; legIndex: number; method: PayMethod; ref?: string }
   | { type: "OPEN_RECEIPT"; tx: Transaction | null }
   | { type: "ADJUST_BATCH"; productId: string; batch: string; newQty: number; reason: string }
   | { type: "RESTOCK"; productId: string; amount: number; batch: string; expiry: string; cost?: number }
@@ -1085,13 +1086,19 @@ export function reducer(state: State, a: Action): State {
         (acc, p) => (p.ref ? applyStoreCredit(acc, p.ref, p.amount) : acc),
         state.storeCredits,
       );
-      const ptsLabel = customer ? ` · +${pointsEarned}${state.redeemPoints ? ` / −${state.redeemPoints} pts` : ""} pts` : "";
       let next: State = {
         ...state, products, customers, storeCredits,
         transactions: [tx, ...state.transactions],
         cart: [], payOpen: false, receipt: tx,
         saleCustomerId: null, redeemPoints: 0,
       };
+      /* pay_later audit entry */
+      const payLaterLeg = a.payments.find((p) => p.method === "pay_later");
+      if (payLaterLeg && customer) {
+        const dueStr = payLaterLeg.dueDate ? new Date(payLaterLeg.dueDate).toLocaleDateString() : "TBD";
+        next = withAudit(next, "sale", `${tx.id} · pay_later $${payLaterLeg.amount.toFixed(2)} due ${dueStr} · ${customer.name}`);
+      }
+      const ptsLabel = customer ? ` · +${pointsEarned}${state.redeemPoints ? ` / −${state.redeemPoints} pts` : ""} pts` : "";
       next = withAudit(next, "sale", `${tx.id} · $${t.total.toFixed(2)} · ${tenderLabel}${customer ? ` · ${customer.name}` : ""}${a.taxExempt ? " · TAX EXEMPT" : ""}`);
       /* record the sale on the open shift ledger so X/Z reports reflect it (Phase A) */
       if (next.currentShift) {
@@ -1142,6 +1149,32 @@ export function reducer(state: State, a: Action): State {
 
     case "OPEN_RECEIPT":
       return { ...state, receipt: a.tx };
+
+    case "SETTLE_PAY_LATER": {
+      const tx = state.transactions.find((t) => t.id === a.transactionId);
+      if (!tx) return withToast(state, "error", "Transaction not found");
+      if (!tx.payments || !tx.payments[a.legIndex]) return withToast(state, "error", "Payment leg not found");
+      const leg = tx.payments[a.legIndex];
+      if (leg.method !== "pay_later") return withToast(state, "error", "Not a pay_later leg");
+      if (leg.settledAt) {
+        const settledDate = new Date(leg.settledAt).toLocaleDateString();
+        return withToast(state, "error", `Cannot settle — already settled on ${settledDate}`);
+      }
+      const now = Date.now();
+      const settledLeg: PaymentLeg = { method: a.method, amount: leg.amount, ref: a.ref, settledAt: now };
+      const updatedPayments = [...tx.payments];
+      updatedPayments[a.legIndex] = { ...leg, settledAt: now };
+      updatedPayments.push(settledLeg);
+      const transactions = state.transactions.map((t) =>
+        t.id === a.transactionId ? { ...t, payments: updatedPayments } : t
+      );
+      const next = withAudit(
+        { ...state, transactions },
+        "sale",
+        `Settled pay_later ${tx.id} leg ${a.legIndex} · $${leg.amount.toFixed(2)} via ${a.method}${a.ref ? ` (${a.ref})` : ""}`
+      );
+      return withToast(next, "success", `Pay later settled — $${leg.amount.toFixed(2)} via ${a.method}`);
+    }
 
     case "ADJUST_BATCH": {
       const p = state.products.find((x) => x.id === a.productId);
@@ -1875,6 +1908,7 @@ interface Ctx {
   expiring: Product[];
   newRx: number;
   todayStats: { revenue: number; count: number; avg: number; items: number };
+  money: (n: number) => string;
 }
 
 const PosCtx = createContext<Ctx | null>(null);
@@ -2084,6 +2118,7 @@ export function PosProvider({ children }: { children: ReactNode }) {
     return {
       state, dispatch, product, prescriber, supplier, lowStock, expiring, newRx,
       todayStats: { revenue, count: sales.length, avg: sales.length ? round2(revenue / sales.length) : 0, items },
+      money,
     };
   }, [state]);
 
