@@ -33,6 +33,21 @@
   EVIDENCE: `analytics:` namespace in both locales (parity test passes); 87 tests pass (6 new analytics); build OK.
 
 Notes:
+
 - Loyalty earning/redemption already existed (points per dollar, chunk redemption at 100 pts = $5) — Phase F added per-org configurability and the coupon layer; the seeded `settings.loyalty` default matches previous behavior.
 - Digital receipts excluded per scope decision (no mail/SMS provider).
 - Migration 00012 pushed to remote by the coordinator (not run here).
+
+## W2.4 — Custom report builder (feat/report-builder)
+
+- [x] Global report filter bar applied across all report tabs.
+  CHECK: `grep -n 'applyReportFilters\|FilterBar' src/views/Reports.tsx src/lib/report-filters.ts`
+  EXPECT: date range (presets + from/to inputs) plus category/supplier/cashier/method/Rx-OTC filters; one filtered ledger feeds Margin, Valuation, P&L, Builder, Till (date/cashier on closed shifts) and Analytics LTV. Exports consume the already-filtered rows.
+  EVIDENCE: `ReportFilters` + pure `applyReportFilters` in `src/lib/report-filters.ts`; `FilterBar` + unified `ledger`/`filtered` in Reports.tsx.
+- [x] Named report views persisted in org settings JSONB (no migration).
+  CHECK: `grep -n 'savedReportViews' src/data.ts src/lib/sync.ts src/views/Reports.tsx`
+  EXPECT: `OrgSettings.savedReportViews: SavedReportView[]` defaulting to `[]`; round-trips through the existing `settings.loyalty` jsonb column (read/written as a sibling key, stripped on read) — no schema migration.
+  EVIDENCE: `saveView`/`loadView`/`deleteView` in report-filters.ts; save/load dropdown in FilterBar; sync rowsFor/settingsFrom wiring.
+- [x] i18n parity for new strings.
+  CHECK: `npm run typecheck && npm run test && npm run build`
+  EVIDENCE: new `reports.*` + `pos.storeCredit` keys added to BOTH locales (parity test passes, 880 keys each); 147 tests pass (18 new in `src/__tests__/report-builder.test.ts` covering filter application + view round-trip); build OK.

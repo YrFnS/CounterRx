@@ -82,7 +82,7 @@
     "available": "{{count}} in stock",
     "genericAvailable": "Generic available — substitution prompt",
     "dispenseGeneric": "Dispense generic",
-    "keepBrand": "Dispense as written",
+    "keepBrand": "Keep brand",
     "dawLabel": "Dispense-as-written reason",
     "daw1": "DAW-1",
     "daw2": "DAW-2",
@@ -108,12 +108,6 @@
     "currentSale": "Current sale",
     "rxAttached": "Rx attached",
     "clearAll": "Clear all",
-    "genericAvailable": "Generic available — substitution prompt",
-    "keepBrand": "Keep brand",
-    "dispenseGeneric": "Dispense generic",
-    "dawLabel": "Dispense-as-written reason",
-    "daw1": "DAW-1",
-    "daw2": "DAW-2",
     "dawInfo": "DAW-1 prescriber directed · DAW-2 patient requested",
     "dismiss": "Dismiss",
     "brand": "Brand",
@@ -163,7 +157,8 @@
     "payLaterAuditSale": "Sale with pay later — {{amount}} due {{date}}",
     "payLaterAuditSettle": "Settled pay later — {{amount}} via {{method}}",
     "payLaterDoubleSettle": "Cannot settle — already settled on {{date}}",
-    "payLaterSettleSuccess": "Pay later settled — {{amount}} via {{method}}"
+    "payLaterSettleSuccess": "Pay later settled — {{amount}} via {{method}}",
+    "storeCredit": "Store credit"
   },
   "prescriptions": {
     "title": "Prescriptions",
@@ -343,7 +338,7 @@
     "generate": "Generate",
     "export": "Export",
     "print": "Print",
-    "saveView": "Save View",
+    "saveView": "Save view",
     "filterBy": "Filter By",
     "groupBy": "Group By",
     "sortBy": "Sort By",
@@ -370,7 +365,20 @@
     "zClose": "Z Close",
     "zCloseHint": "Count the cash in the drawer to close this shift and lock the Z report.",
     "zReport": "Z Report",
-    "exportExcel": "Export XLSX"
+    "exportExcel": "Export XLSX",
+    "category": "Category",
+    "supplier": "Supplier",
+    "cashier": "Cashier",
+    "method": "Method",
+    "rxOtc": "Rx / OTC",
+    "all": "All",
+    "rxOnly": "Rx only",
+    "otcOnly": "OTC only",
+    "viewName": "View name",
+    "savedViews": "Saved views",
+    "viewSaved": "View saved",
+    "builderHint": "Group dimensions over the filtered sales — the global filter bar sets which sales are included.",
+    "deleteView": "Delete view"
   },
   "settings": {
     "title": "Settings",
@@ -881,7 +889,6 @@
     "title": "Analytics",
     "ltv": "Ltv",
     "totalSpend": "Totalspend",
-    "avgBasket": "Avgbasket",
     "visits": "Visits",
     "lastVisit": "Lastvisit",
     "customer": "Customer",
@@ -913,7 +920,8 @@
     "couponInvalid": "Unknown coupon code",
     "couponInactive": "This coupon is inactive",
     "couponExpired": "This coupon has expired",
-    "couponScope": "Coupon is for another customer"
+    "couponScope": "Coupon is for another customer",
+    "avgBasket": "Avg Basket"
   },
   "discounts": {
     "pctRow": "Discount (%)",
