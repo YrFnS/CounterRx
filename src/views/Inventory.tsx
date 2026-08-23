@@ -303,6 +303,13 @@ export default function Inventory() {
                     </td>
                     <td className="px-4 py-2.5">
                       <div className="flex justify-end gap-1.5">
+                        {low && (
+                          <button onClick={() => dispatch({ type: "NOTIFY_SEND", kind: "refillDue", to: p.supplier, vars: { patient: p.supplier, product: p.name, pharmacy: state.settings.orgName } })}
+                            title={t("notifications.refillDueBtn")}
+                            className="px-2 py-1.5 rounded-md border border-honey-300 bg-honey-50 text-honey-700 text-[11px] font-bold hover:bg-honey-100 transition active:scale-95">
+                            {t("notifications.notify")}
+                          </button>
+                        )}
                         <button onClick={() => setReceiving(p)}
                           title={`Receive stock from ${p.supplier}`}
                           className="px-2 py-1.5 rounded-md border border-pine-200 bg-pine-50 text-pine-700 text-[11px] font-bold hover:bg-pine-700 hover:text-pine-50 transition active:scale-95">

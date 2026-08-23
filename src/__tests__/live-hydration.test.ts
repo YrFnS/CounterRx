@@ -22,6 +22,7 @@ describe.skipIf(!key || process.env.CRX_LIVE !== "1")("live hydration (CRX_LIVE=
       restrictedLog: [],
       snapshots: [],
       settings: makeSettings(),
+      notificationLog: [],
     };
     const result = await loadBackendData(fullData);
     if (!result.ok) console.error("FAILED TABLE:", result.failedTable);

@@ -237,7 +237,8 @@
     "loyaltyInPlay": "Loyalty pts in play",
     "search": "Name or phone…",
     "noMatch": "No customers match",
-    "noMatchHint": "Try another name or phone number."
+    "noMatchHint": "Try another name or phone number.",
+    "creditLow": "{{count}} customer(s) below {{threshold}} store credit — notify them"
   },
   "inventory": {
     "title": "Inventory",
@@ -686,7 +687,24 @@
     "invoiceOverdue": "Invoice Overdue",
     "refillReminder": "Refill Reminder",
     "pickupReady": "Prescription Ready for Pickup",
-    "taskAssigned": "Task Assigned to You"
+    "taskAssigned": "Task Assigned to You",
+    "sentToast": "Notification queued for {{to}}",
+    "hint": "Per-trigger toggles and message templates — provider is the console stub until Resend/Twilio is connected.",
+    "rxReady": "Rx ready",
+    "rxReadyHint": "Sent to the linked customer when a prescription is dispensed",
+    "refillDue": "Refill due",
+    "refillDueHint": "Refill radar reminders + low-stock notify buttons",
+    "creditLow": "Credit balance low",
+    "creditLowHint": "Banner when a customer's store credit drops below threshold",
+    "templatesTitle": "Message templates",
+    "templatesHint": "{{var}} placeholders are filled at send time",
+    "consoleNote": "Delivered via console stub — connect a real provider (Resend/Twilio) in src/lib/notify.ts.",
+    "recentTitle": "Recent notifications",
+    "recentHint": "Newest 20 · also persisted to notification_log",
+    "emptyLog": "Nothing sent yet.",
+    "notify": "Notify",
+    "notifySupplier": "Ask the supplier to expedite — customers waiting on this can be reminded",
+    "refillDueBtn": "Remind patients waiting on refills of this product"
   },
   "deliveries": {
     "title": "Deliveries",

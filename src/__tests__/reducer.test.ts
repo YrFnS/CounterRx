@@ -33,6 +33,7 @@ function makeTestState(overrides: Partial<State> = {}): State {
     snapshotVersion: 0,
     shifts: [],
     storeCredits: [],
+    notificationLog: [],
     ...overrides,
   };
 }
@@ -68,6 +69,7 @@ describe("reducer - HYDRATE_BACKEND", () => {
       coupons: [],
       categories: [],
       branches: [],
+      notificationLog: [],
     };
 
     const action: Action = { type: "HYDRATE_BACKEND", data: backendData };
@@ -116,6 +118,7 @@ describe("reducer - HYDRATE_BACKEND", () => {
       coupons: [],
       categories: [],
       branches: [],
+      notificationLog: [],
     };
 
     const action: Action = { type: "HYDRATE_BACKEND", data: backendData };
@@ -159,6 +162,7 @@ describe("reducer - HYDRATE_BACKEND", () => {
       coupons: [],
       categories: [],
       branches: [],
+      notificationLog: [],
     };
 
     const action: Action = { type: "HYDRATE_BACKEND", data: backendData };

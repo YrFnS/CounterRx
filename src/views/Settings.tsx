@@ -1,7 +1,7 @@
 import { useMemo, useState, useCallback, useEffect, useRef } from "react";
 import { useTranslation } from "react-i18next";
 import type { ReactNode } from "react";
-import { usePos, listSnapshots, money, listBackups, rotateBackup, backendDataFromState, BACKUP_KEEP, BACKUPS_KEY } from "../store";
+import { usePos, listSnapshots, money, listBackups, rotateBackup, backendDataFromState, relTime, BACKUP_KEEP, BACKUPS_KEY } from "../store";
 import i18n from "../i18n";
 import { CURRENCIES, ROLE_LABEL, can, randomPin, Coupon, catChildren, catPathLabel } from "../data";
 import { supabase } from "../lib/supabase";
@@ -11,11 +11,11 @@ import { buildOrgExport, validateOrgExport, type OrgExportBundle } from "../lib/
 import { toCsv } from "../lib/export";
 import { cx, Modal, Badge } from "../ui";
 import {
-  IGear, IPrint, IStar, IUsers, IDownload, IPlus, IX, ICheck, ITrash, IRecall, IAlert, IScan, IChevD, IClockIn, IPill, IEdit, ITag, IShield, ICopy, IUpload,
+  IGear, IPrint, IStar, IUsers, IDownload, IPlus, IX, ICheck, ITrash, IRecall, IAlert, IScan, IChevD, IClockIn, IPill, IEdit, ITag, IShield, ICopy, IUpload, IBell,
 } from "../icons";
 import { connectPrinter, printLabel, kickDrawer, HardwareError } from "../lib/hardware";
 
-type Tab = "profile" | "receipt" | "loyalty" | "team" | "clock" | "hardware" | "data" | "language" | "clinical" | "coupons" | "categories" | "backups";
+type Tab = "profile" | "receipt" | "loyalty" | "team" | "clock" | "hardware" | "data" | "language" | "clinical" | "coupons" | "categories" | "backups" | "notifications";
 
 export default function Settings() {
   const { t } = useTranslation();
@@ -36,6 +36,7 @@ export default function Settings() {
     { id: "clinical", label: t("settings.clinical"), icon: <IPill size={14} /> },
     { id: "coupons", label: t("analytics.couponsTitle"), icon: <IPlus size={14} /> },
     { id: "categories", label: t("settings.categoriesTitle"), icon: <ITag size={14} /> },
+    { id: "notifications", label: t("notifications.title"), icon: <IBell size={14} /> },
     { id: "backups", label: t("settings.backups.title"), icon: <IShield size={14} /> },
   ];
 
@@ -75,6 +76,7 @@ export default function Settings() {
         {tab === "clinical" && <ClinicalTab admin={admin} />}
         {tab === "coupons" && <CouponsTab admin={admin} />}
         {tab === "categories" && <CategoriesTab admin={admin} />}
+        {tab === "notifications" && <NotificationsTab admin={admin} />}
         {tab === "backups" && <BackupsTab admin={admin} />}
       </div>
     </div>
@@ -651,6 +653,62 @@ function DataTab() {
             <p className="mt-1">This store keeps the offline-first ledger locally. Next: Supabase adapter — same schema, server-side RLS, hashed PINs verified via Postgres RPC.</p>
           </div>
         </div>
+      </Card>
+    </div>
+  );
+}
+
+/* --------------------------------- notifications (W3.1) -------------------------------- */
+function NotificationsTab({ admin }: { admin: boolean }) {
+  const { state, dispatch } = usePos();
+  const { t } = useTranslation();
+  const n = state.settings.notifications;
+  const set = (patch: Partial<OrgSettings>) => admin && dispatch({ type: "UPDATE_SETTINGS", patch });
+  const setEnabled = (k: keyof OrgSettings["notifications"]["enabled"], v: boolean) =>
+    set({ notifications: { ...n, enabled: { ...n.enabled, [k]: v } } });
+  const setTemplate = (k: keyof OrgSettings["notifications"]["templates"], v: string) =>
+    set({ notifications: { ...n, templates: { ...n.templates, [k]: v } } });
+
+  return (
+    <div className="grid lg:grid-cols-2 gap-4 max-w-[980px] items-start">
+      <Card title={t("notifications.title")} hint={t("notifications.hint")}>
+        <div className="space-y-3">
+          <ToggleRow disabled={!admin} on={n.enabled.rxReady} onChange={(v) => setEnabled("rxReady", v)}
+            icon={<IPill size={14} />} label={t("notifications.rxReady")} hint={t("notifications.rxReadyHint")} />
+          <ToggleRow disabled={!admin} on={n.enabled.refillDue} onChange={(v) => setEnabled("refillDue", v)}
+            icon={<IChevD size={14} />} label={t("notifications.refillDue")} hint={t("notifications.refillDueHint")} />
+          <ToggleRow disabled={!admin} on={n.enabled.creditLow} onChange={(v) => setEnabled("creditLow", v)}
+            icon={<IAlert size={14} />} label={t("notifications.creditLow")} hint={t("notifications.creditLowHint")} />
+        </div>
+      </Card>
+      <Card title={t("notifications.templatesTitle")} hint={t("notifications.templatesHint")}>
+        <div className="space-y-3">
+          <Field label={t("notifications.rxReady")}><Input disabled={!admin} value={n.templates.rxReady} onChange={(v) => setTemplate("rxReady", v)} /></Field>
+          <Field label={t("notifications.refillDue")}><Input disabled={!admin} value={n.templates.refillDue} onChange={(v) => setTemplate("refillDue", v)} /></Field>
+          <Field label={t("notifications.creditLow")}><Input disabled={!admin} value={n.templates.creditLow} onChange={(v) => setTemplate("creditLow", v)} /></Field>
+          <p className="text-[11px] text-inksoft">{t("notifications.consoleNote")}</p>
+        </div>
+      </Card>
+      <Card title={t("notifications.recentTitle")} hint={t("notifications.recentHint")}>
+        {state.notificationLog.length === 0 ? (
+          <p className="text-xs text-inksoft py-4 text-center">{t("notifications.emptyLog")}</p>
+        ) : (
+          <div className="space-y-2 max-h-[340px] overflow-y-auto scroll-slim">
+            {state.notificationLog.slice(0, 20).map((e) => (
+              <div key={e.id} className="flex items-center gap-2.5 rounded-lg border border-mist bg-paper px-3 py-2">
+                <span className={cx("grid place-items-center w-7 h-7 rounded-md shrink-0",
+                  e.status === "sent" ? "bg-pine-100 text-pine-700" : "bg-brick-100 text-brick-700")}>
+                  {e.status === "sent" ? <ICheck size={13} /> : <IAlert size={13} />}
+                </span>
+                <div className="flex-1 min-w-0">
+                  <p className="text-xs font-bold text-ink truncate">{e.recipient}</p>
+                  <p className="text-[10px] text-inksoft truncate num">{e.template} · {JSON.stringify(e.payload)}</p>
+                </div>
+                <span className="num text-[10px] text-inksoft shrink-0">{relTime(e.at)}</span>
+              </div>
+            ))}
+          </div>
+        )}
       </Card>
     </div>
   );
