@@ -14,6 +14,7 @@ export interface Category {
   groupId: string;
   sort: number;
   archived: boolean;
+  parentId?: string;   // W2.1 — nested under another category (depth ≤ 2)
 }
 
 export interface Branch {
@@ -39,6 +40,7 @@ export const CATEGORIES_FALLBACK: Category[] = [
   { id: "baby", label: "Baby care", color: "#8a7fb5", groupId: "selfcare", sort: 10, archived: false },
   { id: "cns", label: "CNS & sleep", color: "#6b7f8c", groupId: "chronic", sort: 11, archived: false },
   { id: "compound", label: "Compounds", color: "#8a6fae", groupId: "technical", sort: 12, archived: false },
+  { id: "analgesics", label: "Analgesics", color: "#e0a63c", groupId: "acute", sort: 13, archived: false, parentId: "pain" },
 ];
 
 /* Legacy shape kept for the offline fallback consumers below. */
@@ -76,6 +78,26 @@ export const groupOf = (cat: string, cats?: { id: string; groupId: string }[]) =
 export const groupLabel = (gid: string) => CATEGORY_GROUPS_RUNTIME.find((g) => g.id === gid)?.label ?? gid;
 export const catLabel = (cat: string, cats?: { id: string; label: string }[]) =>
   cats?.find((c) => c.id === cat)?.label ?? CATEGORIES_SEED.find((c) => c.id === (cat as CategoryId))?.label ?? cat;
+
+/* W2.1 tree roll-ups — children fold into their parent's totals.
+ * Depth ≤ 2 is a UI invariant, but these walk defensively without recursion assumptions. */
+export const catChildren = (id: string, cats: { id: string; parentId?: string }[] = []) =>
+  cats.filter((c) => c.parentId === id).map((c) => c.id);
+/** Expand a picked chip/filter id to itself + every descendant leaf. */
+export const catSubtree = (id: string, cats: { id: string; parentId?: string }[]): string[] => {
+  const out = [id];
+  for (;;) {
+    const kids = cats.filter((c) => c.parentId && out.includes(c.parentId) && !out.includes(c.id)).map((c) => c.id);
+    if (kids.length === 0) return out;
+    out.push(...kids);
+  }
+};
+/** "Pain relief / Analgesics" for nested rows in pickers and tables. */
+export const catPathLabel = (id: string, cats?: { id: string; label: string; parentId?: string }[]) => {
+  const c = cats?.find((x) => x.id === id);
+  if (!c?.parentId) return catLabel(id, cats);
+  return `${catLabel(c.parentId, cats)} / ${catLabel(id, cats)}`;
+};
 const CATEGORIES_SEED_LOOKUP = new Map<string, string>(CATEGORY_GROUPS.flatMap((g) => g.leaves.map((l) => [l, g.id] as const)));
 
 /** A single stock lot on the shelf. Sales consume lots FEFO — first expiry, first out. */

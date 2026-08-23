@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { usePos, money, relTime, unitPrice, cartTotals, uomFactor } from "../store";
-import { daysUntil, stockOf, nearestExpiry, bulkPct, fefoBatches, findInteractions, allergyConflicts, genericSubstituteFor, substitutionSaving } from "../data";
+import { daysUntil, stockOf, nearestExpiry, bulkPct, fefoBatches, findInteractions, allergyConflicts, genericSubstituteFor, substitutionSaving, catSubtree } from "../data";
 import type { Product } from "../data";
 import { aiClassify } from "../lib/ai";
 import { cartToInteractionPrompt, parseClassifyJson } from "../lib/ai-ui";
@@ -132,9 +132,17 @@ export default function Register() {
   const categories = useMemo(
     () => (state.categories ?? []).filter((c) => !c.archived).sort((x, y) => x.sort - y.sort),
     [state.categories]);
+  /* W2.1 — chips include children in the parent count; picking a parent filters its whole subtree. */
+  const chipCounts = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const c of categories) m.set(c.id, state.products.filter((p) => p.category === c.id).length);
+    return m;
+  }, [categories, state.products]);
+  const chipCount = (id: string) =>
+    catSubtree(id, categories).reduce((s, k) => s + (chipCounts.get(k) ?? 0), 0);
   const list = useMemo(() => {
     const entries = state.products
-      .filter((p) => cat === "all" || p.category === cat)
+      .filter((p) => cat === "all" || catSubtree(cat, categories).includes(p.category))
       .map((p): { p: Product; idx: number[]; score: number } | null => {
         if (!needle) return { p, idx: [], score: 0 };
         const fm = fuzzy(needle, p.name);
@@ -288,7 +296,7 @@ export default function Register() {
               onClick={() => setCat("all")} dot="#5c6b66" />
             {categories.map((c) => (
               <CatChip key={c.id} active={cat === c.id} label={c.label} dot={c.color}
-                count={state.products.filter((p) => p.category === c.id).length}
+                count={chipCount(c.id)}
                 onClick={() => setCat(cat === c.id ? "all" : c.id)} />
             ))}
           </div>

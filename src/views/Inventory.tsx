@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { usePos, money, relTime, clockTime } from "../store";
-import { daysUntil, fefoBatches, stockOf, nearestExpiry, newBatchCode, FIELD_SUGGESTIONS, BRANCHES_FALLBACK, can, ndcLookup, hashPin, tempInRange, patientsForLot } from "../data";
+import { daysUntil, fefoBatches, stockOf, nearestExpiry, newBatchCode, FIELD_SUGGESTIONS, BRANCHES_FALLBACK, can, ndcLookup, hashPin, tempInRange, patientsForLot, catSubtree } from "../data";
 import type { Product, Batch, TransferStatus, Uom, Transaction, Supplier } from "../data";
 import { aiForecast } from "../lib/ai";
 import type { ForecastRow } from "../lib/ai";
@@ -66,8 +66,9 @@ export default function Inventory() {
 
   const rows = useMemo(() => {
     const needle = q.trim().toLowerCase();
+    const subtree = cat === "all" ? null : catSubtree(cat, categories);
     return state.products.filter((p) => {
-      if (cat !== "all" && p.category !== cat) return false;
+      if (subtree && !subtree.includes(p.category)) return false;
       const stock = stockOf(p);
       const near = nearestExpiry(p);
       if (filter === "low" && stock > p.reorderLevel) return false;
@@ -240,7 +241,7 @@ export default function Inventory() {
         <select value={cat} onChange={(e) => setCat(e.target.value)}
           className="px-2.5 py-1.5 rounded-lg border border-mist bg-card text-xs font-semibold text-ink focus:outline-none focus:border-pine-500 cursor-pointer">
           <option value="all">All categories</option>
-          {categories.map((c) => <option key={c.id} value={c.id}>{c.label}</option>)}
+          {categories.map((c) => <option key={c.id} value={c.id}>{c.parentId ? `↳ ${c.label}` : c.label}</option>)}
         </select>
         <span>· {rows.length} of {state.products.length} products · {totalLots} lots · stock value at cost</span>
         <span className="num font-bold text-pine-800">{money(stockValue)}</span>
