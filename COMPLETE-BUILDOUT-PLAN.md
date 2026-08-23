@@ -7,7 +7,7 @@ _Created 2026-08-23. Sources: MISSING-FEATURES.md audit (32 transcripts, 8 branc
 
 ## WAVE 1 — directly requested + high-value, independent files
 
-### W1.1 Pay later / minimal AR ✦ branch `feat/pay-later-ar`
+### W1.1 Pay later / minimal AR ✦ branch `feat/pay-later-ar` — DONE
 User asked "can we pay later?" — FIX-PLAN-2 R6, never started.
 - New `PayMethod` value `"pay_later"` (src/data.ts). Requires customer attached (else block with toast).
 - Payment modal: Pay later leg option with due-date picker (default +14d); manager-or-owner perm optional per spec — allow cashier, flag requiresCustomer.
@@ -16,24 +16,24 @@ User asked "can we pay later?" — FIX-PLAN-2 R6, never started.
 - Settle flow in History row action: collect payment (method + ref), append settling leg, mark original leg settled (`settledAt`) inside JSONB.
 - Receipt shows PAY LATER DUE notice. Tests: settle math, unsettleable-without-customer, double-settle guard.
 
-### W1.2 Excel export ✦ branch `feat/excel-export`
+### W1.2 Excel export ✦ branch `feat/excel-export` — DONE
 - Reports (and Finance where CSV exists): add `.xlsx` export beside CSV using `xlsx` (SheetJS CE) — only new dependency allowed this wave.
 - One helper `src/lib/export.ts` (buildXlsx(rows, filename)) reused everywhere; column headers localized via existing t() labels.
 - Coverage: sales history, till reports, inventory valuation, reorder suggestions, suppliers list, AR aging (from W1.1 output shape once merged — leave a TODO hook if W1.1 not yet merged).
 - Test: helper produces non-empty workbook buffer for sample rows.
 
-### W1.3 Prescriber directory ✦ branch `feat/prescriber-directory`
+### W1.3 Prescriber directory ✦ branch `feat/prescriber-directory` — DONE
 Data model exists (`Prescriber`, synced table). Build UI:
 - Prescriptions view: new "Prescribers" tab — searchable card/table list (name, credentials, specialty, NPI, DEA masked, phone, fax, active), create/edit/archive modal (perm `manage_settings` or pharmacist), per-prescriber Rx history drawer (filter state.prescriptions by prescriberId).
 - Store: PRESCRIBER_SAVE/PRESCRIBER_DELETE (archive-guard like suppliers: block delete when prescriptions reference), audit entries. sync.ts already persists prescribers — mapper needs `archived` parity with suppliers approach.
 - i18n `prescribers.*`. Tests: reducer save/delete/guards.
 
-### W1.4 Register clinical workflows ✦ branch `feat/register-clinical`
+### W1.4 Register clinical workflows ✦ branch `feat/register-clinical` — DONE
 Two flows touching Register/modals (single owner avoids conflicts):
 - **Generic substitution prompt**: when adding an Rx product that has `genericOf`/is brand with cheaper generic in stock, show inline prompt (dispense generic / DAW). Persists existing `daw`/`substitutedFrom` TxLine fields. i18n keys.
 - **Waiting-bin charge-on-pickup**: prescription in `waiting_bin` status gets "Charge on pickup" action → creates cart pre-filled from Rx (qty, price), links customerId, marks Rx `ready→dispensed` on sale completion. Uses existing fields only.
 
-### W1.5 Branches DB-backed + Suppliers page promotion ✦ branch `feat/db-branches`
+### W1.5 Branches DB-backed + Suppliers page promotion ✦ branch `feat/db-branches` — DONE
 - Migration `20260823000014_branches.sql`: `branches` table (id text pk, name, address, phone, active bool, organization_id uuid default current_org_id(), sort int), RLS mirroring categories, seed with current HOME_BRANCH value. Push to live.
 - Replace `BRANCHES` const in src/data.ts: hydrate through sync TABLES (`branches`), store state.branches, transfer pickers read runtime list; keep constant as seed fallback only. Retire `HOME_BRANCH` into org settings field `homeBranchId`.
 - **Suppliers promotion**: Inventory suppliers manager becomes a first-class tab (full page table + form) instead of toolbar modal, per user's "supplier need page".
