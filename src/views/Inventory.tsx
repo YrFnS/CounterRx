@@ -9,6 +9,8 @@ import { buildForecastPayload, historyFromTransactions } from "../lib/ai-ui";
 import { cx, Badge, Modal, StockBar, Empty, CustomFieldsBlock } from "../ui";
 import { ISearch, IPlus, IBox, IAlert, IDownload, IEdit, IX, ICheck, IReport, ICalendar, IClipboard, ITag, ISwap, IScan, IUsers, IFlask, ICold, ITrendUp, IClock, IArchive, ITrash } from "../icons";
 import { buildXlsx } from "../lib/export";
+import { IMPORT_FIELDS, parseCsv, autoMap, validateAndBuild } from "../lib/catalog-import";
+import type { ImportField } from "../lib/catalog-import";
 
 type Filter = "all" | "low" | "expiring" | "rx" | "controlled";
 
@@ -24,10 +26,12 @@ export default function Inventory() {
   const [adjusting, setAdjusting] = useState<Product | null>(null);
   const [receiving, setReceiving] = useState<Product | null>(null);
   const [adding, setAdding] = useState(false);
+  const [importing, setImporting] = useState(false);
   const [counting, setCounting] = useState(false);
   const [compounding, setCompounding] = useState(false);
   const mayAdjust = can(state.user?.role, "adjust_stock");
   const mayCompound = can(state.user?.role, "verify_rx"); /* pharmacists + admins compound */
+  const mayImport = can(state.user?.role, "manage_settings"); /* W3.7 — catalog import is admin-only */
   const [report, setReport] = useState<"low" | "expiry" | null>(null);
   const [transfersOpen, setTransfersOpen] = useState(false);
   const [uomFor, setUomFor] = useState<Product | null>(null);
@@ -195,6 +199,12 @@ export default function Inventory() {
             mayCompound ? "bg-[#8a6fae] text-paper hover:brightness-110 shadow-lift" : "bg-mist text-inksoft/50 cursor-not-allowed")}>
           <IFlask size={14} /> Compound
         </button>
+        <button onClick={() => setImporting(true)} disabled={!mayImport}
+          title={mayImport ? t("inventory.importTitle") : t("inventory.importAdminOnly")}
+          className={cx("flex items-center gap-1.5 px-3 py-2 rounded-lg border text-xs font-semibold transition active:scale-95",
+            mayImport ? "border-mist bg-card text-ink hover:border-pine-400 hover:bg-pine-50" : "bg-mist text-inksoft/50 cursor-not-allowed")}>
+          <IClipboard size={14} /> {t("inventory.importCsv")}
+        </button>
         <button onClick={exportCsv}
           className="flex items-center gap-1.5 px-3 py-2 rounded-lg border border-mist bg-card text-xs font-semibold text-ink hover:border-pine-400 hover:bg-pine-50 transition active:scale-95">
           <IDownload size={14} /> Export CSV
@@ -355,6 +365,7 @@ export default function Inventory() {
       {receiving && <ReceiveModal p={receiving} onClose={() => setReceiving(null)} />}
       {compounding && <CompoundModal onClose={() => setCompounding(false)} />}
       {adding && <AddProductModal onClose={() => setAdding(false)} />}
+      {importing && <ImportCsvModal onClose={() => setImporting(false)} />}
       {report && <ReportModal mode={report} onClose={() => setReport(null)} />}
       {counting && <CountModal onClose={() => setCounting(false)} />}
       {transfersOpen && <TransferModal onClose={() => setTransfersOpen(false)} />}
@@ -1523,6 +1534,168 @@ function AdjustModal({ p, onClose }: { p: Product; onClose: () => void }) {
           <ICheck size={15} /> Apply · {reason}
         </button>
       </div>
+    </Modal>
+  );
+}
+
+/* W3.7 — CSV catalog import: file → column mapping (auto + remap) → validation report → dry-run / import.
+ * "Valid rows only" (default on) excludes rows with errors; unchecking imports everything as-is. */
+const ALL_IMPORT_FIELDS = [...IMPORT_FIELDS, "barcode"] as const;
+
+function ImportCsvModal({ onClose }: { onClose: () => void }) {
+  const { t } = useTranslation();
+  const { state, dispatch } = usePos();
+  const [rows, setRows] = useState<string[][] | null>(null);
+  const [headers, setHeaders] = useState<string[]>([]);
+  const [cols, setCols] = useState<Record<ImportField | "barcode", number> | null>(null);
+  const [validOnly, setValidOnly] = useState(true);
+  const [overwrite, setOverwrite] = useState(false);
+  const categoryIds = useMemo(() => new Set((state.categories ?? []).map((c) => c.id)), [state.categories]);
+
+  const onFile = async (file: File) => {
+    const all = parseCsv(await file.text());
+    if (all.length === 0) return;
+    setRows(all.slice(1));
+    setHeaders(all[0].map((h, i) => h.trim() || `column ${i + 1}`));
+    setCols(autoMap(all[0]));
+  };
+
+  /* re-validate whenever mapping or file changes */
+  const report = useMemo(
+    () => (rows && cols ? validateAndBuild(rows, cols, state.products, categoryIds) : null),
+    [rows, cols, state.products, categoryIds],
+  );
+  const issueCount = report?.issues.length ?? 0;
+  const chosen = report ? (validOnly ? report.entries.filter((e) => e.issues.length === 0) : report.entries) : [];
+
+  const setColField = (colIdx: number, field: string) => {
+    setCols((c) => {
+      if (!c) return c;
+      const next = { ...c };
+      for (const k of Object.keys(next) as (ImportField | "barcode")[]) if (next[k] === colIdx) next[k] = -1;
+      if (field) (next as Record<string, number>)[field] = colIdx;
+      return next;
+    });
+  };
+
+  const doImport = (dryRun: boolean) => {
+    if (!report) return;
+    const products = chosen.map((e) => e.product);
+    if (dryRun) {
+      dispatch({ type: "TOAST", kind: issueCount > 0 ? "warn" : "success",
+        msg: t("inventory.importDryOk", { count: products.length, issues: issueCount }) });
+      return; // validates only — nothing saved
+    }
+    dispatch({ type: "PRODUCTS_IMPORT", products, overwrite });
+    onClose();
+  };
+
+  const fieldLabel = (f: ImportField | "barcode") => t(`inventory.importFieldNames.${f}`);
+
+  return (
+    <Modal onClose={onClose} width={720} labelledBy="imp-title">
+      <div className="px-5 py-4 border-b border-mist flex items-start justify-between">
+        <div>
+          <h2 id="imp-title" className="font-display font-bold text-ink">{t("inventory.importTitle")}</h2>
+          <p className="text-xs text-inksoft mt-0.5">{t("inventory.importHint")}</p>
+        </div>
+        <button onClick={onClose} className="p-1.5 rounded-md hover:bg-mist/60 text-inksoft" aria-label="Close"><IX size={14} /></button>
+      </div>
+
+      {!rows ? (
+        <div className="p-6">
+          <label className="flex flex-col items-center justify-center gap-2 py-10 rounded-xl border-2 border-dashed border-mist hover:border-pine-400 hover:bg-pine-50/40 cursor-pointer transition">
+            <IDownload size={22} className="text-pine-700" />
+            <span className="text-sm font-semibold text-ink">{t("inventory.importChooseFile")}</span>
+            <span className="text-xs text-inksoft">{t("inventory.importFormatHint")}</span>
+            <input type="file" accept=".csv,text/csv,text/plain" className="hidden"
+              onChange={(e) => { const f = e.target.files?.[0]; if (f) void onFile(f); }} />
+          </label>
+        </div>
+      ) : (
+        <div className="p-5 space-y-4 max-h-[70vh] overflow-y-auto">
+          {/* column mapping — auto-mapped by header name, remappable */}
+          <div>
+            <div className="text-[10px] font-bold uppercase tracking-[0.14em] text-inksoft mb-1.5">{t("inventory.importMapping")}</div>
+            <div className="rounded-xl border border-mist overflow-hidden">
+              <table className="w-full text-xs">
+                <thead><tr className="bg-paper text-inksoft">
+                  <th className="text-start px-3 py-2 font-bold">{t("inventory.importYourColumn")}</th>
+                  <th className="text-start px-3 py-2 font-bold">{t("inventory.importMapsTo")}</th>
+                </tr></thead>
+                <tbody>
+                  {headers.map((h, i) => {
+                    const assigned = ALL_IMPORT_FIELDS.find((f) => cols?.[f] === i);
+                    return (
+                      <tr key={i} className="border-t border-mist">
+                        <td className="px-3 py-1.5 font-mono num">{h}</td>
+                        <td className="px-3 py-1.5">
+                          <select value={assigned ?? ""} onChange={(e) => setColField(i, e.target.value)}
+                            className={cx("w-full px-2 py-1.5 rounded-lg border bg-card text-xs focus:border-pine-500 focus:outline-none",
+                              assigned ? "border-pine-300 text-ink" : "border-mist text-inksoft")}>
+                            <option value="">{t("inventory.importIgnoreCol")}</option>
+                            {ALL_IMPORT_FIELDS.map((f) => <option key={f} value={f}>{fieldLabel(f)}</option>)}
+                          </select>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          {/* validation report — inline with row numbers */}
+          <div>
+            <div className="flex items-center justify-between mb-1.5">
+              <div className="text-[10px] font-bold uppercase tracking-[0.14em] text-inksoft">{t("inventory.importReport")}</div>
+              <div className="text-xs num">{t("inventory.importSummary", { rows: rows.length, products: report?.entries.length ?? 0 })}</div>
+            </div>
+            {issueCount === 0 ? (
+              <div className="rounded-lg border border-pine-200 bg-pine-50 px-3 py-2 text-xs font-semibold text-pine-800 flex items-center gap-1.5">
+                <ICheck size={13} /> {t("inventory.importNoIssues")}
+              </div>
+            ) : (
+              <div className="rounded-lg border border-brick-200 bg-brick-50/50 max-h-40 overflow-y-auto divide-y divide-brick-100">
+                {report!.issues.map((is, i) => (
+                  <div key={i} className="px-3 py-1.5 text-xs flex items-baseline gap-2">
+                    <span className="num font-bold text-brick-700 shrink-0">{t("inventory.importRowN", { n: is.row })}</span>
+                    <span className="font-mono text-inksoft shrink-0">{fieldLabel(is.field as ImportField | "barcode")}</span>
+                    <span className="text-ink">{t(`inventory.importProblems.${is.problem}`)}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <div className="space-y-1.5">
+            {issueCount > 0 && (
+              <label className="flex items-center gap-2 text-xs text-ink cursor-pointer">
+                <input type="checkbox" checked={validOnly} onChange={(e) => setValidOnly(e.target.checked)} className="accent-pine-700" />
+                {t("inventory.importValidOnly")}
+              </label>
+            )}
+            <label className="flex items-center gap-2 text-xs text-ink cursor-pointer">
+              <input type="checkbox" checked={overwrite} onChange={(e) => setOverwrite(e.target.checked)} className="accent-pine-700" />
+              {t("inventory.importOverwrite")}
+            </label>
+          </div>
+        </div>
+      )}
+
+      {rows && (
+        <div className="px-5 py-4 border-t border-mist flex items-center justify-end gap-2">
+          <button onClick={() => doImport(true)} disabled={!report}
+            className="px-4 py-2 rounded-lg border border-mist bg-card text-xs font-semibold text-ink hover:border-pine-400 transition active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed">
+            {t("inventory.importDryRun")}
+          </button>
+          <button onClick={() => doImport(false)} disabled={chosen.length === 0}
+            className={cx("px-4 py-2 rounded-lg text-xs font-bold transition active:scale-95 shadow-lift",
+              chosen.length > 0 ? "bg-pine-700 text-pine-50 hover:bg-pine-600" : "bg-mist text-inksoft/60 cursor-not-allowed")}>
+            {t("inventory.importGo", { count: chosen.length })}
+          </button>
+        </div>
+      )}
     </Modal>
   );
 }

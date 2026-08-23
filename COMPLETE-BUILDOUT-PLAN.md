@@ -76,7 +76,7 @@ Migration 0019 `vaccinations` (patient, product, lot, dose#, site, administrator
 ### W3.6 Full patient profiles ✦ `feat/patient-profiles`
 Customers: structured med history (from dispensed Rx), allergies editor improvements, conditions list, notes timeline; print patient profile.
 
-### W3.7 CSV catalog import ✦ `feat/catalog-import`
+### W3.7 CSV catalog import — DONE ✦ `feat/catalog-import`
 Inventory: import products/CSV with column mapping preview, validation report, dry-run mode; matches export headers.
 
 ### W3.8 NDC live lookup ✦ `feat/ndc-lookup`

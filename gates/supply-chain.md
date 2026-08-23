@@ -38,3 +38,22 @@
   CHECK: `grep -n 'patientsForBatchCode' src/data.ts src/views/Reports.tsx src/__tests__/recall-lookup.test.ts`
   EXPECT: `patientsForBatchCode(transactions, batch)` scans every `TxLine.alloc` across all products (no productId needed); `RecallLookupTab` in Reports renders qty/date/product/customer name·phone·address, with CSV + XLSX (buildXlsx) export and a `window.print()` contact sheet into `#print-root`; test asserts correct patients + empty batch → empty.
   EVIDENCE: `src/data.ts` adds `patientsForBatchCode`; `src/views/Reports.tsx` adds `RecallLookupTab` (new tab on the Reports bar) + `reports.*` i18n keys in both en.json and ar.json; `src/__tests__/recall-lookup.test.ts` (6 cases). Gate run: typecheck clean, 135 tests pass, build OK.
+
+## W3.7 CSV catalog import (feat/catalog-import)
+
+- [x] Import matches export headers; column mapping with auto-map.
+  CHECK: `grep -n 'IMPORT_FIELDS\|autoMap' src/lib/catalog-import.ts src/views/Inventory.tsx`
+  EXPECT: `IMPORT_FIELDS` mirrors the Inventory export header row exactly (sku,name,generic,brand,category,form,price,cost,lot,lot_qty,expiry,total_stock,reorder_level,rx,supplier) plus barcode; `autoMap` maps by normalized header name + aliases and unmapped fields stay -1; `ImportCsvModal` renders a per-column remap table.
+  EVIDENCE: `src/lib/catalog-import.ts` (parser + autoMap + validateAndBuild); `ImportCsvModal` mapping table in `Inventory.tsx`; `catalog-import.test.ts` asserts exact-name mapping, aliases (Product→name, EAN→barcode), and -1 for absent columns.
+- [x] Validation report with row numbers; rows with errors excluded unless "valid rows only" unchecked.
+  CHECK: `grep -n 'missing_name\|dup_sku\|importValidOnly' src/lib/catalog-import.ts src/views/Inventory.tsx src/locales/en.json`
+  EXPECT: per-row issues (missing name, bad price/number, unknown category, dup sku/barcode vs catalog) carry 1-based data-row numbers; entries expose their own issues so validOnly filtering drops broken products; report renders inline with Row {{n}}.
+  EVIDENCE: `catalog-import.test.ts` asserts issue list with exact rows [2,3,4] and per-entry filtering; modal shows the report block + checkbox.
+- [x] Dry-run validates without saving; import creates products via bulk action.
+  CHECK: `grep -n 'PRODUCTS_IMPORT\|importDryRun' src/store.tsx src/views/Inventory.tsx`
+  EXPECT: dry-run dispatches only TOAST; import dispatches `PRODUCTS_IMPORT { products, overwrite }`; reducer dedupes by sku/barcode case-insensitively (skip or overwrite keeping stable ids), appends new SKUs, logs one stock audit entry "Imported N products from CSV".
+  EVIDENCE: reducer test asserts skip path (`new1`,`p1` remain), overwrite path (stable id p1, last row wins), and audit detail/kind.
+- [x] Admin-gated UI + i18n parity + gates green.
+  CHECK: `grep -n 'mayImport' src/views/Inventory.tsx && npm run typecheck && npm run test && npm run build`
+  EXPECT: button disabled without `manage_settings` (admin), tooltip explains; all new strings via t() present in en.json AND ar.json under inventory.import*.
+  EVIDENCE: gate run green — typecheck clean, 189 tests passed (+12 catalog-import), build OK; i18n-key-parity test passes.
