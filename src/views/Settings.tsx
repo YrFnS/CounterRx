@@ -1,19 +1,21 @@
-import { useMemo, useState, useCallback } from "react";
+import { useMemo, useState, useCallback, useEffect, useRef } from "react";
 import { useTranslation } from "react-i18next";
 import type { ReactNode } from "react";
-import { usePos, listSnapshots, money } from "../store";
+import { usePos, listSnapshots, money, listBackups, rotateBackup, backendDataFromState, BACKUP_KEEP, BACKUPS_KEY } from "../store";
 import i18n from "../i18n";
 import { CURRENCIES, ROLE_LABEL, can, randomPin, Coupon, catChildren, catPathLabel } from "../data";
 import { supabase } from "../lib/supabase";
 import type { Category } from "../data";
 import type { OrgSettings, Role, Staff, Snapshot, Product } from "../data";
+import { buildOrgExport, validateOrgExport, type OrgExportBundle } from "../lib/sync";
+import { toCsv } from "../lib/export";
 import { cx, Modal, Badge } from "../ui";
 import {
-  IGear, IPrint, IStar, IUsers, IDownload, IPlus, IX, ICheck, ITrash, IRecall, IAlert, IScan, IChevD, IClockIn, IPill, IEdit, ITag, IShield, ICopy,
+  IGear, IPrint, IStar, IUsers, IDownload, IPlus, IX, ICheck, ITrash, IRecall, IAlert, IScan, IChevD, IClockIn, IPill, IEdit, ITag, IShield, ICopy, IUpload,
 } from "../icons";
 import { connectPrinter, printLabel, kickDrawer, HardwareError } from "../lib/hardware";
 
-type Tab = "profile" | "receipt" | "loyalty" | "team" | "clock" | "hardware" | "data" | "language" | "clinical" | "coupons" | "categories";
+type Tab = "profile" | "receipt" | "loyalty" | "team" | "clock" | "hardware" | "data" | "language" | "clinical" | "coupons" | "categories" | "backups";
 
 export default function Settings() {
   const { t } = useTranslation();
@@ -34,6 +36,7 @@ export default function Settings() {
     { id: "clinical", label: t("settings.clinical"), icon: <IPill size={14} /> },
     { id: "coupons", label: t("analytics.couponsTitle"), icon: <IPlus size={14} /> },
     { id: "categories", label: t("settings.categoriesTitle"), icon: <ITag size={14} /> },
+    { id: "backups", label: t("settings.backups.title"), icon: <IShield size={14} /> },
   ];
 
   return (
@@ -72,6 +75,7 @@ export default function Settings() {
         {tab === "clinical" && <ClinicalTab admin={admin} />}
         {tab === "coupons" && <CouponsTab admin={admin} />}
         {tab === "categories" && <CategoriesTab admin={admin} />}
+        {tab === "backups" && <BackupsTab admin={admin} />}
       </div>
     </div>
   );
@@ -1137,6 +1141,137 @@ function CategoriesTab({ admin }: { admin: boolean }) {
           </tbody>
         </table>
       </div>
+    </div>
+  );
+}
+
+/* ---------------- W2.5 backups & full-org export ---------------- */
+function BackupsTab({ admin }: { admin: boolean }) {
+  const { t } = useTranslation();
+  const { state, dispatch } = usePos();
+  const [backups, setBackups] = useState(() => listBackups());
+  const [withCsv, setWithCsv] = useState(false);
+  const [confirm, setConfirm] = useState<OrgExportBundle | null>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
+
+  const refresh = useCallback(() => setBackups(listBackups()), []);
+
+  // Keep the list current with the rotating store.
+  useEffect(() => refresh(), [refresh]);
+
+  const downloadBlob = (filename: string, content: string, type = "application/json") => {
+    const blob = new Blob([content], { type });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url; a.download = filename;
+    a.click(); URL.revokeObjectURL(url);
+  };
+
+  const exportOrg = () => {
+    if (!admin) return;
+    const bundle = buildOrgExport(backendDataFromState(state));
+    const stamp = new Date().toISOString().slice(0, 10);
+    downloadBlob(`counterrx-backup-${stamp}.json`, JSON.stringify(bundle, null, 2));
+    if (withCsv) {
+      for (const [name, rows] of Object.entries(bundle.tables)) {
+        if (!Array.isArray(rows) || rows.length === 0) continue;
+        downloadBlob(`counterrx-${name}-${stamp}.csv`, toCsv(rows as Record<string, unknown>[]), "text/csv");
+      }
+    }
+    dispatch({ type: "TOAST", kind: "success", msg: t("settings.backups.exported", { count: Object.keys(bundle.tables).length }) });
+  };
+
+  const restoreFromRecord = (b: OrgExportBundle) => setConfirm(b);
+
+  const confirmRestore = () => {
+    if (!confirm) return;
+    dispatch({ type: "RESTORE_EXPORT", bundle: confirm });
+    setConfirm(null);
+  };
+
+  const onRestoreFile = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const f = e.target.files?.[0];
+    e.target.value = "";
+    if (!f) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      try {
+        const parsed = JSON.parse(String(reader.result));
+        if (!validateOrgExport(parsed)) { dispatch({ type: "TOAST", kind: "error", msg: t("settings.backups.invalidBackup") }); return; }
+        setConfirm(parsed);
+      } catch {
+        dispatch({ type: "TOAST", kind: "error", msg: t("settings.backups.invalidBackup") });
+      }
+    };
+    reader.readAsText(f);
+  };
+
+  return (
+    <div className="space-y-4 max-w-[980px]">
+      <div className="flex items-center gap-2.5 text-xs font-semibold text-inksoft">
+        <IShield size={14} className="text-pine-700" />
+        {t("settings.backups.subtitle")}
+      </div>
+
+      <Card title={t("settings.backups.exportOrg")} hint={t("settings.backups.exportOrgDesc")}>
+        <div className="flex flex-wrap items-center gap-3">
+          <button onClick={exportOrg} disabled={!admin}
+            className="flex items-center gap-1.5 px-4 py-2.5 rounded-lg bg-ink text-paper text-sm font-bold hover:bg-pine-800 transition disabled:opacity-50">
+            <IDownload size={14} /> {t("settings.backups.exportOrg")}
+          </button>
+          <label className={cx("flex items-center gap-2 text-xs font-semibold text-inksoft", !admin && "opacity-50")}>
+            <input type="checkbox" checked={withCsv} disabled={!admin} onChange={(e) => setWithCsv(e.target.checked)} />
+            {t("settings.backups.exportCsv")}
+          </label>
+          <div className="ms-auto">
+            <button onClick={() => fileRef.current?.click()} disabled={!admin}
+              className="flex items-center gap-1.5 px-4 py-2.5 rounded-lg border border-pine-300 text-pine-800 text-sm font-bold hover:bg-pine-100 transition disabled:opacity-50">
+              <IUpload size={14} /> {t("settings.backups.restoreFile")}
+            </button>
+            <input ref={fileRef} type="file" accept="application/json,.json" className="hidden" onChange={onRestoreFile} />
+          </div>
+        </div>
+      </Card>
+
+      <Card title={t("settings.backups.rotateTitle")} hint={t("settings.backups.rotateDesc", { keep: BACKUP_KEEP })}>
+        {backups.length === 0 ? (
+          <p className="text-xs text-inksoft">{t("settings.backups.noBackups")}</p>
+        ) : (
+          <div className="divide-y divide-mist/60">
+            {backups.map((b) => (
+              <div key={b.id} className="flex items-center gap-3 py-2.5">
+                <div className="flex-1 min-w-0">
+                  <div className="text-sm font-semibold text-ink truncate">{b.label}</div>
+                  <div className="text-[11px] text-inksoft num">{new Date(b.at).toLocaleString()} · {Object.keys(b.bundle.tables).length} tables</div>
+                </div>
+                <button onClick={() => downloadBlob(`counterrx-backup-${new Date(b.at).toISOString().slice(0, 10)}-${b.id}.json`, JSON.stringify(b.bundle, null, 2))}
+                  className="flex items-center gap-1 px-2.5 py-1.5 rounded-md text-xs font-bold text-pine-800 hover:bg-pine-100 transition">
+                  <IDownload size={12} /> {t("settings.backups.download")}
+                </button>
+                <button onClick={() => restoreFromRecord(b.bundle)} disabled={!admin}
+                  className="flex items-center gap-1 px-2.5 py-1.5 rounded-md text-xs font-bold text-brick-700 hover:bg-brick-100 transition disabled:opacity-40">
+                  <IRecall size={12} /> {t("settings.backups.restore")}
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+      </Card>
+
+      {confirm && (
+        <Modal onClose={() => setConfirm(null)}>
+          <div className="p-5">
+            <div className="flex items-center gap-2 text-brick-700 mb-3">
+              <IAlert size={16} /> <h3 className="font-display font-bold text-[15px]">{t("settings.backups.restore")}</h3>
+            </div>
+            <p className="text-sm text-inksoft">{t("settings.backups.restoreConfirm", { date: new Date(confirm.exportedAt).toLocaleString() })}</p>
+            <div className="flex justify-end gap-2 mt-5">
+              <button onClick={() => setConfirm(null)} className="px-4 py-2 rounded-lg border border-mist text-sm font-bold text-inksoft hover:bg-mist/40">{t("common.cancel")}</button>
+              <button onClick={confirmRestore} className="px-4 py-2 rounded-lg bg-brick-600 text-paper text-sm font-bold hover:bg-brick-700">{t("settings.backups.restore")}</button>
+            </div>
+          </div>
+        </Modal>
+      )}
     </div>
   );
 }

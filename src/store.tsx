@@ -23,7 +23,7 @@ import type {
 } from "./data";
 import { makeStaff, makeSettings, makeBackOrders, makeRxTransfers, SNAPS_KEY, hashPin, ROLE_LABEL } from "./data";
 import type { BackendData, LoadResult } from "./lib/sync";
-import { loadBackendData, persistBackendData, signOutStaff, subscribeToBackend, getSessionStaffId } from "./lib/sync";
+import { loadBackendData, persistBackendData, signOutStaff, subscribeToBackend, getSessionStaffId, buildOrgExport, validateOrgExport, backendDataFromExport } from "./lib/sync";
 import { setRuntimeInteractions } from "./lib/clinical";
 import i18n from "./i18n";
 
@@ -161,6 +161,7 @@ type Action =
   | { type: "REMIND_RX"; id: string }
   | { type: "NEW_REFILL"; rxId: string }
   | { type: "RESTORE"; products: Product[]; transactions: Transaction[]; prescriptions: Prescription[]; customers?: Customer[]; audit?: AuditEntry[] }
+  | { type: "RESTORE_EXPORT"; bundle: import("./lib/sync").OrgExportBundle }
   | { type: "ADD_PRODUCT"; product: Product }
   | { type: "SET_REORDER_LEVEL"; productId: string; reorderLevel: number }
   | { type: "REFUND_TX"; txId: string; reason: string }
@@ -374,6 +375,44 @@ function writeSnapshots(snaps: Snapshot[]) {
   try { localStorage.setItem(SNAPS_KEY, JSON.stringify(snaps.slice(0, 8))); } catch { /* full — drop oldest and retry once */
     try { localStorage.setItem(SNAPS_KEY, JSON.stringify(snaps.slice(0, 4))); } catch { /* give up */ }
   }
+}
+
+/* ---------------- full-org backup rotation (W2.5) ---------------- */
+export const BACKUPS_KEY = "counterrx:backups:v1";
+export const BACKUP_KEEP = 3;
+
+export interface BackupRecord {
+  id: string;
+  at: number;
+  label: string;
+  organization_id: string;
+  bundle: import("./lib/sync").OrgExportBundle;
+}
+
+function listBackups(): BackupRecord[] {
+  try { return JSON.parse(localStorage.getItem(BACKUPS_KEY) ?? "[]") as BackupRecord[]; } catch { return []; }
+}
+export { listBackups };
+
+function writeBackups(records: BackupRecord[]) {
+  try { localStorage.setItem(BACKUPS_KEY, JSON.stringify(records.slice(0, BACKUP_KEEP))); } catch { /* storage full — drop oldest and retry */
+    try { localStorage.setItem(BACKUPS_KEY, JSON.stringify(records.slice(0, 1))); } catch { /* give up */ }
+  }
+}
+
+/** Snapshot the current state into the rotating backup store (keeps the last BACKUP_KEEP). */
+export function rotateBackup(state: State, label?: string): BackupRecord[] {
+  const bundle = buildOrgExport(backendDataFromState(state));
+  const record: BackupRecord = {
+    id: `bk-${Date.now().toString(36)}`,
+    at: Date.now(),
+    label: label ?? `Auto · ${new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`,
+    organization_id: bundle.organization_id,
+    bundle,
+  };
+  const next = [record, ...listBackups()].slice(0, BACKUP_KEEP);
+  writeBackups(next);
+  return next;
 }
 
 const LOCK_AFTER = 5;          // failed attempts before lockout
@@ -1430,6 +1469,25 @@ export function reducer(state: State, a: Action): State {
       return withToast(next, "success", `Backup restored — ${a.products.length} products · ${a.transactions.length} receipts`);
     }
 
+    /* W2.5 — restore a validated full-org export/backup bundle into every synced collection. */
+    case "RESTORE_EXPORT": {
+      if (!validateOrgExport(a.bundle)) return withToast(state, "error", "Invalid backup bundle — restore skipped");
+      const data = backendDataFromExport(a.bundle, backendDataFromState(state));
+      const next = withAudit(
+        {
+          ...state,
+          products: data.products, transactions: data.transactions, prescriptions: data.prescriptions,
+          prescribers: data.prescribers, customers: data.customers, transfers: data.transfers, backorders: data.backorders,
+          rxTransfers: data.rxTransfers, suppliers: data.suppliers, purchaseOrders: data.purchaseOrders, apInvoices: data.apInvoices,
+          expenses: data.expenses, deliveries: data.deliveries, webOrders: data.webOrders, timeEntries: data.timeEntries,
+          staff: data.staff, settings: data.settings, restrictedLog: data.restrictedLog, audit: data.audit, shifts: data.shifts,
+          storeCredits: data.storeCredits, interactionPairs: data.interactionPairs, coldChainLog: data.coldChainLog,
+          coupons: data.coupons, categories: data.categories, branches: data.branches,
+          cart: [], held: [], receipt: null, payOpen: false, saleCustomerId: null, redeemPoints: 0,
+        }, "system", `Org backup restored — ${a.bundle.organization_id} · ${new Date(a.bundle.exportedAt).toLocaleString()}`);
+      return withToast(next, "success", i18n.t("settings.backupRestored", { count: Object.keys(a.bundle.tables).length }));
+    }
+
     case "REFUND_TX": {
       const orig = state.transactions.find((t) => t.id === a.txId);
       if (!orig) return state;
@@ -1795,7 +1853,7 @@ export function reducer(state: State, a: Action): State {
         : null;
       /* push runtime interaction pairs to the clinical module so findInteractionsAtRuntime uses them */
       setRuntimeInteractions(a.data.interactionPairs ?? []);
-      return {
+      const hydrated: State = {
         ...state,
         user: hydratedUser,
         backendOffline: false,
@@ -1825,7 +1883,10 @@ export function reducer(state: State, a: Action): State {
         coupons: a.data.coupons ?? [],
         categories: a.data.categories ?? CATEGORIES_FALLBACK,
         branches: a.data.branches ?? BRANCHES_FALLBACK,
-      };
+      } as State;
+      /* W2.5 — each successful hydration rotates a local full-org backup snapshot */
+      rotateBackup(hydrated);
+      return hydrated;
     }
 
     case "BACKEND_OFFLINE":
@@ -1917,7 +1978,7 @@ interface Ctx {
 
 const PosCtx = createContext<Ctx | null>(null);
 
-const backendDataFromState = (state: State): BackendData => ({
+export const backendDataFromState = (state: State): BackendData => ({
   products: state.products,
   transactions: state.transactions,
   prescriptions: state.prescriptions,
@@ -1935,10 +1996,10 @@ const backendDataFromState = (state: State): BackendData => ({
   timeEntries: state.timeEntries,
   staff: state.staff,
   settings: state.settings,
-  restrictedLog: state.restrictedLog,
-  audit: state.audit,
+  restrictedLog: state.restrictedLog ?? [],
+  audit: state.audit ?? [],
   shifts: state.shifts,
-  storeCredits: state.storeCredits,
+  storeCredits: state.storeCredits ?? [],
   snapshots: listSnapshots(),
   interactionPairs: state.interactionPairs ?? [],
   coldChainLog: state.coldChainLog ?? [],
