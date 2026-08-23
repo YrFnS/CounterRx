@@ -6,12 +6,20 @@ import type { PurchaseOrder, ApInvoice, ApPayMethod } from "../data";
 import { cx, Badge, Modal } from "../ui";
 import { IPlus, IX, ICheck, IDownload, IAlert, ICash, ICard, ITrash, ILedger, IBox, ICalendar, ITag, IRecall } from "../icons";
 import { buildXlsx } from "../lib/export";
+import { salesCsv, expensesCsv, apCsv } from "../lib/accounting";
 
 const day = 86_400_000;
 const r2 = (n: number) => Math.round(n * 100) / 100;
 const fmtDate = (ts: number) =>
   new Date(ts).toLocaleDateString("en-US", { month: "short", day: "numeric" });
 const toISODate = (ts: number) => new Date(ts - new Date(ts).getTimezoneOffset() * 60000).toISOString().slice(0, 10);
+
+/** Trigger a browser download of a CSV string (matches existing export pattern). */
+function downloadCsv(csv: string, filename: string) {
+  const blob = new Blob([csv], { type: "text/csv" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a"); a.href = url; a.download = filename; a.click(); URL.revokeObjectURL(url);
+}
 
 type Tab = "po" | "ap" | "exp" | "pnl";
 
@@ -360,6 +368,11 @@ function ApTab() {
           <button onClick={exportXlsx} className="flex items-center gap-1.5 px-3 py-2 rounded-lg border border-mist bg-card text-xs font-semibold text-ink hover:border-pine-400 hover:bg-pine-50 transition active:scale-95">
             <IDownload size={13} /> {t("reports.exportExcel")}
           </button>
+          <button onClick={() => downloadCsv(apCsv(state.apInvoices, (id) => supplier(id)?.name ?? id), `ap-qbo-${toISODate(now)}.csv`)}
+            title={t("finance.exportAp")}
+            className="flex items-center gap-1.5 px-3 py-2 rounded-lg border border-mist bg-card text-xs font-semibold text-ink hover:border-pine-400 hover:bg-pine-50 transition active:scale-95">
+            <IDownload size={13} /> {t("finance.exportAccounting")}
+          </button>
         </div>
       </div>
 
@@ -647,6 +660,11 @@ function ExpTab() {
             <button onClick={exportXlsx} className="flex items-center gap-1.5 px-3 py-2 rounded-lg border border-mist bg-card text-xs font-semibold text-ink hover:border-pine-400 hover:bg-pine-50 transition active:scale-95">
               <IDownload size={13} /> {t("reports.exportExcel")}
             </button>
+            <button onClick={() => downloadCsv(expensesCsv(state.expenses), `expenses-qbo-${toISODate(Date.now())}.csv`)}
+              title={t("finance.exportExpenses")}
+              className="flex items-center gap-1.5 px-3 py-2 rounded-lg border border-mist bg-card text-xs font-semibold text-ink hover:border-pine-400 hover:bg-pine-50 transition active:scale-95">
+              <IDownload size={13} /> {t("finance.exportAccounting")}
+            </button>
           </div>
         </div>
         <div className="overflow-auto scroll-slim rounded-xl border border-mist bg-card shadow-lift">
@@ -782,6 +800,10 @@ function PnlTab() {
           </span>
         </div>
         <div className="px-4 py-3 border-t border-mist">
+          <button onClick={() => downloadCsv(salesCsv(state.transactions, (id) => state.customers.find((c) => c.id === id)?.name ?? ""), `sales-qbo-${toISODate(now)}.csv`)}
+            className="flex items-center gap-1.5 text-xs font-bold text-pine-700 hover:text-pine-600 transition">
+            <IDownload size={13} /> {t("finance.exportSales")}
+          </button>
           <button onClick={exportCsv} className="flex items-center gap-1.5 text-xs font-bold text-pine-700 hover:text-pine-600 transition">
             <IDownload size={13} /> Export P&L
           </button>

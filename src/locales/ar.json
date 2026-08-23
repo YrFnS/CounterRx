@@ -391,7 +391,11 @@
     "supplierBalance": "رصيد المورد",
     "newPo": "إنشاء أمر شراء",
     "requiresManager": "يتطلب مديراً أو مسؤولاً",
-    "chooseSupplier": "اختر مورداً"
+    "chooseSupplier": "اختر مورداً",
+    "exportAccounting": "تصدير إلى المحاسبة",
+    "exportSales": "المبيعات (QBO)",
+    "exportExpenses": "المصروفات (QBO)",
+    "exportAp": "فواتير الموردين (QBO)"
   },
   "reports": {
     "title": "التقارير",
