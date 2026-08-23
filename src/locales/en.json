@@ -1155,5 +1155,11 @@
     "productTh": "Product",
     "qtyTh": "Qty",
     "none": "None"
+  },
+  "errors": {
+    "title": "Something went wrong",
+    "body": "An unexpected error occurred in CounterRx.",
+    "detailLabel": "Error details",
+    "reload": "Reload"
   }
 }
