@@ -32,6 +32,7 @@ function makeTestState(overrides: Partial<State> = {}): State {
     outboxCount: 0,
     conflicts: [],
     promotions: [],
+    vaccinations: [],
     shifts: [],
     storeCredits: [],
     notificationLog: [],

@@ -103,6 +103,7 @@ import type {
   Branch,
   Promotion,
   ConditionEntry,
+  Vaccination,
 } from "./data";
 import {
   makeStaff,
@@ -114,6 +115,7 @@ import {
   ROLE_LABEL,
   normalizeAllergies,
   medHistory,
+  makeVaccinations,
 } from "./data";
 import type { AllergyInput } from "./data";
 import type { BackendData, LoadResult } from "./lib/sync";
@@ -198,6 +200,7 @@ interface State {
   categories: Category[];
   branches: Branch[];
   notificationLog: NotificationLogEntry[];
+  vaccinations: Vaccination[];
   currentShift: Shift | null;
   cart: {
     productId: string;
@@ -267,6 +270,10 @@ type Action =
         loyalty?: Partial<OrgSettings["loyalty"]>;
       };
     }
+  | { type: "ADD_VACCINATION"; vax: Omit<Vaccination, "id" | "createdAt"> }
+  | { type: "UPDATE_VACCINATION"; id: string; patch: Partial<Pick<Vaccination, "lot" | "doseNumber" | "site" | "administeredAt" | "nextDue" | "notes">> }
+  | { type: "TOGGLE_RESTRICTED"; productId: string; restricted: { limitPerSale: number } | undefined }
+  | { type: "UPDATE_SETTINGS"; patch: Partial<Omit<OrgSettings, "loyalty">> & { loyalty?: Partial<OrgSettings["loyalty"]> } }
   | { type: "SNAPSHOT_SAVE"; label: string; auto: boolean }
   | { type: "SNAPSHOT_DELETE"; id: string }
   | { type: "SNAPSHOT_RESTORE"; id: string }
@@ -571,6 +578,7 @@ export const seed = (): Pick<
   | "categories"
   | "branches"
   | "promotions"
+  | "vaccinations"
 > => {
   const now = Date.now();
   const products = makeProducts(now);
@@ -598,6 +606,7 @@ export const seed = (): Pick<
     webOrders: makeWebOrders(now),
     timeEntries: makeTimeEntries(now),
     coldChainLog: makeColdChainLogs(now),
+    vaccinations: makeVaccinations(now),
     shifts: [],
     interactionPairs: [],
     coupons: [],
@@ -677,6 +686,7 @@ function load(): State {
           storeCredits: saved.storeCredits ?? [],
           interactionPairs: saved.interactionPairs ?? [],
           coldChainLog: saved.coldChainLog ?? [],
+          vaccinations: saved.vaccinations ?? [],
           coupons: saved.coupons ?? [],
           categories: saved.categories ?? CATEGORIES_FALLBACK,
           branches: saved.branches ?? BRANCHES_FALLBACK,
@@ -3871,6 +3881,35 @@ export function reducer(state: State, a: Action): State {
       );
     }
 
+    /* W3.5 — record an administered vaccine against a patient's immunization history */
+    case "ADD_VACCINATION": {
+      const v = a.vax;
+      if (!state.customers.some((x) => x.id === v.patientId)) return state;
+      if (!state.products.some((p) => p.id === v.productId)) return state;
+      if (!Number.isFinite(v.administeredAt) || !Number.isFinite(v.doseNumber)) return state;
+      const entry: Vaccination = {
+        id: `VAX-${Date.now().toString(36)}${Math.floor(Math.random() * 90 + 10)}`,
+        createdAt: Date.now(), ...v,
+      };
+      const p = state.products.find((x) => x.id === v.productId)!;
+      const patient = state.customers.find((x) => x.id === v.patientId)!;
+      const next = withAudit({ ...state, vaccinations: [entry, ...state.vaccinations] }, "rx",
+        `Vaccination recorded — ${patient.name} · ${p.name}${v.lot ? ` · lot ${v.lot}` : ""} · dose ${v.doseNumber} · by ${v.administrator}`);
+      return withToast(next, "success", i18n.t("toast.vaccinationRecorded", { patient: patient.name, vaccine: p.name }));
+    }
+
+    /* W3.5 — amend a vaccination row (lot / site / dates / notes) */
+    case "UPDATE_VACCINATION": {
+      const existing = state.vaccinations.find((x) => x.id === a.id);
+      if (!existing) return state;
+      const vaccinations = state.vaccinations.map((x) => (x.id === a.id ? { ...x, ...a.patch } : x));
+      const p = state.products.find((x) => x.id === existing.productId);
+      const patient = state.customers.find((x) => x.id === existing.patientId);
+      const next = withAudit({ ...state, vaccinations }, "rx",
+        `Vaccination updated — ${patient?.name ?? existing.patientId} · ${p?.name ?? existing.productId} · dose ${existing.doseNumber}`);
+      return withToast(next, "success", i18n.t("toast.vaccinationUpdated"));
+    }
+
     case "HYDRATE_BACKEND": {
       const hydratedUser = state.user
         ? (a.data.staff.find(
@@ -3909,7 +3948,8 @@ export function reducer(state: State, a: Action): State {
         coupons: a.data.coupons ?? [],
         categories: a.data.categories ?? CATEGORIES_FALLBACK,
         branches: a.data.branches ?? BRANCHES_FALLBACK,
-        notificationLog: a.data.notificationLog ?? [],
+notificationLog: a.data.notificationLog ?? [],
+        vaccinations: a.data.vaccinations ?? [],
       } as State;
       /* W2.5 — each successful hydration rotates a local full-org backup snapshot */
       rotateBackup(hydrated);
@@ -4132,8 +4172,9 @@ export const backendDataFromState = (state: State): BackendData => ({
   coupons: state.coupons ?? [],
   categories: state.categories ?? [],
   branches: state.branches ?? [],
-  promotions: state.promotions ?? [],
+promotions: state.promotions ?? [],
   notificationLog: state.notificationLog ?? [],
+  vaccinations: state.vaccinations ?? [],
 });
 
 export function PosProvider({ children }: { children: ReactNode }) {

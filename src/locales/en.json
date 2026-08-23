@@ -217,7 +217,7 @@
     "name": "Name",
     "phone": "Phone",
     "email": "Email",
-    "dob": "Date of Birth",
+    "dob": "DOB",
     "address": "Address",
     "allergies": "Allergies",
     "currentMedications": "Current Medications",
@@ -242,7 +242,30 @@
     "search": "Name or phone…",
     "noMatch": "No customers match",
     "noMatchHint": "Try another name or phone number.",
-    "creditLow": "{{count}} customer(s) below {{threshold}} store credit — notify them"
+    "creditLow": "{{count}} customer(s) below {{threshold}} store credit — notify them",
+    "profileTab": "Profile",
+    "vaxTab": "Vaccinations",
+    "vaxHistory": "Vaccination history",
+    "vaxNone": "No immunizations recorded yet.",
+    "vaxAdd": "Add record",
+    "vaxAddTitle": "New vaccination",
+    "vaxEditTitle": "Edit vaccination",
+    "vaxSaveNew": "Save record",
+    "vaxSaveEdit": "Save changes",
+    "vaxVaccine": "Vaccine",
+    "vaxLot": "Lot",
+    "vaxDoseLabel": "Dose #",
+    "vaxDose": "Dose {{n}}",
+    "vaxSite": "Site",
+    "vaxDate": "Date given",
+    "vaxNextDue": "Next due",
+    "vaxNextDueOptional": "Next due (optional)",
+    "vaxAdministrator": "Administered by",
+    "vaxUnknownStaff": "Unknown",
+    "vaxPrintCard": "Print CDC card",
+    "vaxCardTitle": "Immunization Record",
+    "vaxCardIssued": "Issued",
+    "vaxCardFooter": "This record is a summary of immunizations administered. Keep for your personal medical file."
   },
   "inventory": {
     "title": "Inventory",
@@ -445,7 +468,14 @@
     "savedViews": "Saved views",
     "viewSaved": "View saved",
     "builderHint": "Group dimensions over the filtered sales — the global filter bar sets which sales are included.",
-    "deleteView": "Delete view"
+    "deleteView": "Delete view",
+    "vaxDueTitle": "Vaccinations due",
+    "vaxDueHint": "Doses with a next-due date within the next 30 days.",
+    "vaxDueCount": "due doses",
+    "vaxDueEmpty": "Nothing due in the next 30 days",
+    "vaxDueEmptyHint": "Records with a next-due date inside the 30-day window will appear here.",
+    "vaxNotify": "Notify",
+    "vaxInDays": "in {{n}}d"
   },
   "settings": {
     "title": "Settings",
@@ -868,7 +898,10 @@
     "promotionCreated": "Promotion created",
     "promotionUpdated": "Promotion updated",
     "promotionDeleted": "Promotion deleted",
-    "noteAdded": "Note added to {{name}}'s chart"
+    "noteAdded": "Note added to {{name}}'s chart",
+    "vaccinationRecorded": "Vaccination recorded — {{patient}} · {{vaccine}}",
+    "vaccinationUpdated": "Vaccination record updated",
+    "vaxDueNotified": "Due reminder queued for {{patient}} ({{count}} dose{{count === 1 ? '' : 's'}})"
   },
   "history": {
     "customerReturn": "Customer return",

@@ -3,11 +3,11 @@ import { useTranslation } from "react-i18next";
 import i18n from "../i18n";
 import type { ReactNode } from "react";
 import { usePos, money, clockTime } from "../store";
-import { catLabel } from "../data";
+import { catLabel, vaccinationsDue } from "../data";
 import { fefoBatches, generateXReport, generateZReport, calculateLTV, supplierPerformance, expiryAtRisk, groupShiftsByTerminal, terminalVariance, allTerminalsZReport } from "../data";
-import type { Product, TxLine, Transaction, PayMethod, Shift, ZReport, Customer, Supplier, PurchaseOrder, ApInvoice } from "../data";
+import type { Product, TxLine, Transaction, PayMethod, Shift, ZReport, Customer, Supplier, PurchaseOrder, ApInvoice, Vaccination } from "../data";
 import { cx, Badge, Empty, Modal } from "../ui";
-import { ITrendUp, IDownload, IX, IPlus, IBox, ICash, ISearch, ICalendar, IAlert, ICheck } from "../icons";
+import { ITrendUp, IDownload, IX, IPlus, IBox, ICash, ISearch, ICalendar, IAlert, ICheck, IPill, IBell } from "../icons";
 import { buildXlsx } from "../lib/export";
 import { patientsForBatchCode } from "../data";
 import { applyReportFilters, emptyFilters, saveView, loadView, deleteView, type ReportFilters, type SavedReportView, type FilterCtx } from "../lib/report-filters";
@@ -43,7 +43,7 @@ const PRESETS: { id: Preset; label: string }[] = [
 ];
 
 /* ================= MAIN VIEW ================= */
-type Tab = "margin" | "valuation" | "pnl" | "builder" | "till" | "analytics" | "recall";
+type Tab = "margin" | "valuation" | "pnl" | "builder" | "till" | "analytics" | "recall" | "vaxdue";
 export default function Reports() {
   const { t } = useTranslation();
   const { state, dispatch } = usePos();
@@ -76,6 +76,7 @@ export default function Reports() {
     { id: "till", label: i18n.t("reports.till"), icon: <ICash size={14} /> },
     { id: "analytics", label: i18n.t("analytics.title"), icon: <ITrendUp size={14} /> },
     { id: "recall", label: i18n.t("reports.recallLookup"), icon: <IAlert size={14} /> },
+    { id: "vaxdue", label: i18n.t("reports.vaxDueTitle"), icon: <IPill size={14} /> },
   ];
 
   return (
@@ -140,6 +141,7 @@ export default function Reports() {
         {tab === "till" && <TillTab filters={filters} />}
         {tab === "analytics" && <AnalyticsTab transactions={filtered} />}
         {tab === "recall" && <RecallLookupTab />}
+        {tab === "vaxdue" && <VaxDueTab />}
       </div>
     </div>
   );
@@ -1342,6 +1344,88 @@ function Stat({ label, value }: { label: string; value: string }) {
     <div className="rounded-lg bg-paper border border-mist px-3 py-2 text-center">
       <p className="num text-sm font-bold text-ink">{value}</p>
       <p className="text-[9px] font-bold uppercase tracking-wide text-inksoft">{label}</p>
+    </div>
+  );
+}
+
+/* ================= W3.5 — vaccination due list (next 30 days) ================= */
+function VaxDueTab() {
+  const { t } = useTranslation();
+  const { state, dispatch } = usePos();
+
+  const due = vaccinationsDue(state.vaccinations, 30);
+  const groups = new Map<string, { patient: Customer | undefined; items: Vaccination[] }>();
+  for (const v of due) {
+    const g = groups.get(v.patientId)
+      ?? { patient: state.customers.find((c) => c.id === v.patientId), items: [] };
+    g.items.push(v);
+    groups.set(v.patientId, g);
+  }
+  const productName = (id: string) => state.products.find((p) => p.id === id)?.name ?? id;
+
+  const notify = (patientName: string, ids: string[]) => {
+    /* TODO(W3.1): route through the notifications framework sender when it lands.
+     * Standalone console stub + toast so this tab works without W3.1. */
+    console.info("[notify] vaccination due", patientName, ids);
+    dispatch({ type: "TOAST", kind: "info", msg: i18n.t("toast.vaxDueNotified", { patient: patientName, count: ids.length }) });
+  };
+
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center justify-between flex-wrap gap-2">
+        <div>
+          <h2 className="font-display font-bold text-ink">{t("reports.vaxDueTitle")}</h2>
+          <p className="text-[11px] text-inksoft mt-0.5">{t("reports.vaxDueHint")}</p>
+        </div>
+        <Badge tone={due.length ? "honey" : "mist"}><IBell size={11} /> {due.length} {t("reports.vaxDueCount")}</Badge>
+      </div>
+
+      {groups.size === 0 ? (
+        <Empty icon={<IPill size={22} />} title={t("reports.vaxDueEmpty")} hint={t("reports.vaxDueEmptyHint")} />
+      ) : (
+        <div className="space-y-2">
+          {[...groups.entries()].map(([pid, g]) => {
+            const name = g.patient?.name ?? pid;
+            return (
+              <div key={pid} className="rounded-xl border border-mist bg-card overflow-hidden">
+                <div className="px-4 py-2.5 bg-pine-900 text-pine-50 flex items-center gap-3 flex-wrap">
+                  <span className="grid place-items-center w-7 h-7 rounded-lg bg-pine-800 text-pine-100 font-display font-bold text-[10px] shrink-0">
+                    {name.split(" ").map((w) => w[0]).slice(0, 2).join("")}
+                  </span>
+                  <div className="min-w-0">
+                    <p className="text-xs font-bold truncate">{name}</p>
+                    {g.patient?.phone && <p className="text-[10px] text-pine-200 num">{g.patient.phone}</p>}
+                  </div>
+                  <button onClick={() => notify(name, g.items.map((v) => v.id))}
+                    className="ms-auto flex items-center gap-1.5 px-2.5 py-1.5 rounded-md bg-pine-700 text-pine-50 text-[11px] font-bold hover:bg-pine-600 transition active:scale-95">
+                    <IBell size={11} /> {t("reports.vaxNotify")}
+                  </button>
+                </div>
+                <table className="w-full text-xs border-collapse">
+                  <tbody>
+                    {g.items.map((v) => {
+                      const daysLeft = Math.ceil(((v.nextDue ?? 0) - Date.now()) / 86_400_000);
+                      return (
+                        <tr key={v.id} className="border-t border-mist/70">
+                          <td className="px-4 py-2 font-semibold text-ink">{productName(v.productId)}</td>
+                          <td className="px-3 py-2 text-inksoft">{t("customers.vaxDose", { n: v.doseNumber })}</td>
+                          {v.lot && <td className="px-3 py-2 text-inksoft num">{t("customers.vaxLot")} {v.lot}</td>}
+                          <td className="px-3 py-2 num text-ink">
+                            {new Date(v.nextDue ?? 0).toLocaleDateString(i18n.language, { month: "short", day: "numeric", year: "numeric" })}
+                          </td>
+                          <td className="px-4 py-2 text-end">
+                            <Badge tone={daysLeft <= 7 ? "brick" : "honey"}>{i18n.t("reports.vaxInDays", { n: daysLeft })}</Badge>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }

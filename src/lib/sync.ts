@@ -31,6 +31,7 @@ import type {
   Promotion,
   PromotionKind,
   ConditionEntry,
+  Vaccination,
 } from "../data";
 import type { NotificationLogEntry } from "./notify";
 import { makeSettings } from "../data";
@@ -65,6 +66,7 @@ export interface BackendData {
   categories: Category[];
   branches: Branch[];
   promotions: Promotion[];
+  vaccinations: Vaccination[];
   notificationLog: NotificationLogEntry[];
 }
 
@@ -73,7 +75,7 @@ const TABLES = [
   "products", "transactions", "prescriptions", "prescribers", "customers", "transfers",
   "backorders", "rx_transfers", "suppliers", "purchase_orders", "ap_invoices", "expenses",
   "deliveries", "web_orders", "time_entries", "staff", "settings", "restricted_log",
-  "audit_log", "shifts", "store_credits", "snapshots", "interaction_pairs", "cold_chain_log", "coupons", "categories", "branches", "promotions",
+  "audit_log", "shifts", "store_credits", "snapshots", "interaction_pairs", "cold_chain_log", "coupons", "categories", "branches", "promotions", "vaccinations",
   "notification_log",
 ] as const;
 
@@ -538,6 +540,16 @@ function categoryFrom(row: Row): Category {
   };
 }
 
+function vaccinationFrom(row: Row): Vaccination {
+  return {
+    id: text(row, "id"), patientId: text(row, "patient_id"), productId: text(row, "product_id"),
+    lot: optionalText(row, "lot"), doseNumber: numberValue(row, "dose_number", 1),
+    site: optionalText(row, "site"), administrator: text(row, "administrator"),
+    administeredAt: rowEpoch(row, "administered_at"), nextDue: optionalNumber(row, "next_due"),
+    notes: optionalText(row, "notes"), createdAt: rowEpoch(row, "created_at"),
+  };
+}
+
 function branchFrom(row: Row): Branch {
   return {
     id: text(row, "id"),
@@ -723,6 +735,13 @@ export function rowsFor(data: BackendData): Record<TableName, Row[]> {
       created_at: timestamp(p.createdAt), updated_at: timestamp(p.updatedAt),
       organization_id: "00000000-0000-0000-0000-000000000001",
     })),
+    vaccinations: data.vaccinations.map((v) => ({
+      id: v.id, patient_id: v.patientId, product_id: v.productId, lot: nullable(v.lot),
+      dose_number: v.doseNumber, site: nullable(v.site), administrator: v.administrator,
+      administered_at: timestamp(v.administeredAt), next_due: timestamp(v.nextDue),
+      notes: nullable(v.notes), created_at: timestamp(v.createdAt),
+      organization_id: "00000000-0000-0000-0000-000000000001",
+    })),
     /* log-only table: never upserted back (persistBackendData skips empty payloads) */
     notification_log: [],
   };
@@ -768,6 +787,7 @@ const TABLE_COLLECTION: Record<string, keyof BackendData> = {
   categories: "categories",
   branches: "branches",
   promotions: "promotions",
+  vaccinations: "vaccinations",
 };
 
 /** Build the full-org export bundle from a BackendData snapshot (single source of truth: rowsFor). */
@@ -901,6 +921,7 @@ export async function loadBackendData(seed: BackendData): Promise<LoadResult> {
         categories: byTable.categories.map(categoryFrom),
         branches: byTable.branches.map(branchFrom),
         promotions: byTable.promotions.map(promotionFrom),
+        vaccinations: byTable.vaccinations.map(vaccinationFrom),
         notificationLog: byTable.notification_log.map(notificationLogFrom),
       },
     };

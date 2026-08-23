@@ -48,6 +48,7 @@ function makeState(overrides: Record<string, unknown> = {}) {
     outboxCount: 0,
     conflicts: [],
     promotions: [],
+    vaccinations: [],
     notificationLog: [] as NotificationLogEntry[],
     ...overrides,
   };

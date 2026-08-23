@@ -34,6 +34,7 @@ function makeTestState(overrides: Partial<State> = {}): State {
     outboxCount: 0,
     conflicts: [],
     promotions: [],
+    vaccinations: [],
     shifts: [],
     storeCredits: [],
     notificationLog: [],
@@ -73,6 +74,7 @@ describe("reducer - HYDRATE_BACKEND", () => {
       categories: [],
       branches: [],
       promotions: [],
+    vaccinations: [],
       notificationLog: [],
     };
 
@@ -123,6 +125,7 @@ describe("reducer - HYDRATE_BACKEND", () => {
       categories: [],
       branches: [],
       promotions: [],
+    vaccinations: [],
       notificationLog: [],
     };
 
@@ -168,6 +171,7 @@ describe("reducer - HYDRATE_BACKEND", () => {
       categories: [],
       branches: [],
       promotions: [],
+    vaccinations: [],
       notificationLog: [],
     };
 

@@ -979,6 +979,86 @@ export function makeColdChainLogs(now: number): ColdChainLog[] {
   ];
 }
 
+/* ------------------------------------------------------------------ */
+/*  W3.5 — Vaccination records (per-patient immunization history)      */
+/* ------------------------------------------------------------------ */
+
+export interface Vaccination {
+  id: string;
+  patientId: string;            // customers.id
+  productId: string;            // vaccines live in the product catalog
+  lot?: string;
+  doseNumber: number;
+  site?: string;
+  administrator: string;        // staff name who administered
+  administeredAt: number;       // epoch ms
+  nextDue?: number;             // epoch ms — drives the 30-day due list
+  notes?: string;
+  createdAt: number;
+}
+
+export const VACCINATION_SITES = ["Left deltoid", "Right deltoid", "Left thigh", "Right thigh", "Intranasal", "Oral"];
+
+/** Vaccinations due within the next `windowDays` (inclusive), soonest first. */
+export function vaccinationsDue(vax: Vaccination[], windowDays = 30, now = Date.now()): Vaccination[] {
+  const end = now + windowDays * 86_400_000;
+  return vax
+    .filter((v) => typeof v.nextDue === "number" && v.nextDue >= now && v.nextDue <= end)
+    .sort((a, b) => (a.nextDue ?? 0) - (b.nextDue ?? 0));
+}
+
+export interface VaxCardRow {
+  vaccine: string;
+  lot?: string;
+  doseNumber: number;
+  site?: string;
+  administeredAt: number;
+  administrator: string;
+}
+
+export interface VaxCardData {
+  patientName: string;
+  dob?: string;
+  orgName: string;
+  generatedAt: number;
+  rows: VaxCardRow[];   // oldest → newest, CDC-card reading order
+}
+
+/** Assemble the CDC-style immunization-card payload (pure — feeds print + tests). */
+export function buildVaxCardData(
+  patientName: string, dob: string | undefined, orgName: string,
+  vaccinations: Vaccination[], productName: (id: string) => string,
+): VaxCardData {
+  const rows = [...vaccinations]
+    .filter((v) => typeof v.administeredAt === "number")
+    .sort((a, b) => a.administeredAt - b.administeredAt)
+    .map((v) => ({
+      vaccine: productName(v.productId), lot: v.lot, doseNumber: v.doseNumber,
+      site: v.site, administeredAt: v.administeredAt, administrator: v.administrator,
+    }));
+  return { patientName, dob, orgName, generatedAt: Date.now(), rows };
+}
+
+export function makeVaccinations(now: number): Vaccination[] {
+  return [
+    { id: "VAX-1001", patientId: "C-001", productId: "fluq", lot: "FLU-25K42", doseNumber: 1,
+      site: "Right deltoid", administrator: "R. Mensah, RPh", administeredAt: now - 330 * day,
+      nextDue: now + 12 * day, notes: "Annual quadrivalent dose.", createdAt: now - 330 * day },
+    { id: "VAX-1002", patientId: "C-002", productId: "pneu", lot: "PNV-25B11", doseNumber: 1,
+      site: "Left deltoid", administrator: "D. Whitfield", administeredAt: now - 350 * day,
+      nextDue: now + 6 * day, createdAt: now - 350 * day },
+    { id: "VAX-1003", patientId: "C-003", productId: "tdap", lot: "TDA-24M08", doseNumber: 5,
+      site: "Left deltoid", administrator: "R. Mensah, RPh", administeredAt: now - 400 * day,
+      createdAt: now - 400 * day },
+    { id: "VAX-1004", patientId: "C-005", productId: "fluq", lot: "FLU-25K42", doseNumber: 1,
+      site: "Right deltoid", administrator: "J. Boateng", administeredAt: now - 200 * day,
+      nextDue: now + 165 * day, createdAt: now - 200 * day },
+    { id: "VAX-1005", patientId: "C-006", productId: "hepb", lot: "HEP-25G33", doseNumber: 2,
+      site: "Right deltoid", administrator: "R. Mensah, RPh", administeredAt: now - 28 * day,
+      nextDue: now + 152 * day, notes: "Dose 2 of 3 — series on schedule.", createdAt: now - 28 * day },
+  ];
+}
+
 /* Store credit / gift-card balance (Phase A till ops). A gift card is simply a
    credit that carries a scannable `code`; both redeem as the store_credit tender. */
 export interface StoreCredit {
@@ -1062,6 +1142,10 @@ export function makeProducts(now: number): Product[] {
     p("cet10", "Cetirizine 10mg", "Cetirizine HCl", "Zyrtec", "coldflu", "Tablet · strip of 10", 4.1, 1.9, 180, 50, false, "CET-25A08", 380, "Apex Distributors"),
     p("cfsyrup", "Cough Syrup DM", "Dextromethorphan 15mg/5ml", "Benylin", "coldflu", "Syrup · 100ml bottle", 6.5, 3.6, 46, 20, false, "BEN-25C21", 205, "Apex Distributors", ["BEN-25J10", 26, 420]),
     p("ors5", "ORS Sachets", "Oral rehydration salts", "Electral", "coldflu", "Powder · pack of 5", 3.9, 1.8, 96, 30, false, "ORS-25B11", 460, "Vital Trade"),
+    p("fluq", "Quadrivalent Flu Vaccine", "Inactivated influenza vaccine", "VaxiGrip", "coldflu", "Injection · single-dose syringe", 18.5, 11.2, 60, 25, true, "FLU-25K42", 300, "ColdChain Direct"),
+    p("pneu", "Pneumococcal Vaccine PCV20", "Pneumococcal conjugate vaccine", "Prevnar", "coldflu", "Injection · single-dose vial", 92.0, 61.0, 24, 10, true, "PNV-25B11", 420, "ColdChain Direct"),
+    p("tdap", "Tdap Booster", "Tetanus toxoid + diphtheria + acellular pertussis", "Adacel", "coldflu", "Injection · single-dose vial", 44.0, 27.5, 30, 12, true, "TDA-24M08", 380, "MediSource Ltd"),
+    p("hepb", "Hepatitis B Vaccine", "Hepatitis B surface antigen (recombinant)", "Engerix-B", "coldflu", "Injection · single-dose vial", 36.0, 21.4, 28, 12, true, "HEP-25G33", 400, "ColdChain Direct"),
     p("vd3", "Vitamin D3 1000IU", "Cholecalciferol", "D-Sun", "vitamins", "Softgel · bottle of 60", 12.5, 6.8, 74, 25, false, "VD3-25A03", 540, "Vital Trade"),
     p("vitc", "Vitamin C 1000mg", "Ascorbic acid", "Cevit", "vitamins", "Effervescent · 20 tabs", 7.8, 4.1, 6, 18, false, "VTC-24D18", 52, "Vital Trade"),
     p("zinco", "Zinc + Multivitamin", "Zinc sulfate + B-complex", "Zincovit", "vitamins", "Tablet · strip of 15", 5.4, 2.7, 118, 30, false, "ZNC-25C09", 330, "Vital Trade"),
