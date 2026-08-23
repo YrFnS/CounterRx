@@ -7,7 +7,7 @@ import {
   stockOf, nearestExpiry, allocFEFO, fefoBatches, newBatchCode, daysUntil,
   genericSubstituteFor, substitutionSaving,
   bulkPct, REDEEM_CHUNK_PTS, REDEEM_CHUNK_VALUE, can, tenderTypeOf, applyStoreCredit, pruneExpiredHolds,
-  LINE_DISCOUNT_PIN_THRESHOLD, CATEGORIES_FALLBACK, outstandingBalance,
+  LINE_DISCOUNT_PIN_THRESHOLD, CATEGORIES_FALLBACK, BRANCHES_FALLBACK, outstandingBalance,
   type Category,
   createShift, recordShiftTransaction, recordCashMovement, closeShift, generateXReport, generateZReport,
   deductFromLot, tempInRange,
@@ -19,7 +19,7 @@ import type {
   Supplier, PurchaseOrder, ApInvoice, ApPayMethod, Expense,
   Delivery, DeliveryStatus, WebOrder, WebOrderStatus, TimeEntry,
   Shift, XReport, ZReport, CashMovement, ShiftTransaction, TxType, TenderType, StoreCredit,
-  InteractionPair, ColdChainLog, Coupon,
+  InteractionPair, ColdChainLog, Coupon, Branch,
 } from "./data";
 import { makeStaff, makeSettings, makeBackOrders, makeRxTransfers, SNAPS_KEY, hashPin, ROLE_LABEL } from "./data";
 import type { BackendData, LoadResult } from "./lib/sync";
@@ -62,6 +62,7 @@ interface State {
   coldChainLog: ColdChainLog[];
   coupons: Coupon[];
   categories: Category[];
+  branches: Branch[];
   currentShift: Shift | null;
   cart: { productId: string; qty: number; note?: string; priceOverride?: number; daw?: number; substitutedFrom?: string; uom?: string; lineDiscount?: { mode: "amt" | "pct"; value: number }; rxId?: string }[];
   held: HeldSale[];
@@ -196,7 +197,7 @@ let toastSeq = 1;
 let heldSeq = 1;
 let auditSeq = 100;
 
-export const seed = (): Pick<State, "products" | "transactions" | "prescriptions" | "prescribers" | "customers" | "audit" | "transfers" | "backorders" | "rxTransfers" | "suppliers" | "purchaseOrders" | "apInvoices" | "expenses" | "deliveries" | "webOrders" | "timeEntries" | "staff" | "settings" | "shifts" | "storeCredits" | "interactionPairs" | "coldChainLog" | "coupons" | "categories"> => {
+export const seed = (): Pick<State, "products" | "transactions" | "prescriptions" | "prescribers" | "customers" | "audit" | "transfers" | "backorders" | "rxTransfers" | "suppliers" | "purchaseOrders" | "apInvoices" | "expenses" | "deliveries" | "webOrders" | "timeEntries" | "staff" | "settings" | "shifts" | "storeCredits" | "interactionPairs" | "coldChainLog" | "coupons" | "categories" | "branches"> => {
   const now = Date.now();
   const products = makeProducts(now);
   const customers = makeCustomers(now);
@@ -222,6 +223,7 @@ export const seed = (): Pick<State, "products" | "transactions" | "prescriptions
     interactionPairs: [],
     coupons: [],
     categories: CATEGORIES_FALLBACK,
+    branches: BRANCHES_FALLBACK,
     staff: makeStaff(now),
     settings: makeSettings(),
     storeCredits: [],
@@ -269,6 +271,7 @@ function load(): State {
           coldChainLog: saved.coldChainLog ?? [],
           coupons: saved.coupons ?? [],
           categories: saved.categories ?? CATEGORIES_FALLBACK,
+          branches: saved.branches ?? BRANCHES_FALLBACK,
         };
       }
     }
@@ -1821,6 +1824,7 @@ export function reducer(state: State, a: Action): State {
         coldChainLog: a.data.coldChainLog ?? [],
         coupons: a.data.coupons ?? [],
         categories: a.data.categories ?? CATEGORIES_FALLBACK,
+        branches: a.data.branches ?? BRANCHES_FALLBACK,
       };
     }
 
@@ -1940,6 +1944,7 @@ const backendDataFromState = (state: State): BackendData => ({
   coldChainLog: state.coldChainLog ?? [],
   coupons: state.coupons ?? [],
   categories: state.categories ?? [],
+  branches: state.branches ?? [],
 });
 
 export function PosProvider({ children }: { children: ReactNode }) {
@@ -2096,7 +2101,7 @@ export function PosProvider({ children }: { children: ReactNode }) {
         shifts: state.shifts, coldChainLog: state.coldChainLog,
       }));
     } catch { /* storage full — ignore */ }
-  }, [state.products, state.transactions, state.prescriptions, state.prescribers, state.customers, state.transfers, state.audit, state.staff, state.settings, state.restrictedLog, state.backorders, state.rxTransfers, state.suppliers, state.purchaseOrders, state.apInvoices, state.expenses, state.shifts, state.coldChainLog]);
+  }, [state.products, state.transactions, state.prescriptions, state.prescribers, state.customers, state.transfers, state.audit, state.staff, state.settings, state.restrictedLog, state.backorders, state.rxTransfers, state.suppliers, state.purchaseOrders, state.apInvoices, state.expenses, state.shifts, state.coldChainLog, state.categories, state.coupons, state.branches]);
 
   const value = useMemo<Ctx>(() => {
     const product = (id: string) => state.products.find((p) => p.id === id);

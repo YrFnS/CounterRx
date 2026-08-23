@@ -16,6 +16,15 @@ export interface Category {
   archived: boolean;
 }
 
+export interface Branch {
+  id: string;
+  name: string;
+  address?: string;
+  phone?: string;
+  active: boolean;
+  sort: number;
+}
+
 /** Fallback list used before hydration / offline (mirrors the DB seed). */
 export const CATEGORIES_FALLBACK: Category[] = [
   { id: "antibiotics", label: "Antibiotics", color: "#c24a2e", groupId: "acute", sort: 1, archived: false },
@@ -857,7 +866,11 @@ export interface Transfer {
   createdAt: number; requestedBy: string; note?: string;
 }
 export const HOME_BRANCH = "Main branch";
-export const BRANCHES = ["Branch 02 — Cedar Mall", "Branch 07 — Northgate", "Branch 11 — Harbor East"];
+export const BRANCHES_FALLBACK: Branch[] = [
+  { id: "BR-01", name: "Main Branch", address: "123 Main St, Capital City", phone: "+1-555-0101", active: true, sort: 0 },
+  { id: "BR-02", name: "North Branch", address: "456 North Ave, Capital City", phone: "+1-555-0102", active: true, sort: 1 },
+  { id: "BR-03", name: "South Branch", address: "789 South Blvd, Capital City", phone: "+1-555-0103", active: true, sort: 2 },
+];
 
 
 const day = 86_400_000;
@@ -1052,9 +1065,9 @@ export function makeBackOrders(now: number): BackOrder[] {
 export function makeTransfers(now: number): Transfer[] {
   const h = 3_600_000;
   return [
-    { id: "TR-311", productId: "insg", qty: 4, toBranch: BRANCHES[0], status: "requested", createdAt: now - 2.5 * h, requestedBy: "R. Mensah, RPh", note: "Northgate running low on glargine" },
-    { id: "TR-310", productId: "ors5", qty: 24, toBranch: BRANCHES[1], status: "approved", createdAt: now - 9 * h, requestedBy: "S-003" },
-    { id: "TR-309", productId: "salb", qty: 6, toBranch: BRANCHES[2], status: "shipped", createdAt: now - 26 * h, requestedBy: "D. Whitfield", note: "Flu-season demand at Harbor" },
+    { id: "TR-311", productId: "insg", qty: 4, toBranch: BRANCHES_FALLBACK[0].id, status: "requested", createdAt: now - 2.5 * h, requestedBy: "R. Mensah, RPh", note: "Northgate running low on glargine" },
+    { id: "TR-310", productId: "ors5", qty: 24, toBranch: BRANCHES_FALLBACK[1].id, status: "approved", createdAt: now - 9 * h, requestedBy: "S-003" },
+    { id: "TR-309", productId: "salb", qty: 6, toBranch: BRANCHES_FALLBACK[2].id, status: "shipped", createdAt: now - 26 * h, requestedBy: "D. Whitfield", note: "Flu-season demand at Harbor" },
   ];
 }
 

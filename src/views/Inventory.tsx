@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { usePos, money, relTime, clockTime } from "../store";
-import { daysUntil, fefoBatches, stockOf, nearestExpiry, newBatchCode, FIELD_SUGGESTIONS, BRANCHES, can, ndcLookup, hashPin, tempInRange, patientsForLot } from "../data";
+import { daysUntil, fefoBatches, stockOf, nearestExpiry, newBatchCode, FIELD_SUGGESTIONS, BRANCHES_FALLBACK, can, ndcLookup, hashPin, tempInRange, patientsForLot } from "../data";
 import type { Product, Batch, TransferStatus, Uom, Transaction, Supplier } from "../data";
 import { aiForecast } from "../lib/ai";
 import type { ForecastRow } from "../lib/ai";
@@ -19,6 +19,7 @@ export default function Inventory() {
   const [cat, setCat] = useState<string | "all">("all");
   const categories = useMemo(() => (state.categories ?? []).filter((c) => !c.archived).sort((x, y) => x.sort - y.sort), [state.categories]);
   const [filter, setFilter] = useState<Filter>(state.invPreset === "expiring" ? "expiring" : state.invPreset === "low" ? "low" : "all");
+  const [invTab, setInvTab] = useState<"products" | "suppliers">("products");
   const [monthFilter, setMonthFilter] = useState<string | null>(null);
   const [adjusting, setAdjusting] = useState<Product | null>(null);
   const [receiving, setReceiving] = useState<Product | null>(null);
@@ -149,6 +150,16 @@ export default function Inventory() {
         </div>
 
         <div className="flex gap-1.5 flex-wrap">
+          <button key="products" onClick={() => setInvTab("products")}
+            className={cx("flex items-center gap-1.5 px-3 py-2 rounded-lg border text-xs font-semibold transition-all",
+              invTab === "products" ? "bg-ink text-paper border-ink shadow-lift" : "bg-card border-mist text-inksoft hover:border-pine-300 hover:text-ink")}>
+            <IBox size={12} /> Products
+          </button>
+          <button key="suppliers" onClick={() => setInvTab("suppliers")}
+            className={cx("flex items-center gap-1.5 px-3 py-2 rounded-lg border text-xs font-semibold transition-all",
+              invTab === "suppliers" ? "bg-ink text-paper border-ink shadow-lift" : "bg-card border-mist text-inksoft hover:border-pine-300 hover:text-ink")}>
+            <IUsers size={12} /> Suppliers
+          </button>
           {filters.map((f) => (
             <button key={f.id} onClick={() => setFilter(f.id)}
               className={cx("flex items-center gap-1.5 px-3 py-2 rounded-lg border text-xs font-semibold transition-all",
@@ -545,9 +556,10 @@ function SuppliersManager({ onClose }: { onClose: () => void }) {
 function TransferModal({ onClose }: { onClose: () => void }) {
   const { state, dispatch, product } = usePos();
   const canApprove = can(state.user?.role, "approve_transfer");
+  const branches = useMemo(() => (state.branches?.length ? state.branches : BRANCHES_FALLBACK).filter((b) => b.active).sort((a, b) => a.sort - b.sort), [state.branches]);
   const [pid, setPid] = useState(state.products.find((p) => stockOf(p) > 0)?.id ?? "");
   const [qty, setQty] = useState("10");
-  const [to, setTo] = useState(BRANCHES[0]);
+  const [to, setTo] = useState(branches[0]?.id ?? "BR-01");
 
   const statusTone: Record<TransferStatus, string> = {
     requested: "bg-honey-100 text-honey-700",
@@ -604,7 +616,7 @@ function TransferModal({ onClose }: { onClose: () => void }) {
             <label className="text-[10px] font-bold uppercase tracking-[0.14em] text-inksoft">To branch</label>
             <select value={to} onChange={(e) => setTo(e.target.value)}
               className="w-full mt-1 px-2.5 py-2 rounded-lg border border-mist bg-card text-xs focus:border-pine-500 focus:outline-none">
-              {BRANCHES.map((b) => <option key={b} value={b}>{b}</option>)}
+              {branches.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
             </select>
           </div>
           <button onClick={submit}
