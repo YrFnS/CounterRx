@@ -13,9 +13,10 @@ import { cx, Modal, Badge } from "../ui";
 import {
   IGear, IPrint, IStar, IUsers, IDownload, IPlus, IX, ICheck, ITrash, IRecall, IAlert, IScan, IChevD, IClockIn, IPill, IEdit, ITag, IShield, ICopy, IUpload, IBell, ICash,
 } from "../icons";
+import PlatformAdmin from "./PlatformAdmin";
 import { connectPrinter, printLabel, kickDrawer, HardwareError } from "../lib/hardware";
 
-type Tab = "profile" | "receipt" | "loyalty" | "team" | "clock" | "hardware" | "data" | "language" | "clinical" | "coupons" | "categories" | "backups" | "notifications" | "delivery" | "promotions";
+type Tab = "profile" | "receipt" | "loyalty" | "team" | "clock" | "hardware" | "data" | "language" | "clinical" | "coupons" | "categories" | "backups" | "notifications" | "delivery" | "promotions" | "platform";
 
 export default function Settings() {
   const { t } = useTranslation();
@@ -40,6 +41,7 @@ export default function Settings() {
     { id: "notifications", label: t("notifications.title"), icon: <IBell size={14} /> },
     { id: "promotions", label: t("settings.promotionsTitle"), icon: <IStar size={14} /> },
     { id: "backups", label: t("settings.backups.title"), icon: <IShield size={14} /> },
+    { id: "platform", label: t("platform.title"), icon: <IShield size={14} /> },
   ];
 
   return (
@@ -55,6 +57,7 @@ export default function Settings() {
         {TABS.map((t) => {
           if (t.id === "team" && !teamAdmin) return null;
           if (t.id === "clinical" && !admin) return null;
+          if (t.id === "platform" && !can(state.user?.role, "platform_admin")) return null;
           const active = tab === t.id;
           return (
             <button key={t.id} onClick={() => setTab(t.id)}
@@ -82,6 +85,7 @@ export default function Settings() {
         {tab === "notifications" && <NotificationsTab admin={admin} />}
         {tab === "promotions" && <PromotionsTab admin={admin} />}
         {tab === "backups" && <BackupsTab admin={admin} />}
+        {tab === "platform" && <PlatformAdmin />}
       </div>
     </div>
   );

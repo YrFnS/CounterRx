@@ -689,6 +689,24 @@ export interface Staff {
   initials: string; active: boolean; createdAt: number;
 }
 
+/* Organization (tenant) — the platform console manages these (W4.4 / F-Platform).
+ * Per-org feature flags gate capabilities for every store in the tenant. */
+export interface Organization {
+  id: string;
+  name: string;
+  ownerEmail: string | null;
+  status: "active" | "suspended";
+  createdAt: number;
+  // per-org feature flags
+  claimsMode: "sandbox" | "live";
+  ndcLiveLookup: boolean;
+  deliveryEnabled: boolean;
+  aiEnabled: boolean;
+}
+
+/** Platform-level tenant management role bypasses per-org RLS (matches is_super_admin()). */
+export const DEFAULT_ORG_ID = "00000000-0000-0000-0000-000000000001";
+
 export const ROLE_LABEL: Record<Role, string> = {
   pharmacy_admin: "Admin", pharmacist: "Pharmacist", manager: "Manager", cashier: "Cashier", super_admin: "Super Admin",
 };
@@ -696,10 +714,13 @@ export const ROLE_LABEL: Record<Role, string> = {
 export type Perm =
   | "refund" | "approve_transfer" | "adjust_stock" | "apply_count"
   | "edit_settings" | "manage_settings" | "manage_staff" | "restore_snapshot" | "verify_rx" | "transfer_rx"
-  | "create_po" | "receive_po" | "pay_invoice" | "add_expense" | "approve_discount";
+  | "create_po" | "receive_po" | "pay_invoice" | "add_expense" | "approve_discount"
+  | "platform_admin";
 
 /* Permission matrix — enforced in the UI layer now, mirrors the future RLS checks */
-export const PERMS: Record<Perm, Role[]> = {
+/* platform_admin is granted directly in can() (super_admin only) — kept out of the
+ * PERMS matrix so the per-role grants stay explicit and unit-tested. */
+export const PERMS: Record<Exclude<Perm, "platform_admin">, Role[]> = {
   refund: ["manager", "pharmacy_admin"],
   approve_discount: ["manager", "pharmacy_admin"],
   approve_transfer: ["manager", "pharmacy_admin"],
@@ -717,8 +738,11 @@ export const PERMS: Record<Perm, Role[]> = {
   add_expense: ["manager", "pharmacy_admin"],
 };
 
-export const can = (role: Role | undefined, perm: Perm): boolean =>
-  !!role && PERMS[perm].includes(role);
+export const can = (role: Role | undefined, perm: Perm): boolean => {
+  if (!role) return false;
+  if (perm === "platform_admin") return role === "super_admin";
+  return (PERMS as Record<Perm, Role[]>)[perm].includes(role);
+};
 
 /** Role-based route guards (F7): which roles may open each view. Single source of
  *  truth — consumed by the shell nav AND in-page buttons that navigate (e.g.
@@ -734,6 +758,7 @@ export const VIEW_ROLES: Record<string, Role[]> = {
   reports: ["super_admin", "pharmacy_admin", "pharmacist", "manager"],
   prescriptions: ["super_admin", "pharmacy_admin", "pharmacist"],
   settings: ["super_admin", "pharmacy_admin"],
+  platform: ["super_admin"],
 };
 
 /* ------------------------------------------------------------------ */
@@ -924,6 +949,17 @@ export function makeSettings(): OrgSettings {
       creditLowThreshold: 10,
     },
   };
+}
+
+/** Seed organizations for the platform console (W4.4). Clinics A/B are live
+ *  tenants; Clinic C is suspended to exercise the suspend/activate flow. */
+export function makeOrganizations(now: number): Organization[] {
+  return [
+    { id: DEFAULT_ORG_ID, name: "CounterRx Default", ownerEmail: null, status: "active", createdAt: now - 240 * 86_400_000, claimsMode: "sandbox", ndcLiveLookup: true, deliveryEnabled: true, aiEnabled: true },
+    { id: "11111111-1111-1111-1111-111111111111", name: "Lakeside Pharmacy", ownerEmail: "ops@lakeside.rx", status: "active", createdAt: now - 180 * 86_400_000, claimsMode: "sandbox", ndcLiveLookup: true, deliveryEnabled: true, aiEnabled: false },
+    { id: "22222222-2222-2222-2222-222222222222", name: "Bayside Compounding", ownerEmail: "admin@bayside.rx", status: "active", createdAt: now - 90 * 86_400_000, claimsMode: "live", ndcLiveLookup: true, deliveryEnabled: false, aiEnabled: true },
+    { id: "33333333-3333-3333-3333-333333333333", name: "Highland Apothecary", ownerEmail: "owner@highland.rx", status: "suspended", createdAt: now - 45 * 86_400_000, claimsMode: "sandbox", ndcLiveLookup: false, deliveryEnabled: false, aiEnabled: false },
+  ];
 }
 
 export interface SnapshotMeta { id: string; at: number; label: string; auto: boolean; }

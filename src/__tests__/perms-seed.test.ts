@@ -3,14 +3,14 @@ import { PERMS, can, makeStaff, Role, Perm } from "../data";
 
 describe("PERMS matrix integrity", () => {
   it("every permission has at least one allowed role", () => {
-    for (const perm of Object.keys(PERMS) as Perm[]) {
+    for (const perm of Object.keys(PERMS) as Exclude<Perm, "platform_admin">[]) {
       expect(PERMS[perm].length).toBeGreaterThan(0);
     }
   });
 
   it("no permission allows unknown roles", () => {
     const knownRoles: Role[] = ["pharmacy_admin", "pharmacist", "manager", "cashier", "super_admin"];
-    for (const perm of Object.keys(PERMS) as Perm[]) {
+    for (const perm of Object.keys(PERMS) as Exclude<Perm, "platform_admin">[]) {
       for (const role of PERMS[perm]) {
         expect(knownRoles).toContain(role);
       }

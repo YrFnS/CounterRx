@@ -39,6 +39,7 @@ function makeTestState(overrides: Partial<State> = {}): State {
     shifts: [],
     storeCredits: [],
     notificationLog: [],
+    organizations: [],
     ...overrides,
   };
 }
@@ -78,6 +79,7 @@ describe("reducer - HYDRATE_BACKEND", () => {
     vaccinations: [],
       rxClaims: [],
       notificationLog: [],
+      organizations: [],
     };
 
     const action: Action = { type: "HYDRATE_BACKEND", data: backendData };
@@ -130,6 +132,7 @@ describe("reducer - HYDRATE_BACKEND", () => {
     vaccinations: [],
       rxClaims: [],
       notificationLog: [],
+      organizations: [],
     };
 
     const action: Action = { type: "HYDRATE_BACKEND", data: backendData };
@@ -177,6 +180,7 @@ describe("reducer - HYDRATE_BACKEND", () => {
     vaccinations: [],
       rxClaims: [],
       notificationLog: [],
+      organizations: [],
     };
 
     const action: Action = { type: "HYDRATE_BACKEND", data: backendData };

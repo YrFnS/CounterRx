@@ -89,6 +89,10 @@ const TITLES: Record<View, { title: string; sub: string }> = {
     title: "nav.settings",
     sub: "Organization profile, team, loyalty, backups",
   },
+  platform: {
+    title: "platform.title",
+    sub: "platform.subtitle",
+  },
 };
 
 const NAV: { id: View; label: string; icon: ReactNode; key: string }[] = [
