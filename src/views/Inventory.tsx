@@ -26,7 +26,6 @@ export default function Inventory() {
   const [adding, setAdding] = useState(false);
   const [counting, setCounting] = useState(false);
   const [compounding, setCompounding] = useState(false);
-  const [suppliersOpen, setSuppliersOpen] = useState(false);
   const mayAdjust = can(state.user?.role, "adjust_stock");
   const mayCompound = can(state.user?.role, "verify_rx"); /* pharmacists + admins compound */
   const [report, setReport] = useState<"low" | "expiry" | null>(null);
@@ -160,7 +159,7 @@ export default function Inventory() {
               invTab === "suppliers" ? "bg-ink text-paper border-ink shadow-lift" : "bg-card border-mist text-inksoft hover:border-pine-300 hover:text-ink")}>
             <IUsers size={12} /> Suppliers
           </button>
-          {filters.map((f) => (
+              {invTab === "products" && filters.map((f) => (
             <button key={f.id} onClick={() => setFilter(f.id)}
               className={cx("flex items-center gap-1.5 px-3 py-2 rounded-lg border text-xs font-semibold transition-all",
                 filter === f.id ? "bg-ink text-paper border-ink shadow-lift" : "bg-card border-mist text-inksoft hover:border-pine-300 hover:text-ink")}>
@@ -172,6 +171,7 @@ export default function Inventory() {
         </div>
 
         <div className="flex-1" />
+        {invTab === "products" && (<>
         <button onClick={() => setReport("low")}
           className="flex items-center gap-1.5 px-3 py-2 rounded-lg border border-mist bg-card text-xs font-semibold text-ink hover:border-honey-400 hover:bg-honey-100/50 transition active:scale-95">
           <IReport size={14} /> Reorder report
@@ -194,10 +194,6 @@ export default function Inventory() {
             mayCompound ? "bg-[#8a6fae] text-paper hover:brightness-110 shadow-lift" : "bg-mist text-inksoft/50 cursor-not-allowed")}>
           <IFlask size={14} /> Compound
         </button>
-        <button onClick={() => setSuppliersOpen(true)}
-          className="flex items-center gap-1.5 px-3 py-2 rounded-lg border border-mist bg-card text-xs font-semibold text-ink hover:border-pine-400 hover:bg-pine-50 transition active:scale-95">
-          <IUsers size={14} /> {t("suppliers.title")}
-        </button>
         <button onClick={exportCsv}
           className="flex items-center gap-1.5 px-3 py-2 rounded-lg border border-mist bg-card text-xs font-semibold text-ink hover:border-pine-400 hover:bg-pine-50 transition active:scale-95">
           <IDownload size={14} /> Export CSV
@@ -210,8 +206,11 @@ export default function Inventory() {
           className="flex items-center gap-1.5 px-3.5 py-2 rounded-lg bg-pine-700 text-pine-50 text-xs font-bold hover:bg-pine-600 transition active:scale-95 shadow-lift">
           <IPlus size={14} /> Add product
         </button>
+        </>)}
       </div>
 
+      {invTab === "products" ? (
+      <>
       {/* ---- expiry horizon heatmap ---- */}
       <div className="mt-4 bg-card border border-mist rounded-xl px-4 py-3 shadow-lift">
         <div className="flex items-center justify-between mb-2">
@@ -346,6 +345,10 @@ export default function Inventory() {
           </table>
         )}
       </div>
+      </>
+      ) : (
+        <SuppliersPanel />
+      )}
 
       {adjusting && <AdjustModal p={adjusting} onClose={() => setAdjusting(null)} />}
       {receiving && <ReceiveModal p={receiving} onClose={() => setReceiving(null)} />}
@@ -357,13 +360,12 @@ export default function Inventory() {
       {uomFor && <UomModal p={uomFor} onClose={() => setUomFor(null)} />}
       {forecasting && <ForecastModal p={forecasting} onClose={() => setForecasting(null)} />}
       {coldFor && <ColdChainModal p={coldFor} onClose={() => setColdFor(null)} />}
-      {suppliersOpen && <SuppliersManager onClose={() => setSuppliersOpen(false)} />}
       </div>
   );
 }
 
-/* Suppliers manager (R5) — admin-gated CRUD with archive + delete guards */
-function SuppliersManager({ onClose }: { onClose: () => void }) {
+/* Suppliers manager (R5) — admin-gated CRUD with archive + delete guards; full-page tab since W1.5 */
+function SuppliersPanel() {
   const { t } = useTranslation();
   const { state, dispatch } = usePos();
   const admin = can(state.user?.role, "manage_settings");
@@ -438,18 +440,17 @@ function SuppliersManager({ onClose }: { onClose: () => void }) {
   };
 
   return (
-    <Modal onClose={onClose} width={720} labelledBy="sup-title">
-      <div className="px-5 py-4 border-b border-mist flex items-start justify-between">
+    <div className="mt-4 flex-1 min-h-0 flex flex-col overflow-auto scroll-slim rounded-xl border border-mist bg-card shadow-lift p-4">
+      <div className="flex items-start justify-between pb-3 border-b border-mist">
         <div>
-          <h2 id="sup-title" className="font-display font-bold text-ink flex items-center gap-2">
+          <h2 className="font-display font-bold text-ink flex items-center gap-2">
             <IUsers size={17} className="text-pine-700" /> {t("suppliers.title")}
           </h2>
           <p className="text-xs text-inksoft mt-0.5">{t("suppliers.subtitle")}</p>
         </div>
-        <button onClick={onClose} className="p-1.5 rounded-md hover:bg-mist/60 text-inksoft" aria-label="Close"><IX size={14} /></button>
       </div>
 
-      <div className="p-5 space-y-4">
+      <div className="mt-4 space-y-4">
         <div className="rounded-xl border border-mist bg-card shadow-lift p-4 space-y-3">
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
             <label className="block text-[11px] font-bold text-inksoft">{t("suppliers.name")} *
@@ -548,7 +549,7 @@ function SuppliersManager({ onClose }: { onClose: () => void }) {
           <p className="text-[11px] text-inksoft text-center">{t("suppliers.readOnly")}</p>
         )}
       </div>
-    </Modal>
+    </div>
   );
 }
 
