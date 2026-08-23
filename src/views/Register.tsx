@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { usePos, money, relTime, unitPrice, cartTotals, uomFactor } from "../store";
-import { daysUntil, stockOf, nearestExpiry, bulkPct, fefoBatches, findInteractions, allergyConflicts, genericSubstituteFor, substitutionSaving, catSubtree } from "../data";
+import { daysUntil, stockOf, nearestExpiry, bulkPct, fefoBatches, findInteractions, allergyConflicts, genericSubstituteFor, substitutionSaving, catSubtree, normalizeAllergies } from "../data";
 import type { Product } from "../data";
 import { aiClassify } from "../lib/ai";
 import { cartToInteractionPrompt, parseClassifyJson } from "../lib/ai-ui";
@@ -345,7 +345,7 @@ export default function Register() {
         {state.cart.length > 0 && (
           <AiSecondPass
             meds={cartLines.map(({ line, p }) => ({ productId: p.id, name: p.name, generic: p.generic, qty: line.qty }))}
-            allergies={attachedCustomer?.allergies ?? []}
+            allergies={normalizeAllergies(attachedCustomer?.allergies).map((a) => a.allergen)}
             patientName={attachedCustomer?.name ?? ""}
           />
         )}

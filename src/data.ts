@@ -519,13 +519,38 @@ export function makeExpenses(now: number): Expense[] {
   ];
 }
 
+/* Structured allergy entry (W3.6) — allergen + severity + optional reaction note.
+ * Legacy free-text strings (pre-W3.6 profiles) are still accepted everywhere via
+ * AllergyInput, so old synced rows need no data migration. */
+export interface AllergyEntry {
+  allergen: string;         // e.g. "Penicillin" or any custom allergen
+  severity: "mild" | "moderate" | "severe";
+  reaction?: string;        // observed response, e.g. "hives"
+  archived?: boolean;       // archived entries stay on file for audit, never screen
+}
+/** Accepts legacy plain strings and W3.6 structured entries. */
+export type AllergyInput = string | AllergyEntry;
+
+export interface ConditionEntry {
+  code?: string;            // optional ICD-style code, e.g. "E11.9"
+  name: string;             // free-text condition, e.g. "Type 2 diabetes"
+}
+
+export interface PatientNote {
+  at: number;               // epoch ms
+  author: string;           // staff name at time of writing (audit trail keeps live actor)
+  text: string;
+}
+
 export interface Customer {
   id: string; name: string; phone: string; email?: string;
   createdAt: number; notes?: string;
   points: number;           // loyalty balance — 1 pt per $1, 100 pts redeems $5
   taxExempt?: boolean;      // clinics / gov accounts — sales post tax-free
   fields?: Field[];         // user-defined attributes (6.7)
-  allergies?: string[];     // structured allergen profile (§3 clinical checks)
+  allergies?: AllergyInput[]; // structured allergen profile (§3 clinical checks)
+  conditions?: ConditionEntry[]; // diagnosed conditions (W3.6) — ICD-style code optional
+  patientNotes?: PatientNote[];  // chronological clinical notes timeline (W3.6), newest first
   /* full patient profile (§7) */
   dob?: string;             // ISO date
   gender?: "F" | "M" | "O";
@@ -534,6 +559,13 @@ export interface Customer {
   primaryPrescriberId?: string;
   insurancePlan?: string;
   clinicalNotes?: string;   // pharmacist-only (§3 HIPAA role-scoped)
+}
+
+/** Normalize an allergy list to structured entries, dropping archived ones.
+ * Used for display and screening so callers never branch on the two shapes. */
+export function normalizeAllergies(list: AllergyInput[] | undefined): AllergyEntry[] {
+  if (!list || list.length === 0) return [];
+  return list.map((a) => typeof a === "string" ? { allergen: a, severity: "moderate" as const } : a).filter((a) => !a.archived);
 }
 
 /** Outstanding AR balance for a customer — sum of unsettled pay_later legs across transactions */
@@ -573,18 +605,55 @@ export const ALLERGY_RULES: { allergen: string; keywords: string[] }[] = [
   { allergen: "Iodine", keywords: ["iodine", "povidone"] },
 ];
 
-/** Screen a product against a patient's allergen profile — returns every conflict */
-export function allergyConflicts(allergies: string[] | undefined, p: Product | undefined): { allergen: string; reason: string }[] {
+export interface AllergyConflict { allergen: string; severity: "mild" | "moderate" | "severe"; reason: string }
+
+/** Screen a product against a patient's allergen profile — returns every conflict.
+ * Accepts legacy plain-string allergies and W3.6 structured entries; archived
+ * entries are ignored. Severity comes from the entry (legacy strings default to moderate). */
+export function allergyConflicts(allergies: AllergyInput[] | undefined, p: Product | undefined): AllergyConflict[] {
   if (!allergies || allergies.length === 0 || !p) return [];
   const hay = `${p.name} ${p.generic} ${p.brand}`.toLowerCase();
-  const out: { allergen: string; reason: string }[] = [];
-  for (const a of allergies) {
-    const rule = ALLERGY_RULES.find((r) => r.allergen.toLowerCase() === a.toLowerCase());
+  const out: AllergyConflict[] = [];
+  for (const a of normalizeAllergies(allergies)) {
+    const rule = ALLERGY_RULES.find((r) => r.allergen.toLowerCase() === a.allergen.toLowerCase());
     if (!rule) continue;
     const hit = rule.keywords.find((k) => hay.includes(k));
-    if (hit) out.push({ allergen: a, reason: hit });
+    if (hit) out.push({ allergen: a.allergen, severity: a.severity, reason: hit });
   }
   return out;
+}
+
+/* ---------------- full patient profile helpers (W3.6) ---------------- */
+
+/** A medication event derived from the ledger — no migration needed, both
+ * sources are already persisted (dispensed Rx + ℞ sale lines). */
+export interface MedHistoryItem {
+  product: string;          // display name
+  qty: number;
+  at: number;               // epoch ms
+  source: "rx" | "sale";   // dispensed prescription vs till purchase
+  rxRef: string;            // Rx id (source="rx") or transaction id (source="sale")
+}
+
+/** Derive read-only medication history for a patient from state.prescriptions
+ * (matched by name — Prescription carries no customerId) + rx-flagged lines in
+ * state.transactions (matched by customerId). Sorted newest first. */
+export function medHistory(
+  customerName: string,
+  customerId: string,
+  prescriptions: Pick<Prescription, "id" | "patient" | "productId" | "qty" | "createdAt">[],
+  transactions: Pick<Transaction, "id" | "at" | "customerId" | "refundOf" | "lines">[],
+  products: Pick<Product, "id" | "name">[],
+): MedHistoryItem[] {
+  const nameOf = (id: string) => products.find((p) => p.id === id)?.name ?? id;
+  const lname = customerName.toLowerCase();
+  const fromRx = prescriptions
+    .filter((r) => r.patient.toLowerCase() === lname)
+    .map((r) => ({ product: nameOf(r.productId), qty: r.qty, at: r.createdAt, source: "rx" as const, rxRef: r.id }));
+  const fromSales = transactions
+    .filter((t) => t.customerId === customerId && !t.refundOf)
+    .flatMap((t) => t.lines.filter((l) => l.rx).map((l) => ({ product: l.name, qty: l.qty, at: t.at, source: "sale" as const, rxRef: t.id })));
+  return [...fromRx, ...fromSales].sort((a, b) => b.at - a.at);
 }
 
 /* ------------------------------------------------------------------ */

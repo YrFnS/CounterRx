@@ -1,11 +1,13 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { createPortal } from "react-dom";
 import { useTranslation } from "react-i18next";
 import type { ReactNode } from "react";
 import { usePos, money, relTime, clockTime } from "../store";
-import { ALLERGENS, can, outstandingBalance } from "../data";
-import type { Customer } from "../data";
+import { patientProfilePayload } from "../store";
+import { ALLERGENS, can, outstandingBalance, normalizeAllergies, medHistory } from "../data";
+import type { Customer, AllergyEntry, ConditionEntry } from "../data";
 import { cx, Badge, Modal, Empty, CustomFieldsBlock } from "../ui";
-import { IUsers, ISearch, IPlus, IX, IChevD, IStar, IRegister, IHistory, IPill, ICheck, IAlert } from "../icons";
+import { IUsers, ISearch, IPlus, IX, IChevD, IStar, IRegister, IHistory, IPill, ICheck, IAlert, IPrint } from "../icons";
 
 const day = 86_400_000;
 
@@ -170,6 +172,10 @@ function CustomerRow({ c, visits, spend, last, txs, expanded, onToggle }: {
             <div className="mb-2.5">
               <AllergyEditor customerId={c.id} allergies={c.allergies ?? []} />
             </div>
+            <div className="mb-2.5">
+              <ConditionsEditor conditions={c.conditions ?? []} onSave={(conditions) => dispatch({ type: "PATIENT_CONDITIONS", id: c.id, conditions })} />
+            </div>
+            <NotesTimeline notes={c.patientNotes ?? []} onAdd={(text) => dispatch({ type: "ADD_PATIENT_NOTE", id: c.id, text })} />
             {txs.length === 0 ? (
               <p className="text-xs text-inksoft">No purchases yet — attach them at the register to begin earning points.</p>
             ) : (
@@ -193,45 +199,151 @@ function CustomerRow({ c, visits, spend, last, txs, expanded, onToggle }: {
   );
 }
 
-/* Structured allergen profile — screened against every Rx and OTC sale (§3) */
-function AllergyEditor({ customerId, allergies }: { customerId: string; allergies: string[] }) {
+/* Structured allergen profile — screened against every Rx and OTC sale (§3).
+ * W3.6: per-entry severity + reaction; archived entries kept on file, never screen. */
+function AllergyEditor({ customerId, allergies }: { customerId: string; allergies: Customer["allergies"] }) {
+  const { t } = useTranslation();
   const { dispatch } = usePos();
   const [custom, setCustom] = useState("");
-  const toggle = (a: string) =>
-    dispatch({ type: "CUSTOMER_ALLERGIES", id: customerId, allergies: allergies.includes(a) ? allergies.filter((x) => x !== a) : [...allergies, a] });
+  const [sev, setSev] = useState<AllergyEntry["severity"]>("moderate");
+  const [reaction, setReaction] = useState("");
+  const raw = allergies ?? [];
+  /* legacy plain strings stay as-is; new entries are structured */
+  const entries: AllergyEntry[] = normalizeAllergies(allergies);
+  const activeRaw = raw.filter((a) => !(typeof a !== "string" && a.archived));
+  const archived = raw.filter((a): a is AllergyEntry => typeof a !== "string" && !!a.archived);
+  const save = (list: (string | AllergyEntry)[]) =>
+    dispatch({ type: "CUSTOMER_ALLERGIES", id: customerId, allergies: list });
+  const toggle = (name: string) => {
+    if (!entries.some((x) => x.allergen.toLowerCase() === name.toLowerCase())) {
+      save([...activeRaw, { allergen: name, severity: sev, ...(reaction.trim() ? { reaction: reaction.trim() } : {}) }]);
+    } else {
+      save(activeRaw.filter((a) => (typeof a === "string" ? a : a.allergen).toLowerCase() !== name.toLowerCase()));
+    }
+    setReaction("");
+  };
   const addCustom = () => {
     const v = custom.trim();
-    if (!v || allergies.some((x) => x.toLowerCase() === v.toLowerCase())) return;
-    dispatch({ type: "CUSTOMER_ALLERGIES", id: customerId, allergies: [...allergies, v] });
+    if (!v || entries.some((x) => x.allergen.toLowerCase() === v.toLowerCase())) return;
+    toggle(v);
     setCustom("");
   };
   return (
     <div className="rounded-lg border border-brick-200/70 bg-brick-100/30 px-3 py-2.5">
       <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-brick-700 flex items-center gap-1.5">
-        <IAlert size={11} /> Allergies on file · {allergies.length || "none"}
+        <IAlert size={11} /> {t("patients.allergyFile")} · {entries.length || t("patients.none")}
       </p>
       <div className="mt-2 flex items-center gap-1.5 flex-wrap">
         {ALLERGENS.map((a) => {
-          const on = allergies.includes(a);
+          const hit = entries.find((x) => x.allergen.toLowerCase() === a.toLowerCase());
           return (
-            <button key={a} onClick={() => toggle(a)}
+            <button key={a} onClick={() => toggle(a)} title={hit?.reaction || t(`patients.sev.${hit?.severity ?? "moderate"}`)}
               className={cx("px-2 py-1 rounded-md border text-[10px] font-bold transition-all active:scale-95",
-                on ? "bg-brick-600 border-brick-600 text-paper shadow-lift" : "bg-card border-mist text-inksoft hover:border-brick-400 hover:text-brick-700")}>
-              {on && <ICheck size={9} className="inline me-1 -mt-px" />}{a}
+                hit ? "bg-brick-600 border-brick-600 text-paper shadow-lift" : "bg-card border-mist text-inksoft hover:border-brick-400 hover:text-brick-700")}>
+              {hit && <ICheck size={9} className="inline me-1 -mt-px" />}{a}
+              {hit && <span className="ms-1 uppercase opacity-80">{t(`patients.sev.${hit.severity}`)[0]}</span>}
             </button>
           );
         })}
-        {allergies.filter((x) => !ALLERGENS.includes(x)).map((x) => (
-          <button key={x} onClick={() => toggle(x)}
-            className="px-2 py-1 rounded-md bg-brick-600 border border-brick-600 text-paper text-[10px] font-bold transition-all active:scale-95 shadow-lift">
-            <ICheck size={9} className="inline me-1 -mt-px" />{x}
-          </button>
+        {entries.filter((x) => !ALLERGENS.some((a) => a.toLowerCase() === x.allergen.toLowerCase())).map((x) => (
+          <span key={x.allergen} className="inline-flex items-center gap-1 px-2 py-1 rounded-md bg-brick-600 border border-brick-600 text-paper text-[10px] font-bold shadow-lift">
+            {x.reaction && <span title={x.reaction}>⚠</span>}{x.allergen}
+            <span className="uppercase opacity-80">{t(`patients.sev.${x.severity}`)[0]}</span>
+            <button onClick={() => toggle(x.allergen)} aria-label={t("common.delete")} className="hover:bg-paper/20 rounded"><IX size={9} /></button>
+          </span>
         ))}
-        <input value={custom} onChange={(e) => setCustom(e.target.value)}
-          onKeyDown={(e) => e.key === "Enter" && addCustom()}
-          placeholder="+ other allergen"
+        <input value={custom} onChange={(e) => setCustom(e.target.value)} onKeyDown={(e) => e.key === "Enter" && addCustom()}
+          placeholder={t("patients.otherAllergen")}
           className="px-2 py-1 rounded-md border border-dashed border-brick-300 bg-card text-[10px] font-semibold w-28 focus:outline-none focus:border-brick-500 transition" />
       </div>
+      <div className="mt-2 flex items-center gap-2 flex-wrap">
+        <label className="flex items-center gap-1 text-[9px] font-bold uppercase tracking-[0.14em] text-brick-700">
+          {t("patients.severity")}
+          <select value={sev} onChange={(e) => setSev(e.target.value as AllergyEntry["severity"])}
+            className="px-1.5 py-1 rounded-md border border-mist bg-card text-[10px] focus:outline-none">
+            {(SEVERITIES).map((s) => <option key={s} value={s}>{t(`patients.sev.${s}`)}</option>)}
+          </select>
+        </label>
+        <input value={reaction} onChange={(e) => setReaction(e.target.value)} placeholder={t("patients.reactionPh")}
+          className="px-2 py-1 rounded-md border border-dashed border-mist bg-card text-[10px] w-40 focus:outline-none focus:border-brick-500 transition" />
+        {archived.length > 0 && (
+          <span className="flex items-center gap-1 flex-wrap">
+            <span className="text-[9px] font-bold uppercase tracking-[0.14em] text-inksoft">{t("patients.archived")}:</span>
+            {archived.map((x) => (
+              <button key={x.allergen} onClick={() => save(raw.map((a) => (typeof a !== "string" && a.allergen === x.allergen ? { ...a, archived: false } : a)))}
+                className="px-2 py-0.5 rounded-md border border-mist bg-mist/40 text-inksoft text-[10px] font-bold line-through hover:text-ink transition">{x.allergen}</button>
+            ))}
+          </span>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/* Diagnosed conditions — free-text name + optional ICD-style code (W3.6) */
+function ConditionsEditor({ conditions, onSave }: { conditions: ConditionEntry[]; onSave: (c: ConditionEntry[]) => void }) {
+  const { t } = useTranslation();
+  const [name, setName] = useState("");
+  const [code, setCode] = useState("");
+  const add = () => {
+    const n = name.trim();
+    if (!n || conditions.some((c) => c.name.toLowerCase() === n.toLowerCase())) return;
+    onSave([...conditions, { name: n, ...(code.trim() && { code: code.trim() }) }]);
+    setName(""); setCode("");
+  };
+  return (
+    <div className="rounded-lg border border-pine-200/70 bg-pine-50/50 px-3 py-2.5">
+      <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-pine-700 flex items-center gap-1.5">
+        <IPill size={11} /> {t("patients.conditions")} · {conditions.length || t("patients.none")}
+      </p>
+      <div className="mt-2 flex items-center gap-1.5 flex-wrap">
+        {conditions.length === 0 && <span className="text-[11px] text-inksoft">{t("patients.noConditions")}</span>}
+        {conditions.map((c, i) => (
+          <span key={`${c.name}-${i}`} className="inline-flex items-center gap-1 px-2 py-1 rounded-md bg-card border border-pine-300 text-[10px] font-bold text-ink shadow-lift">
+            {c.code && <span className="num text-pine-700">{c.code}</span>} {c.name}
+            <button onClick={() => onSave(conditions.filter((_, j) => j !== i))} aria-label={t("common.delete")} className="text-inksoft hover:text-brick-700"><IX size={9} /></button>
+          </span>
+        ))}
+        <input value={name} onChange={(e) => setName(e.target.value)} placeholder={t("patients.conditionName")} onKeyDown={(e) => e.key === "Enter" && add()}
+          className="px-2 py-1 rounded-md border border-dashed border-pine-300 bg-card text-[10px] font-semibold w-36 focus:outline-none focus:border-pine-500 transition" />
+        <input value={code} onChange={(e) => setCode(e.target.value)} placeholder={t("patients.icdCode")} onKeyDown={(e) => e.key === "Enter" && add()}
+          className="px-2 py-1 rounded-md border border-dashed border-mist bg-card text-[10px] num w-20 focus:outline-none focus:border-pine-500 transition" />
+      </div>
+    </div>
+  );
+}
+
+/* Chronological clinical notes timeline (W3.6) — newest first, staff-attributed */
+function NotesTimeline({ notes, onAdd }: { notes: Customer["patientNotes"]; onAdd: (text: string) => void }) {
+  const { t } = useTranslation();
+  const [draft, setDraft] = useState("");
+  const submit = () => { if (!draft.trim()) return; onAdd(draft); setDraft(""); };
+  return (
+    <div className="rounded-lg border border-mist bg-card px-3 py-2.5 mb-2.5">
+      <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-inksoft flex items-center gap-1.5">
+        <IHistory size={11} /> {t("patients.notesTimeline")} · {notes?.length || 0}
+      </p>
+      <div className="mt-2 flex items-center gap-1.5">
+        <input value={draft} onChange={(e) => setDraft(e.target.value)} placeholder={t("patients.notePh")} onKeyDown={(e) => e.key === "Enter" && submit()}
+          className="flex-1 px-2.5 py-1.5 rounded-md border border-dashed border-mist bg-paper/60 text-[11px] focus:outline-none focus:border-pine-500 transition" />
+        <button onClick={submit} disabled={!draft.trim()}
+          className={cx("px-2.5 py-1.5 rounded-md text-[10px] font-bold transition active:scale-95",
+            draft.trim() ? "bg-pine-700 text-pine-50 hover:bg-pine-600" : "bg-mist text-inksoft cursor-not-allowed")}>{t("patients.addNote")}</button>
+      </div>
+      {notes && notes.length > 0 && (
+        <ol className="mt-2.5 space-y-1.5 max-h-44 overflow-auto scroll-slim">
+          {notes.map((n, i) => (
+            <li key={`${n.at}-${i}`} className="flex gap-2 text-[11px]">
+              <span aria-hidden className="shrink-0 mt-1.5 w-1.5 h-1.5 rounded-full bg-pine-500" />
+              <span className="min-w-0">
+                <span className="font-bold text-ink">{n.author || "—"}</span>
+                <span className="text-inksoft num ms-1.5">{relTime(n.at)} · {clockTime(n.at)}</span>
+                <span className="block text-ink leading-snug">{n.text}</span>
+              </span>
+            </li>
+          ))}
+        </ol>
+      )}
     </div>
   );
 }
@@ -272,6 +384,8 @@ function AddCustomerModal({ onClose }: { onClose: () => void }) {
 
 const inputCls = "w-full px-3 py-2.5 rounded-lg border border-mist bg-card text-sm focus:border-pine-500 focus:outline-none focus:ring-2 focus:ring-pine-200 transition";
 
+const SEVERITIES = ["mild", "moderate", "severe"] as const;
+
 function Field({ label, children }: { label: string; children: ReactNode }) {
   return (
     <div>
@@ -297,6 +411,7 @@ const pIn = "w-full px-2.5 py-2 rounded-lg border border-mist bg-card text-xs fo
 
 function ProfileModal({ c, onClose }: { c: Customer; onClose: () => void }) {
   const { state, dispatch, prescriber } = usePos();
+  const { t } = useTranslation();
   const clinical = can(state.user?.role, "verify_rx"); /* pharmacist-scoped (§3 HIPAA) */
   const [f, setF] = useState({
     dob: c.dob ?? "", gender: c.gender ?? "", address: c.address ?? "",
@@ -307,18 +422,25 @@ function ProfileModal({ c, onClose }: { c: Customer; onClose: () => void }) {
     || f.bloodType !== (c.bloodType ?? "") || f.primaryPrescriberId !== (c.primaryPrescriberId ?? "")
     || f.insurancePlan !== (c.insurancePlan ?? "") || f.clinicalNotes !== (c.clinicalNotes ?? "");
 
-  /* medication history — Rx scripts + dispensed purchases for this patient */
-  const meds = useMemo(() => {
-    const fromRx = state.prescriptions
-      .filter((r) => r.patient.toLowerCase() === c.name.toLowerCase())
-      .map((r) => ({ id: r.id, name: state.products.find((p) => p.id === r.productId)?.name ?? r.productId, when: r.createdAt, tag: r.status }));
-    const fromSales = state.transactions
-      .filter((t) => t.customerId === c.id && !t.refundOf)
-      .flatMap((t) => t.lines.filter((l) => l.rx).map((l) => ({ id: t.id, name: l.name, when: t.at, tag: "filled" })));
-    return [...fromRx, ...fromSales].sort((a, b) => b.when - a.when).slice(0, 8);
-  }, [state.prescriptions, state.transactions, state.products, c]);
+  /* medication history — Rx scripts + dispensed purchases for this patient (W3.6 shared derivation) */
+  const meds = useMemo(
+    () => medHistory(c.name, c.id, state.prescriptions, state.transactions, state.products).slice(0, 8),
+    [state.prescriptions, state.transactions, state.products, c]);
 
   const age = f.dob ? Math.max(0, Math.floor((Date.now() - new Date(f.dob + "T00:00:00").getTime()) / (365.25 * 86_400_000))) : null;
+
+  /* print patient profile (W3.6): payload from the shared builder, rendered into
+   * #print-root (the only visible region under @media print), then window.print() */
+  const [printing, setPrinting] = useState(false);
+  const printProfile = () => {
+    if (!patientProfilePayload(state, c.id)) return;
+    setPrinting(true);
+  };
+  useEffect(() => {
+    if (!printing) return;
+    window.print();
+    setPrinting(false);
+  }, [printing]);
 
   return (
     <Modal onClose={onClose} width={620} labelledBy="prof-title">
@@ -370,11 +492,29 @@ function ProfileModal({ c, onClose }: { c: Customer; onClose: () => void }) {
 
         <div className="sm:col-span-2">
           <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-inksoft flex items-center gap-1.5">
-            <IAlert size={10} className="text-brick-600" /> Allergens on file · {(c.allergies ?? []).length || "none"}
+            <IAlert size={10} className="text-brick-600" /> {t("patients.allergyFile")} · {normalizeAllergies(c.allergies).length || t("patients.none")}
           </span>
           <div className="mt-1 flex gap-1.5 flex-wrap">
-            {(c.allergies ?? []).length === 0 && <span className="text-[11px] text-inksoft">No known allergies recorded.</span>}
-            {(c.allergies ?? []).map((a) => <span key={a} className="px-2 py-0.5 rounded-md bg-brick-100 border border-brick-300/60 text-brick-700 text-[10px] font-bold">{a}</span>)}
+            {normalizeAllergies(c.allergies).length === 0 && <span className="text-[11px] text-inksoft">{t("patients.noAllergies")}</span>}
+            {normalizeAllergies(c.allergies).map((a) => (
+              <span key={a.allergen} className="px-2 py-0.5 rounded-md bg-brick-100 border border-brick-300/60 text-brick-700 text-[10px] font-bold">
+                {a.allergen} · {t(`patients.sev.${a.severity}`)}{a.reaction ? ` · ${a.reaction}` : ""}
+              </span>
+            ))}
+          </div>
+        </div>
+
+        <div className="sm:col-span-2">
+          <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-inksoft flex items-center gap-1.5">
+            <IPill size={10} className="text-pine-700" /> {t("patients.conditions")} · {(c.conditions ?? []).length || t("patients.none")}
+          </span>
+          <div className="mt-1 flex gap-1.5 flex-wrap">
+            {(c.conditions ?? []).length === 0 && <span className="text-[11px] text-inksoft">{t("patients.noConditions")}</span>}
+            {(c.conditions ?? []).map((cond, i) => (
+              <span key={`${cond.name}-${i}`} className="px-2 py-0.5 rounded-md bg-pine-50 border border-pine-200/70 text-pine-700 text-[10px] font-bold">
+                {cond.code && <span className="num">{cond.code}</span>} {cond.name}
+              </span>
+            ))}
           </div>
         </div>
 
@@ -388,15 +528,15 @@ function ProfileModal({ c, onClose }: { c: Customer; onClose: () => void }) {
         </label>
 
         <div className="sm:col-span-2 rounded-lg border border-mist bg-paper/70 p-3">
-          <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-inksoft mb-1.5">Medication history</p>
-          {meds.length === 0 ? <p className="text-[11px] text-inksoft">No prescriptions or ℞ purchases on record.</p> : (
+          <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-inksoft mb-1.5">{t("patients.medHistory")}</p>
+          {meds.length === 0 ? <p className="text-[11px] text-inksoft">{t("patients.noMeds")}</p> : (
             <div className="space-y-1">
               {meds.map((m, i) => (
-                <div key={`${m.id}-${i}`} className="flex items-center justify-between gap-2 text-[11px]">
-                  <span className="font-semibold text-ink truncate">{m.name}</span>
+                <div key={`${m.rxRef}-${i}`} className="flex items-center justify-between gap-2 text-[11px]">
+                  <span className="font-semibold text-ink truncate">{m.product}<span className="text-inksoft font-normal num ms-1.5">×{m.qty}</span></span>
                   <span className="flex items-center gap-2 shrink-0">
-                    <span className="px-1.5 py-px rounded bg-pine-100 text-pine-700 text-[9px] font-bold uppercase">{m.tag}</span>
-                    <span className="num text-inksoft">{relTime(m.when)}</span>
+                    <span className="px-1.5 py-px rounded bg-pine-100 text-pine-700 text-[9px] font-bold uppercase">{m.source === "rx" ? t("patients.rxRef") : t("patients.saleTag")} · {m.rxRef}</span>
+                    <span className="num text-inksoft">{relTime(m.at)}</span>
                   </span>
                 </div>
               ))}
@@ -407,6 +547,10 @@ function ProfileModal({ c, onClose }: { c: Customer; onClose: () => void }) {
 
       <div className="px-5 py-3.5 border-t border-mist flex justify-end gap-2">
         <button onClick={onClose} className="px-4 py-2 rounded-lg border border-mist text-xs font-semibold text-inksoft hover:text-ink transition">Close</button>
+        <button onClick={printProfile}
+          className="flex items-center gap-1.5 px-4 py-2 rounded-lg border border-pine-300 bg-pine-50 text-pine-700 text-xs font-bold hover:bg-pine-100 transition active:scale-95">
+          <IPrint size={13} /> {t("patients.printProfile")}
+        </button>
         <button disabled={!dirty}
           onClick={() => {
             dispatch({
@@ -425,6 +569,58 @@ function ProfileModal({ c, onClose }: { c: Customer; onClose: () => void }) {
           <ICheck size={13} /> Save profile
         </button>
       </div>
+      {printing && createPortal(<PrintProfile state={state} customerId={c.id} />, document.body)}
     </Modal>
+  );
+}
+
+/* Hidden print sheet — #print-root is the sole visible region under @media print.
+ * Demographics + med history + allergies + conditions + notes timeline. */
+function PrintProfile({ state, customerId }: { state: Parameters<typeof patientProfilePayload>[0]; customerId: string }) {
+  const { t } = useTranslation();
+  const p = patientProfilePayload(state, customerId);
+  if (!p) return null;
+  const c = p.customer;
+  const age = c.dob ? Math.max(0, Math.floor((Date.now() - new Date(c.dob + "T00:00:00").getTime()) / (365.25 * 86_400_000))) : null;
+  return (
+    <div id="print-root">
+      <div id="receipt-print" style={{ fontFamily: "ui-sans-serif, system-ui", fontSize: 11, color: "#111" }}>
+        <p style={{ fontWeight: 700, fontSize: 14, margin: "0 0 2px" }}>{p.orgName} — {t("patients.printTitle")}</p>
+        <p style={{ margin: "0 0 6px", color: "#555" }}>{new Date().toLocaleString()}</p>
+        <p style={{ fontWeight: 700, fontSize: 12, margin: "0 0 2px" }}>{c.name}{age !== null ? ` (${age})` : ""}</p>
+        <p style={{ margin: "0 0 8px" }}>{c.phone}{c.email ? ` · ${c.email}` : ""}{c.dob ? ` · DOB ${c.dob}` : ""}{c.gender ? ` · ${c.gender}` : ""}{c.bloodType ? ` · ${c.bloodType}` : ""}{c.address ? ` · ${c.address}` : ""}{c.insurancePlan ? ` · ${c.insurancePlan}` : ""}</p>
+        <p style={{ fontWeight: 700, borderTop: "1px solid #ccc", paddingTop: 4 }}>{t("patients.allergyFile")}</p>
+        {p.allergies.length === 0 ? <p style={{ margin: "1px 0 6px", color: "#555" }}>{t("patients.noAllergies")}</p> : (
+          <ul style={{ margin: "1px 0 6px", paddingLeft: 14 }}>{p.allergies.map((a) => (
+            <li key={a.allergen}>{a.allergen} — {t(`patients.sev.${a.severity}`)}{a.reaction ? ` — ${a.reaction}` : ""}</li>))}
+          </ul>
+        )}
+        <p style={{ fontWeight: 700, borderTop: "1px solid #ccc", paddingTop: 4 }}>{t("patients.conditions")}</p>
+        {p.conditions.length === 0 ? <p style={{ margin: "1px 0 6px", color: "#555" }}>{t("patients.noConditions")}</p> : (
+          <ul style={{ margin: "1px 0 6px", paddingLeft: 14 }}>{p.conditions.map((x, i) => (
+            <li key={`${x.name}-${i}`}>{x.code ? `${x.code} ` : ""}{x.name}</li>))}
+          </ul>
+        )}
+        <p style={{ fontWeight: 700, borderTop: "1px solid #ccc", paddingTop: 4 }}>{t("patients.medHistory")}</p>
+        {p.meds.length === 0 ? <p style={{ margin: "1px 0 6px", color: "#555" }}>{t("patients.noMeds")}</p> : (
+          <table style={{ width: "100%", borderCollapse: "collapse", margin: "1px 0 6px" }}>
+            <thead><tr><th align="left">{t("patients.productTh")}</th><th align="right">{t("patients.qtyTh")}</th><th align="left" style={{ paddingLeft: 6 }}>{t("patients.rxRef")}</th><th align="right">{t("common.date")}</th></tr></thead>
+            <tbody>{p.meds.map((m, i) => (
+              <tr key={`${m.rxRef}-${i}`}>
+                <td>{m.product}</td><td align="right">{m.qty}</td>
+                <td style={{ paddingLeft: 6 }}>{m.source === "rx" ? "Rx" : "TX"} {m.rxRef}</td>
+                <td align="right">{new Date(m.at).toLocaleDateString()}</td>
+              </tr>))}
+            </tbody>
+          </table>
+        )}
+        <p style={{ fontWeight: 700, borderTop: "1px solid #ccc", paddingTop: 4 }}>{t("patients.notesTimeline")}</p>
+        {p.notes.length === 0 ? <p style={{ margin: "1px 0", color: "#555" }}>—</p> : (
+          <ul style={{ margin: "1px 0", paddingLeft: 14 }}>{p.notes.map((n, i) => (
+            <li key={`${n.at}-${i}`}>{new Date(n.at).toLocaleString()} — {n.author || "—"}: {n.text}</li>))}
+          </ul>
+        )}
+      </div>
+    </div>
   );
 }

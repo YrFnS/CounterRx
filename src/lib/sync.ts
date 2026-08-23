@@ -28,6 +28,7 @@ import type {
   Coupon,
   Category,
   Branch,
+  ConditionEntry,
 } from "../data";
 import { makeSettings } from "../data";
 
@@ -170,6 +171,7 @@ function customerFrom(row: Row): Customer {
     id: text(row, "id"), name: text(row, "name"), phone: text(row, "phone"), email: optionalText(row, "email"),
     createdAt: rowEpoch(row, "created_at_tx"), notes: optionalText(row, "notes"), points: numberValue(row, "points"),
     allergies: jsonValue(row, "allergies", []), dob: optionalText(row, "dob"), gender: optionalText(row, "gender") as Customer["gender"],
+    conditions: jsonValue<ConditionEntry[]>(row, "conditions", []), patientNotes: jsonValue<Customer["patientNotes"]>(row, "patient_notes", []),
     address: optionalText(row, "address"), bloodType: optionalText(row, "blood_type"),
     primaryPrescriberId: optionalText(row, "primary_prescriber_id"), insurancePlan: optionalText(row, "insurance_plan"),
     clinicalNotes: optionalText(row, "clinical_notes"), taxExempt: booleanValue(row, "tax_exempt"), fields: jsonValue(row, "fields", []),
@@ -382,6 +384,7 @@ export function rowsFor(data: BackendData): Record<TableName, Row[]> {
     customers: data.customers.map((c) => ({
       id: c.id, name: c.name, phone: c.phone, email: nullable(c.email), created_at_tx: timestamp(c.createdAt), notes: nullable(c.notes), points: c.points,
       allergies: c.allergies ?? [], dob: nullable(c.dob), gender: nullable(c.gender), address: nullable(c.address), blood_type: nullable(c.bloodType),
+      conditions: c.conditions ?? [], patient_notes: c.patientNotes ?? [],
       primary_prescriber_id: nullable(c.primaryPrescriberId), insurance_plan: nullable(c.insurancePlan), clinical_notes: nullable(c.clinicalNotes),
       tax_exempt: c.taxExempt ?? false, fields: c.fields ?? [],
     })),

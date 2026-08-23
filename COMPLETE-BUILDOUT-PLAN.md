@@ -73,8 +73,8 @@ Rules: birthday reward, first-visit, category % off window; stored in settings/p
 ### W3.5 Vaccination records ✦ `feat/vaccinations`
 Migration 0019 `vaccinations` (patient, product, lot, dose#, site, administrator, date, next_due); Customers profile tab + due-list report; CDC-style card print.
 
-### W3.6 Full patient profiles ✦ `feat/patient-profiles`
-Customers: structured med history (from dispensed Rx), allergies editor improvements, conditions list, notes timeline; print patient profile.
+### W3.6 Full patient profiles ✦ branch `feat/patient-profiles` — DONE
+Structured med history derived from dispensed Rx + ℞ sales, structured allergies editor (severity/reaction/archive), conditions list (optional ICD code), notes timeline; printable patient profile. Migration 0020 pushed live.
 
 ### W3.7 CSV catalog import ✦ `feat/catalog-import`
 Inventory: import products/CSV with column mapping preview, validation report, dry-run mode; matches export headers.

@@ -760,7 +760,8 @@
     "dupeBackorder": "طلب مؤجل مكرر",
     "couponCreated": "تم إنشاء القسيمة",
     "couponUpdated": "تم تحديث القسيمة",
-    "couponDeleted": "تم حذف القسيمة"
+    "couponDeleted": "تم حذف القسيمة",
+    "noteAdded": "تمت إضافة ملاحظة إلى ملف {{name}}"
   },
   "history": {
     "customerReturn": "إرجاع عميل",
@@ -978,5 +979,35 @@
   "discounts": {
     "pctRow": "خصم (٪)",
     "invoiceRow": "خصم على الفاتورة"
+  },
+  "patients": {
+    "profileTitle": "ملف المريض",
+    "allergyFile": "الحساسيات المسجلة",
+    "noAllergies": "لا توجد حساسيات معروفة.",
+    "otherAllergen": "+ حساسية أخرى",
+    "severity": "الشدة",
+    "sev": {
+      "mild": "خفيفة",
+      "moderate": "متوسطة",
+      "severe": "شديدة"
+    },
+    "reactionPh": "رد الفعل (مثل الشرى)",
+    "archived": "مؤرشف",
+    "conditions": "الحالات المرضية",
+    "noConditions": "لا توجد حالات مسجلة.",
+    "conditionName": "اسم الحالة",
+    "icdCode": "رمز ICD",
+    "notesTimeline": "سجل الملاحظات",
+    "notePh": "أضف ملاحظة سريرية…",
+    "addNote": "إضافة ملاحظة",
+    "medHistory": "تاريخ الأدوية",
+    "noMeds": "لا توجد وصفات أو مشتريات أدوية مسجلة.",
+    "rxRef": "وصفة",
+    "saleTag": "بيع",
+    "printProfile": "طباعة الملف",
+    "printTitle": "ملف المريض",
+    "productTh": "المنتج",
+    "qtyTh": "الكمية",
+    "none": "لا يوجد"
   }
 }
