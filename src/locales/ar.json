@@ -160,7 +160,11 @@
     "payLaterAuditSettle": "تم تسوية الدفع لاحقاً — {{amount}} عبر {{method}}",
     "payLaterDoubleSettle": "لا يمكن التسوية — تمت التسوية بالفعل في {{date}}",
     "payLaterSettleSuccess": "تمت تسوية الدفع لاحقاً — {{amount}} عبر {{method}}",
-    "storeCredit": "رصيد المتجر"
+    "storeCredit": "رصيد المتجر",
+    "promotionsApplied": "العروض المطبقة تلقائياً",
+    "promoOverride": "تجاهل",
+    "promoOverrideHint": "تجاهل هذا العرض — يتطلب رقم تعريف المدير",
+    "promoOverrideConfirm": "تأكيد"
   },
   "prescriptions": {
     "title": "الوصفات",
@@ -509,7 +513,23 @@
     "setPasswordTitle": "تعيين كلمة مرور جديدة لـ {{name}}",
     "tempPasswordLabel": "كلمة مرور مؤقتة",
     "tryAgain": "حاول مرة أخرى",
-    "unexpectedError": "حدث خطأ غير متوقع."
+    "unexpectedError": "حدث خطأ غير متوقع.",
+    "promotionsTitle": "العروض الترويجية",
+    "newPromotion": "عرض جديد",
+    "savePromotion": "حفظ العرض",
+    "noPromotions": "لا توجد عروض بعد — أنشئ واحداً أعلاه.",
+    "promotionsHint": "تُطبَّق القواعد تلقائياً عند الدفع: خصم عيد الميلاد، خصم أول زيارة، ونوافذ فئات المنتجات. يُسجَّل كل تطبيق في السجل ويمكن للمدير تجاهله برقم التعريف.",
+    "promoName": "الاسم",
+    "promoNamePlaceholder": "مثال: هدية عيد الميلاد",
+    "promoKind": "النوع",
+    "promoKindBirthday": "هدية عيد الميلاد",
+    "promoKindFirstVisit": "أول زيارة",
+    "promoKindCategory": "نافذة فئة (خصم %)",
+    "promoCategory": "الفئة",
+    "promoWindowStart": "بداية النافذة (اختياري)",
+    "promoWindowEnd": "نهاية النافذة (اختياري)",
+    "promoScopeBirthday": "عيد ميلاد العميل",
+    "promoScopeFirstVisit": "عملاء جدد"
   },
   "shift": {
     "title": "إدارة الورديات",
@@ -760,7 +780,10 @@
     "dupeBackorder": "طلب مؤجل مكرر",
     "couponCreated": "تم إنشاء القسيمة",
     "couponUpdated": "تم تحديث القسيمة",
-    "couponDeleted": "تم حذف القسيمة"
+    "couponDeleted": "تم حذف القسيمة",
+    "promotionCreated": "تم إنشاء العرض",
+    "promotionUpdated": "تم تحديث العرض",
+    "promotionDeleted": "تم حذف العرض"
   },
   "history": {
     "customerReturn": "إرجاع عميل",

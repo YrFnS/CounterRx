@@ -19,7 +19,7 @@ import type {
   Supplier, PurchaseOrder, ApInvoice, ApPayMethod, Expense,
   Delivery, DeliveryStatus, WebOrder, WebOrderStatus, TimeEntry,
   Shift, XReport, ZReport, CashMovement, ShiftTransaction, TxType, TenderType, StoreCredit,
-  InteractionPair, ColdChainLog, Coupon, Branch,
+  InteractionPair, ColdChainLog, Coupon, Branch, Promotion,
 } from "./data";
 import { makeStaff, makeSettings, makeBackOrders, makeRxTransfers, SNAPS_KEY, hashPin, ROLE_LABEL } from "./data";
 import type { BackendData, LoadResult } from "./lib/sync";
@@ -61,6 +61,7 @@ interface State {
   interactionPairs: InteractionPair[];
   coldChainLog: ColdChainLog[];
   coupons: Coupon[];
+  promotions: Promotion[];
   categories: Category[];
   branches: Branch[];
   currentShift: Shift | null;
@@ -133,13 +134,15 @@ type Action =
   | { type: "REDEEM_STORE_CREDIT"; id: string; amount: number }
   | { type: "SAVE_COUPON"; coupon: Coupon }
   | { type: "DELETE_COUPON"; id: string }
+  | { type: "SAVE_PROMOTION"; promotion: Promotion }
+  | { type: "DELETE_PROMOTION"; id: string }
   | { type: "SAVE_CATEGORY"; category: Category }
   | { type: "DELETE_CATEGORY"; id: string }
   | { type: "SUPPLIER_SAVE"; supplier: Supplier }
   | { type: "SUPPLIER_DELETE"; id: string }
   | { type: "EXPIRE_HELDS" }
   | { type: "OPEN_PAY"; open: boolean }
-  | { type: "COMPLETE_SALE"; payments: PaymentLeg[]; tendered?: number; discountPct: number; taxExempt: boolean; idChecked: boolean; restricted?: { purchaser: string; idType: string; idLast4: string }; couponDiscount?: number; invoiceDiscountAmt?: number; approvedBy?: string }
+  | { type: "COMPLETE_SALE"; payments: PaymentLeg[]; tendered?: number; discountPct: number; taxExempt: boolean; idChecked: boolean; restricted?: { purchaser: string; idType: string; idLast4: string }; couponDiscount?: number; invoiceDiscountAmt?: number; approvedBy?: string; promotionDiscount?: number; promotionNames?: string[]; promotionOverridden?: boolean }
   | { type: "SETTLE_PAY_LATER"; transactionId: string; legIndex: number; method: PayMethod; ref?: string }
   | { type: "OPEN_RECEIPT"; tx: Transaction | null }
   | { type: "ADJUST_BATCH"; productId: string; batch: string; newQty: number; reason: string }
@@ -198,7 +201,7 @@ let toastSeq = 1;
 let heldSeq = 1;
 let auditSeq = 100;
 
-export const seed = (): Pick<State, "products" | "transactions" | "prescriptions" | "prescribers" | "customers" | "audit" | "transfers" | "backorders" | "rxTransfers" | "suppliers" | "purchaseOrders" | "apInvoices" | "expenses" | "deliveries" | "webOrders" | "timeEntries" | "staff" | "settings" | "shifts" | "storeCredits" | "interactionPairs" | "coldChainLog" | "coupons" | "categories" | "branches"> => {
+export const seed = (): Pick<State, "products" | "transactions" | "prescriptions" | "prescribers" | "customers" | "audit" | "transfers" | "backorders" | "rxTransfers" | "suppliers" | "purchaseOrders" | "apInvoices" | "expenses" | "deliveries" | "webOrders" | "timeEntries" | "staff" | "settings" | "shifts" | "storeCredits" | "interactionPairs" | "coldChainLog" | "coupons" | "categories" | "branches" | "promotions"> => {
   const now = Date.now();
   const products = makeProducts(now);
   const customers = makeCustomers(now);
@@ -223,6 +226,7 @@ export const seed = (): Pick<State, "products" | "transactions" | "prescriptions
     shifts: [],
     interactionPairs: [],
     coupons: [],
+    promotions: [],
     categories: CATEGORIES_FALLBACK,
     branches: BRANCHES_FALLBACK,
     staff: makeStaff(now),
@@ -273,6 +277,7 @@ function load(): State {
           coupons: saved.coupons ?? [],
           categories: saved.categories ?? CATEGORIES_FALLBACK,
           branches: saved.branches ?? BRANCHES_FALLBACK,
+          promotions: saved.promotions ?? [],
         };
       }
     }
@@ -302,7 +307,7 @@ export function uomFactor(state: State, productId: string, uomCode?: string): nu
   return p?.uoms?.find((u) => u.code === uomCode)?.factor ?? 1;
 }
 
-export function cartTotals(state: State, discountPct: number, taxExempt = false, couponDiscount = 0, invoiceDiscountAmt = 0) {
+export function cartTotals(state: State, discountPct: number, taxExempt = false, couponDiscount = 0, invoiceDiscountAmt = 0, promoDiscount = 0) {
   const lines: TxLine[] = state.cart.map((c) => {
     const p = state.products.find((x) => x.id === c.productId)!;
     const base = unitPrice(state, p.id, c.uom);           // UOM-aware effective price (§5)
@@ -341,14 +346,16 @@ export function cartTotals(state: State, discountPct: number, taxExempt = false,
   const invoiceAmt = round2(Math.max(0, Math.min(invoiceDiscountAmt, discountBase - discount)));
   const totalInvoiceDiscount = round2(discount + invoiceAmt);
   const coupon = round2(Math.max(0, couponDiscount));
+  /* W3.4 auto-applied promotions ride the same capped path as coupons */
+  const promo = round2(Math.max(0, Math.min(promoDiscount, Math.max(0, subtotal - lineDiscounts - totalInvoiceDiscount - coupon))));
   /* loyalty redemption — org-configurable chunks (§7), capped by the payable balance */
   const loy = state.settings.loyalty;
-  const payable = round2(Math.max(0, subtotal - lineDiscounts - totalInvoiceDiscount - coupon));
+  const payable = round2(Math.max(0, subtotal - lineDiscounts - totalInvoiceDiscount - coupon - promo));
   const loyaltyDeduct = round2(Math.min((state.redeemPoints / Math.max(1, loy.chunkPts)) * loy.chunkValue, payable));
   /* tax removed per product decision — field kept so persisted rows stay shape-stable */
   const tax = 0;
   return {
-    lines, subtotal, bulkSavings, discount: totalInvoiceDiscount, lineDiscounts, invoiceAmt, coupon, loyaltyDeduct, tax,
+    lines, subtotal, bulkSavings, discount: totalInvoiceDiscount, lineDiscounts, invoiceAmt, coupon, promo, loyaltyDeduct, tax,
     total: round2(payable - loyaltyDeduct + tax),
   };
 }
@@ -674,7 +681,6 @@ export function reducer(state: State, a: Action): State {
       if (avail <= 0) return withToast(state, "error", i18n.t("toast.outOfStock", { name: p.name }));
       const factor = uomFactor(state, p.id, a.uom);
       const maxUom = Math.max(1, Math.floor(avail / factor));  // sellable count in this UOM
-      const uomLabel = p.uoms?.find((u) => u.code === a.uom)?.label;
       const same = (c: { productId: string; uom?: string }) => c.productId === p.id && (c.uom ?? "") === (a.uom ?? "");
       const line = state.cart.find(same);
       if (line) {
@@ -977,6 +983,19 @@ export function reducer(state: State, a: Action): State {
       return withToast(withAudit({ ...state, coupons }, "settings", `Coupon ${a.id} deleted`), "success", i18n.t("toast.couponDeleted"));
     }
 
+    case "SAVE_PROMOTION": {
+      if (!can(state.user?.role, "manage_settings")) return withToast(state, "error", "Admin required to manage promotions");
+      const exists = state.promotions.findIndex((p) => p.id === a.promotion.id);
+      const promotions = exists >= 0 ? state.promotions.map((p) => (p.id === a.promotion.id ? a.promotion : p)) : [...state.promotions, a.promotion];
+      return withToast(withAudit({ ...state, promotions }, "settings", exists >= 0 ? `Promotion ${a.promotion.name} updated` : `Promotion ${a.promotion.name} created`), "success", exists >= 0 ? i18n.t("toast.promotionUpdated", { name: a.promotion.name }) : i18n.t("toast.promotionCreated", { name: a.promotion.name }));
+    }
+
+    case "DELETE_PROMOTION": {
+      if (!can(state.user?.role, "manage_settings")) return withToast(state, "error", "Admin required to manage promotions");
+      const promotions = state.promotions.filter((p) => p.id !== a.id);
+      return withToast(withAudit({ ...state, promotions }, "settings", `Promotion ${a.id} deleted`), "success", i18n.t("toast.promotionDeleted"));
+    }
+
     /* Dynamic categories (P4) — archived categories stay resolvable for history. */
     case "SAVE_CATEGORY": {
       if (!can(state.user?.role, "manage_settings")) return withToast(state, "error", "Admin required to manage categories");
@@ -1039,7 +1058,7 @@ export function reducer(state: State, a: Action): State {
 
     case "COMPLETE_SALE": {
       if (state.cart.length === 0) return state;
-      const t = cartTotals(state, a.discountPct, a.taxExempt, a.couponDiscount ?? 0, a.invoiceDiscountAmt ?? 0);
+      const t = cartTotals(state, a.discountPct, a.taxExempt, a.couponDiscount ?? 0, a.invoiceDiscountAmt ?? 0, a.promotionDiscount ?? 0);
       const customer = state.customers.find((c) => c.id === state.saleCustomerId) ?? null;
       /* DEA controlled substances — require an identified customer and an ID check */
       const controlledLines = t.lines.filter((l) => state.products.find((p) => p.id === l.productId)?.controlled);
@@ -1108,6 +1127,8 @@ export function reducer(state: State, a: Action): State {
         at: Date.now(), lines: t.lines,
         subtotal: t.subtotal, discount: t.discount, couponDiscount: t.coupon > 0 ? t.coupon : undefined, tax: t.tax, total: t.total,
         invoiceDiscountAmt: (a.invoiceDiscountAmt ?? 0) > 0 ? t.invoiceAmt : undefined,
+        promotionDiscount: t.promo > 0 ? t.promo : undefined,
+        promotionNames: a.promotionNames,
         method: primary.method, cashier: state.user?.name ?? "Staff",
         taxExempt: a.taxExempt || undefined,
         payments: a.payments.length > 1 ? a.payments : undefined,
@@ -1142,6 +1163,10 @@ export function reducer(state: State, a: Action): State {
       }
       const ptsLabel = customer ? ` · +${pointsEarned}${state.redeemPoints ? ` / −${state.redeemPoints} pts` : ""} pts` : "";
       next = withAudit(next, "sale", `${tx.id} · $${t.total.toFixed(2)} · ${tenderLabel}${customer ? ` · ${customer.name}` : ""}${a.taxExempt ? " · TAX EXEMPT" : ""}`);
+      /* W3.4 — auto-applied promotions are audited with the rule names that fired */
+      if (t.promo > 0 && a.promotionNames && a.promotionNames.length > 0) {
+        next = withAudit(next, "sale", `${tx.id} · promotion auto-applied: ${a.promotionNames.join(", ")} — −$${t.promo.toFixed(2)}${a.promotionOverridden ? ` · overridden by ${state.user?.name ?? "staff"}` : ""}`);
+      }
       /* record the sale on the open shift ledger so X/Z reports reflect it (Phase A) */
       if (next.currentShift) {
         const updated = recordShiftTransaction(next.currentShift, tx, "sale", tenderTypeOf(primary.method));
@@ -1282,7 +1307,7 @@ export function reducer(state: State, a: Action): State {
         return withToast({ ...state, cart }, "info", `${p.name} line discount removed`);
       }
       const base = unitPrice(state, p.id, a.uom);
-      const factor = uomFactor(state, p.id, a.uom);
+      const factor = uomFactor(state, p.id, a.uom); void factor;
       const qty = state.cart.filter(same).reduce((s, c) => s + c.qty, 0);
       const gross = base * qty;
       const frac = a.discount.mode === "pct" ? Math.min(100, a.discount.value) / 100 : Math.min(1, a.discount.value / Math.max(0.01, gross));
@@ -1483,6 +1508,7 @@ export function reducer(state: State, a: Action): State {
           staff: data.staff, settings: data.settings, restrictedLog: data.restrictedLog, audit: data.audit, shifts: data.shifts,
           storeCredits: data.storeCredits, interactionPairs: data.interactionPairs, coldChainLog: data.coldChainLog,
           coupons: data.coupons, categories: data.categories, branches: data.branches,
+          promotions: data.promotions,
           cart: [], held: [], receipt: null, payOpen: false, saleCustomerId: null, redeemPoints: 0,
         }, "system", `Org backup restored — ${a.bundle.organization_id} · ${new Date(a.bundle.exportedAt).toLocaleString()}`);
       return withToast(next, "success", i18n.t("settings.backupRestored", { count: Object.keys(a.bundle.tables).length }));
@@ -1883,6 +1909,7 @@ export function reducer(state: State, a: Action): State {
         coupons: a.data.coupons ?? [],
         categories: a.data.categories ?? CATEGORIES_FALLBACK,
         branches: a.data.branches ?? BRANCHES_FALLBACK,
+        promotions: a.data.promotions ?? [],
       } as State;
       /* W2.5 — each successful hydration rotates a local full-org backup snapshot */
       rotateBackup(hydrated);
@@ -1944,7 +1971,7 @@ export function reducer(state: State, a: Action): State {
     case "GENERATE_X_REPORT": {
       const shift = state.shifts.find(s => s.id === a.shiftId);
       if (!shift) return state;
-      const report = generateXReport(shift);
+      const report = generateXReport(shift); void report;
       // In a real app, this would show a modal or navigate to a report view
       return withToast(state, "info", `X Report generated for shift ${shift.id}`);
     }
@@ -2006,6 +2033,7 @@ export const backendDataFromState = (state: State): BackendData => ({
   coupons: state.coupons ?? [],
   categories: state.categories ?? [],
   branches: state.branches ?? [],
+  promotions: state.promotions ?? [],
 });
 
 export function PosProvider({ children }: { children: ReactNode }) {
@@ -2117,7 +2145,7 @@ export function PosProvider({ children }: { children: ReactNode }) {
     state.transfers, state.backorders, state.rxTransfers, state.suppliers, state.purchaseOrders,
     state.apInvoices, state.expenses, state.deliveries, state.webOrders, state.timeEntries,
     state.staff, state.settings, state.restrictedLog, state.audit, state.shifts, state.snapshotVersion, state.coldChainLog,
-    state.categories, state.coupons]);
+    state.categories, state.coupons, state.promotions]);
 
   /* track connectivity so the UI can show offline state (6.5); retry persist on reconnect (F11) */
   useEffect(() => {

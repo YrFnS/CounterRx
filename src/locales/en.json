@@ -160,7 +160,11 @@
     "payLaterAuditSettle": "Settled pay later — {{amount}} via {{method}}",
     "payLaterDoubleSettle": "Cannot settle — already settled on {{date}}",
     "payLaterSettleSuccess": "Pay later settled — {{amount}} via {{method}}",
-    "storeCredit": "Store credit"
+    "storeCredit": "Store credit",
+    "promotionsApplied": "Auto-applied promotions",
+    "promoOverride": "Override",
+    "promoOverrideHint": "Dismiss this promotion — manager PIN required",
+    "promoOverrideConfirm": "Confirm"
   },
   "prescriptions": {
     "title": "Prescriptions",
@@ -509,7 +513,23 @@
     "setPasswordTitle": "Set new password for {{name}}",
     "tempPasswordLabel": "Temporary password",
     "tryAgain": "Try again",
-    "unexpectedError": "An unexpected error occurred."
+    "unexpectedError": "An unexpected error occurred.",
+    "promotionsTitle": "Promotions",
+    "newPromotion": "New promotion",
+    "savePromotion": "Save promotion",
+    "noPromotions": "No promotions yet — create one above.",
+    "promotionsHint": "Rules auto-apply at the register: birthday % off on the customer's birthday, first-visit % off for new customers, and category windows discount matching products. Every application is audited; a manager PIN can dismiss one before payment.",
+    "promoName": "Name",
+    "promoNamePlaceholder": "e.g. Birthday reward",
+    "promoKind": "Kind",
+    "promoKindBirthday": "Birthday reward",
+    "promoKindFirstVisit": "First visit",
+    "promoKindCategory": "Category window (% off)",
+    "promoCategory": "Category",
+    "promoWindowStart": "Window start (optional)",
+    "promoWindowEnd": "Window end (optional)",
+    "promoScopeBirthday": "Customer birthday",
+    "promoScopeFirstVisit": "New customers"
   },
   "shift": {
     "title": "Shift Management",
@@ -760,7 +780,10 @@
     "dupeBackorder": "{{patient}} already has an open back-order for {{name}}",
     "couponCreated": "Coupon created",
     "couponUpdated": "Coupon updated",
-    "couponDeleted": "Coupon deleted"
+    "couponDeleted": "Coupon deleted",
+    "promotionCreated": "Promotion created",
+    "promotionUpdated": "Promotion updated",
+    "promotionDeleted": "Promotion deleted"
   },
   "history": {
     "customerReturn": "Customer return",

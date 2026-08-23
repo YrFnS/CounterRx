@@ -67,7 +67,7 @@ Build on Deliveries: patient delivery intake from sale (address book reuses cust
 ### W3.3 Offline queue + conflict UX ✦ `feat/offline-queue`
 `sync_queue` localStorage/outbox table (migration 0017 optional), LWW by `updatedAt`, conflict banner with keep-local/keep-remote choice; replaces best-effort warn path. Gates: offline-outbox.md updated with real queue evidence.
 
-### W3.4 Promotions engine (beyond coupons) ✦ `feat/promotions`
+### W3.4 Promotions engine (beyond coupons) ✦ `feat/promotions` — DONE
 Rules: birthday reward, first-visit, category % off window; stored in settings/promotions table (migration 0018); auto-applies at register with audit + manager override. Builds on coupon apply path.
 
 ### W3.5 Vaccination records ✦ `feat/vaccinations`

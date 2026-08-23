@@ -3,7 +3,7 @@ import { useTranslation } from "react-i18next";
 import type { ReactNode } from "react";
 import { usePos, listSnapshots, money, listBackups, rotateBackup, backendDataFromState, BACKUP_KEEP, BACKUPS_KEY } from "../store";
 import i18n from "../i18n";
-import { CURRENCIES, ROLE_LABEL, can, randomPin, Coupon, catChildren, catPathLabel } from "../data";
+import { CURRENCIES, ROLE_LABEL, can, randomPin, Coupon, catChildren, catPathLabel, Promotion, type PromotionKind } from "../data";
 import { supabase } from "../lib/supabase";
 import type { Category } from "../data";
 import type { OrgSettings, Role, Staff, Snapshot, Product } from "../data";
@@ -15,7 +15,7 @@ import {
 } from "../icons";
 import { connectPrinter, printLabel, kickDrawer, HardwareError } from "../lib/hardware";
 
-type Tab = "profile" | "receipt" | "loyalty" | "team" | "clock" | "hardware" | "data" | "language" | "clinical" | "coupons" | "categories" | "backups";
+type Tab = "profile" | "receipt" | "loyalty" | "team" | "clock" | "hardware" | "data" | "language" | "clinical" | "coupons" | "categories" | "promotions" | "backups";
 
 export default function Settings() {
   const { t } = useTranslation();
@@ -36,6 +36,7 @@ export default function Settings() {
     { id: "clinical", label: t("settings.clinical"), icon: <IPill size={14} /> },
     { id: "coupons", label: t("analytics.couponsTitle"), icon: <IPlus size={14} /> },
     { id: "categories", label: t("settings.categoriesTitle"), icon: <ITag size={14} /> },
+    { id: "promotions", label: t("settings.promotionsTitle"), icon: <IStar size={14} /> },
     { id: "backups", label: t("settings.backups.title"), icon: <IShield size={14} /> },
   ];
 
@@ -75,6 +76,7 @@ export default function Settings() {
         {tab === "clinical" && <ClinicalTab admin={admin} />}
         {tab === "coupons" && <CouponsTab admin={admin} />}
         {tab === "categories" && <CategoriesTab admin={admin} />}
+        {tab === "promotions" && <PromotionsTab admin={admin} />}
         {tab === "backups" && <BackupsTab admin={admin} />}
       </div>
     </div>
@@ -972,6 +974,176 @@ function CouponsTab({ admin }: { admin: boolean }) {
                   <div className="inline-flex gap-1.5">
                     <button onClick={() => openEdit(c)} className="p-1.5 rounded-md hover:bg-mist/60 text-inksoft" aria-label="Edit"><IEdit size={13} /></button>
                     <button onClick={() => dispatch({ type: "DELETE_COUPON", id: c.id })} className="p-1.5 rounded-md hover:bg-rose-50 text-rose-500" aria-label="Delete"><ITrash size={13} /></button>
+                  </div>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+/* Promotions CRUD (W3.4) — rules that auto-apply at the register (birthday / first-visit / category window) */
+function PromotionsTab({ admin }: { admin: boolean }) {
+  const { t } = useTranslation();
+  const { state, dispatch } = usePos();
+  const [editing, setEditing] = useState<Promotion | null>(null);
+  const [creating, setCreating] = useState(false);
+  const [name, setName] = useState("");
+  const [kind, setKind] = useState<PromotionKind>("birthday");
+  const [categoryId, setCategoryId] = useState(state.categories[0]?.id ?? "");
+  const [pct, setPct] = useState("10");
+  const [windowStart, setWindowStart] = useState("");
+  const [windowEnd, setWindowEnd] = useState("");
+  const [active, setActive] = useState(true);
+
+  const resetForm = () => {
+    setEditing(null); setCreating(false); setName(""); setKind("birthday"); setPct("10");
+    setWindowStart(""); setWindowEnd(""); setActive(true);
+  };
+
+  const save = () => {
+    if (!admin || !name.trim()) return;
+    const v = parseInt(pct, 10);
+    if (!(v > 0) || v > 100) return;
+    dispatch({
+      type: "SAVE_PROMOTION",
+      promotion: {
+        id: editing?.id ?? crypto.randomUUID(),
+        name: name.trim(),
+        kind,
+        categoryId: kind === "category_pct" ? (categoryId || undefined) : undefined,
+        pct: v,
+        windowStart: windowStart ? new Date(windowStart + "T00:00:00").getTime() : undefined,
+        windowEnd: windowEnd ? new Date(windowEnd + "T23:59:59").getTime() : undefined,
+        active,
+        createdAt: editing?.createdAt ?? Date.now(),
+        updatedAt: Date.now(),
+      },
+    });
+    resetForm();
+  };
+
+  const openEdit = (p: Promotion) => {
+    setEditing(p); setCreating(true); setName(p.name); setKind(p.kind);
+    setCategoryId(p.categoryId ?? state.categories[0]?.id ?? "");
+    setPct(String(p.pct));
+    setWindowStart(p.windowStart ? new Date(p.windowStart).toISOString().slice(0, 10) : "");
+    setWindowEnd(p.windowEnd ? new Date(p.windowEnd).toISOString().slice(0, 10) : "");
+    setActive(p.active);
+  };
+
+  const kindLabel = (k: PromotionKind) => k === "birthday" ? t("settings.promoKindBirthday") : k === "first_visit" ? t("settings.promoKindFirstVisit") : t("settings.promoKindCategory");
+
+  return (
+    <div className="space-y-4 max-w-[980px]">
+      <div className="flex items-center justify-between">
+        <h3 className="font-display font-bold text-ink text-[15px] flex items-center gap-2">
+          <IStar size={16} className="text-pine-700" /> {t("settings.promotionsTitle")}
+        </h3>
+        <button onClick={() => { setCreating(true); setEditing(null); setName(""); setKind("birthday"); setPct("10"); setWindowStart(""); setWindowEnd(""); setActive(true); }}
+          className="px-3 py-1.5 rounded-lg bg-pine-700 text-pine-50 text-xs font-bold hover:bg-pine-600 transition flex items-center gap-1.5">
+          <IPlus size={13} /> {t("settings.newPromotion")}
+        </button>
+      </div>
+      <p className="text-xs text-inksoft max-w-[640px]">{t("settings.promotionsHint")}</p>
+
+      {creating && (
+        <div className="rounded-xl border border-mist bg-card shadow-lift p-4 space-y-3 anim-fade-up">
+          <div className="grid grid-cols-2 gap-3">
+            <label className="block text-[11px] font-bold text-inksoft">{t("settings.promoName")}
+              <input value={name} onChange={(e) => setName(e.target.value)} placeholder={t("settings.promoNamePlaceholder")}
+                className="mt-1 w-full px-2.5 py-1.5 rounded-lg border border-mist bg-card text-sm font-bold focus:border-pine-500 focus:outline-none" />
+            </label>
+            <label className="block text-[11px] font-bold text-inksoft">{t("settings.promoKind")}
+              <select value={kind} onChange={(e) => setKind(e.target.value as PromotionKind)}
+                className="mt-1 w-full px-2.5 py-1.5 rounded-lg border border-mist bg-card text-sm font-bold focus:border-pine-500 focus:outline-none">
+                <option value="birthday">{t("settings.promoKindBirthday")}</option>
+                <option value="first_visit">{t("settings.promoKindFirstVisit")}</option>
+                <option value="category_pct">{t("settings.promoKindCategory")}</option>
+              </select>
+            </label>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <label className="block text-[11px] font-bold text-inksoft">% off
+              <input value={pct} onChange={(e) => setPct(e.target.value.replace(/\D/g, "").slice(0, 3))} inputMode="numeric" placeholder="10"
+                className="mt-1 w-full px-2.5 py-1.5 rounded-lg border border-mist bg-card text-sm font-bold focus:border-pine-500 focus:outline-none" />
+            </label>
+            {kind === "category_pct" && (
+              <label className="block text-[11px] font-bold text-inksoft">{t("settings.promoCategory")}
+                <select value={categoryId} onChange={(e) => setCategoryId(e.target.value)}
+                  className="mt-1 w-full px-2.5 py-1.5 rounded-lg border border-mist bg-card text-sm font-bold focus:border-pine-500 focus:outline-none">
+                  {state.categories.filter((c) => !c.archived).map((c) => (
+                    <option key={c.id} value={c.id}>{c.label}</option>
+                  ))}
+                </select>
+              </label>
+            )}
+          </div>
+          {kind === "category_pct" && (
+            <div className="grid grid-cols-2 gap-3">
+              <label className="block text-[11px] font-bold text-inksoft">{t("settings.promoWindowStart")}
+                <input type="date" value={windowStart} onChange={(e) => setWindowStart(e.target.value)}
+                  className="mt-1 w-full px-2.5 py-1.5 rounded-lg border border-mist bg-card text-sm font-bold focus:border-pine-500 focus:outline-none" />
+              </label>
+              <label className="block text-[11px] font-bold text-inksoft">{t("settings.promoWindowEnd")}
+                <input type="date" value={windowEnd} onChange={(e) => setWindowEnd(e.target.value)}
+                  className="mt-1 w-full px-2.5 py-1.5 rounded-lg border border-mist bg-card text-sm font-bold focus:border-pine-500 focus:outline-none" />
+              </label>
+            </div>
+          )}
+          <label className="flex items-center gap-2 text-sm font-bold text-ink cursor-pointer">
+            <input type="checkbox" checked={active} onChange={(e) => setActive(e.target.checked)} className="accent-pine-700" />
+            Active
+          </label>
+          <div className="flex gap-2">
+            <button onClick={save} className="px-4 py-2 rounded-lg bg-pine-700 text-pine-50 text-xs font-bold hover:bg-pine-600 transition flex items-center gap-1.5">
+              <ICheck size={13} /> {t("settings.savePromotion")}
+            </button>
+            <button onClick={() => { setCreating(false); setEditing(null); }} className="px-4 py-2 rounded-lg border border-mist text-xs font-bold text-inksoft hover:bg-mist/50 transition">
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+
+      <div className="rounded-xl border border-mist bg-card shadow-lift overflow-auto scroll-slim">
+        <table className="w-full text-sm border-collapse min-w-[720px]">
+          <thead className="sticky top-0 z-10">
+            <tr className="bg-pine-900 text-pine-100 text-start text-[10px] uppercase tracking-[0.14em]">
+              <th className="px-4 py-2.5 font-bold">{t("settings.promoName")}</th>
+              <th className="px-3 py-2.5 font-bold">{t("settings.promoKind")}</th>
+              <th className="px-3 py-2.5 font-bold text-end">Value</th>
+              <th className="px-3 py-2.5 font-bold">Scope</th>
+              <th className="px-3 py-2.5 font-bold">Window</th>
+              <th className="px-3 py-2.5 font-bold">Status</th>
+              <th className="px-4 py-2.5 font-bold text-end" />
+            </tr>
+          </thead>
+          <tbody>
+            {state.promotions.length === 0 && (
+              <tr><td colSpan={7} className="px-4 py-6 text-center text-xs text-inksoft">{t("settings.noPromotions")}</td></tr>
+            )}
+            {state.promotions.map((p) => (
+              <tr key={p.id} className="border-t border-mist/70">
+                <td className="px-4 py-2 font-bold text-[13px]">{p.name}</td>
+                <td className="px-3 py-2 text-xs">{kindLabel(p.kind)}</td>
+                <td className="px-3 py-2 text-xs num text-end">{p.pct}% off</td>
+                <td className="px-3 py-2 text-xs num">{p.kind === "category_pct" ? state.categories.find((c) => c.id === p.categoryId)?.label ?? p.categoryId : p.kind === "birthday" ? t("settings.promoScopeBirthday") : t("settings.promoScopeFirstVisit")}</td>
+                <td className="px-3 py-2 text-xs num">
+                  {p.windowStart || p.windowEnd
+                    ? `${p.windowStart ? new Date(p.windowStart).toLocaleDateString() : "…"} → ${p.windowEnd ? new Date(p.windowEnd).toLocaleDateString() : "…"}`
+                    : "—"}
+                </td>
+                <td className="px-3 py-2 text-xs">
+                  <Badge tone={p.active ? "pine" : "mist"}>{p.active ? "Active" : "Inactive"}</Badge>
+                </td>
+                <td className="px-4 py-2 text-end">
+                  <div className="inline-flex gap-1.5">
+                    <button onClick={() => openEdit(p)} className="p-1.5 rounded-md hover:bg-mist/60 text-inksoft" aria-label="Edit"><IEdit size={13} /></button>
+                    <button onClick={() => dispatch({ type: "DELETE_PROMOTION", id: p.id })} className="p-1.5 rounded-md hover:bg-rose-50 text-rose-500" aria-label="Delete"><ITrash size={13} /></button>
                   </div>
                 </td>
               </tr>

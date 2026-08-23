@@ -51,3 +51,25 @@ Notes:
 - [x] i18n parity for new strings.
   CHECK: `npm run typecheck && npm run test && npm run build`
   EVIDENCE: new `reports.*` + `pos.storeCredit` keys added to BOTH locales (parity test passes, 880 keys each); 147 tests pass (18 new in `src/__tests__/report-builder.test.ts` covering filter application + view round-trip); build OK.
+
+## W3.4 — Promotions engine (feat/promotions)
+
+- [x] `promotions` table + RLS (migration 0018).
+  CHECK: migration `20260823000018_promotions.sql` + `grep -n 'promotions' src/lib/sync.ts`
+  EXPECT: org-scoped table (kind ∈ birthday/first_visit/category_pct, pct, category_id, window bounds, active), RLS mirroring coupons, seeded demo rules; pushed live with `npx supabase db push`.
+  EVIDENCE: migration applied to remote (`migrations:["20260823000018_promotions.sql"]`); sync catalog wired (BackendData/TABLES/rowsFor/promotionFrom/loadBackendData).
+- [x] Rules engine — pure applicability math.
+  CHECK: `src/lib/promotions.ts`
+  EXPECT: birthday month/day match on `customers.dob` (no schema change needed), first-visit = no prior non-refund transactions, category window (open-ended when a bound is missing) discounting only matching lines; stacking capped at subtotal.
+  EVIDENCE: unit-tested in `src/__tests__/promotions.test.ts` (birthday match/malformed dob, first-visit incl. refund exclusion, window math, per-category scoping, cap).
+- [x] Auto-apply at register + manager override.
+  CHECK: `grep -n 'applicablePromotions\|promoOverride\|promotionDiscount' src/modals.tsx src/store.tsx`
+  EXPECT: PaymentModal computes applicable rules on open, shows them as a discount row with per-rule Override → manager PIN (approve_discount holders or PIN match) → AUDIT_LOG entry; COMPLETE_SALE records `Transaction.promotionDiscount` + `promotionNames` and writes a "promotion auto-applied" audit line.
+  EVIDENCE: PaymentModal promotions block + PIN prompt; `cartTotals(..., promoDiscount)`; reducer tests assert tx fields + audit entries and absence after dismissal.
+- [x] Settings CRUD for promotion rules.
+  CHECK: `grep -n 'PromotionsTab\|SAVE_PROMOTION\|DELETE_PROMOTION' src/views/Settings.tsx src/store.tsx`
+  EXPECT: admin-gated tab listing kind/pct/scope/window/status with create/edit/delete via SAVE_PROMOTION/DELETE_PROMOTION (mirrors CouponsTab); persists through the sync catalog.
+  EVIDENCE: PromotionsTab in Settings.tsx; store actions mirror SAVE_COUPON gating + toasts.
+- [x] i18n parity + full gate green.
+  CHECK: `npm run typecheck && npm run test && npm run build`
+  EVIDENCE: new `settings.promo*`, `pos.promo*`, `toast.promotion*` keys added to BOTH locales (parity test passes); 193 tests pass (16 new in promotions.test.ts); build OK.
