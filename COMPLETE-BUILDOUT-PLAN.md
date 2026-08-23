@@ -44,7 +44,7 @@ Two flows touching Register/modals (single owner avoids conflicts):
 ### W2.1 Nested categories + roll-ups ✦ `feat/category-tree` — DONE
 Migration 0016: `parent_id text references categories(id)` + tree helpers; Settings CategoriesTab gains parent picker (depth ≤2); Register/Inventory/Dashboard/Reports roll up child totals into parents. Live-push + seed parenting.
 
-### W2.2 Patient–lot recall lookup ✦ `feat/recall-lookup`
+### W2.2 Patient–lot recall lookup ✦ `feat/recall-lookup` — DONE
 Inventory/Reports: enter lot/batch → returns patients (customers) who received units from that lot via `TxLine.alloc`, with qty/date; printable contact sheet + CSV/XLSX export.
 
 ### W2.3 Multi-terminal X/Z + reconciliation ✦ `feat/terminal-recon`

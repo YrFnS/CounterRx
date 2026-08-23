@@ -34,3 +34,7 @@
 - [x] i18n parity + full gate green.
   CHECK: `npm run typecheck && npm run test && npm run build`
   EVIDENCE: typecheck clean, 67 tests pass (incl. 13 supply-chain tests), build OK; `supply:` keys in both en.json and ar.json (parity check passes).
+- [x] W2.2 Patient–lot recall lookup.
+  CHECK: `grep -n 'patientsForBatchCode' src/data.ts src/views/Reports.tsx src/__tests__/recall-lookup.test.ts`
+  EXPECT: `patientsForBatchCode(transactions, batch)` scans every `TxLine.alloc` across all products (no productId needed); `RecallLookupTab` in Reports renders qty/date/product/customer name·phone·address, with CSV + XLSX (buildXlsx) export and a `window.print()` contact sheet into `#print-root`; test asserts correct patients + empty batch → empty.
+  EVIDENCE: `src/data.ts` adds `patientsForBatchCode`; `src/views/Reports.tsx` adds `RecallLookupTab` (new tab on the Reports bar) + `reports.*` i18n keys in both en.json and ar.json; `src/__tests__/recall-lookup.test.ts` (6 cases). Gate run: typecheck clean, 135 tests pass, build OK.
