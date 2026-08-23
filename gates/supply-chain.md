@@ -42,3 +42,22 @@
   CHECK: `grep -n 'deliveryFeeFor\|routeSequences\|txId\|scheduleDelivery' src/data.ts src/store.tsx src/modals.tsx src/views/Deliveries.tsx src/views/Settings.tsx src/__tests__/delivery-module.test.ts`
   EXPECT: PaymentModal "Schedule delivery" collects address (defaults from linked `customer.address`), delivery fee (flat `settings.deliveryFee`, waived when order ≥ `settings.freeThreshold`), and expected date; `COMPLETE_SALE` creates a queued `Delivery` linked to the transaction via `txId`; Deliveries route-plans board groups pending stops by driver from the active staff roster (`state.staff.filter(active)` — no hardcoded DRIVERS) sequenced by `scheduledAt`, "Start route" marks assigned stops out for delivery, and POD capture (existing `proof` field) completes the run; Settings gains a Delivery tab editing the fee policy.
   EVIDENCE: `deliveryFeeFor`/`routeSequences` in data.ts; `COMPLETE_SALE` delivery branch in store.tsx; delivery panel in PaymentModal; route-plans section in Deliveries.tsx; `DeliveryTab` in Settings.tsx; `deliveries.*`/`modal.*`/`settings.*` i18n keys in both en.json and ar.json (parity check passes); `src/__tests__/delivery-module.test.ts` (10 cases: sale→delivery record with fee + tx link, address defaulting, fee-policy math incl. free threshold, driver assignment from roster, route grouping/sequencing, start-route, POD completion). Gate run: typecheck clean, 187 tests pass, build OK.
+
+## W3.7 CSV catalog import (feat/catalog-import)
+
+- [x] Import matches export headers; column mapping with auto-map.
+  CHECK: `grep -n 'IMPORT_FIELDS\|autoMap' src/lib/catalog-import.ts src/views/Inventory.tsx`
+  EXPECT: `IMPORT_FIELDS` mirrors the Inventory export header row exactly (sku,name,generic,brand,category,form,price,cost,lot,lot_qty,expiry,total_stock,reorder_level,rx,supplier) plus barcode; `autoMap` maps by normalized header name + aliases and unmapped fields stay -1; `ImportCsvModal` renders a per-column remap table.
+  EVIDENCE: `src/lib/catalog-import.ts` (parser + autoMap + validateAndBuild); `ImportCsvModal` mapping table in `Inventory.tsx`; `catalog-import.test.ts` asserts exact-name mapping, aliases (Product→name, EAN→barcode), and -1 for absent columns.
+- [x] Validation report with row numbers; rows with errors excluded unless "valid rows only" unchecked.
+  CHECK: `grep -n 'missing_name\|dup_sku\|importValidOnly' src/lib/catalog-import.ts src/views/Inventory.tsx src/locales/en.json`
+  EXPECT: per-row issues (missing name, bad price/number, unknown category, dup sku/barcode vs catalog) carry 1-based data-row numbers; entries expose their own issues so validOnly filtering drops broken products; report renders inline with Row {{n}}.
+  EVIDENCE: `catalog-import.test.ts` asserts issue list with exact rows [2,3,4] and per-entry filtering; modal shows the report block + checkbox.
+- [x] Dry-run validates without saving; import creates products via bulk action.
+  CHECK: `grep -n 'PRODUCTS_IMPORT\|importDryRun' src/store.tsx src/views/Inventory.tsx`
+  EXPECT: dry-run dispatches only TOAST; import dispatches `PRODUCTS_IMPORT { products, overwrite }`; reducer dedupes by sku/barcode case-insensitively (skip or overwrite keeping stable ids), appends new SKUs, logs one stock audit entry "Imported N products from CSV".
+  EVIDENCE: reducer test asserts skip path (`new1`,`p1` remain), overwrite path (stable id p1, last row wins), and audit detail/kind.
+- [x] Admin-gated UI + i18n parity + gates green.
+  CHECK: `grep -n 'mayImport' src/views/Inventory.tsx && npm run typecheck && npm run test && npm run build`
+  EXPECT: button disabled without `manage_settings` (admin), tooltip explains; all new strings via t() present in en.json AND ar.json under inventory.import*.
+  EVIDENCE: gate run green — typecheck clean, 189 tests passed (+12 catalog-import), build OK; i18n-key-parity test passes.

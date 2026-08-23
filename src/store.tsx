@@ -436,6 +436,7 @@ type Action =
     }
   | { type: "RESTORE_EXPORT"; bundle: import("./lib/sync").OrgExportBundle }
   | { type: "ADD_PRODUCT"; product: Product }
+  | { type: "PRODUCTS_IMPORT"; products: Product[]; overwrite: boolean }
   | { type: "SET_REORDER_LEVEL"; productId: string; reorderLevel: number }
   | { type: "REFUND_TX"; txId: string; reason: string }
   | { type: "RX_STATUS"; id: string; status: RxStatus }
@@ -3228,6 +3229,34 @@ export function reducer(state: State, a: Action): State {
         "success",
         `${a.product.name} added to catalog`,
       );
+
+    /* W3.7 CSV catalog import — bulk add; dedupe by sku/barcode (skip or overwrite). */
+    case "PRODUCTS_IMPORT": {
+      const bySku = new Map(state.products.filter((p) => p.sku).map((p) => [p.sku.toLowerCase(), p.id]));
+      const byBarcode = new Map(state.products.filter((p) => p.barcode).map((p) => [p.barcode.toLowerCase(), p.id]));
+      const added: Product[] = [];
+      let overwritten = 0;
+      let nextProducts = state.products;
+      for (const incoming of a.products) {
+        const skuKey = incoming.sku.toLowerCase();
+        const bcKey = incoming.barcode ? incoming.barcode.toLowerCase() : null;
+        const hitId = bySku.get(skuKey) ?? (bcKey ? byBarcode.get(bcKey) : undefined);
+        if (hitId && !a.overwrite) continue; // duplicate — skipped
+        if (hitId) {
+          nextProducts = nextProducts.map((p) => (p.id === hitId ? { ...incoming, id: hitId } : p)); // keep stable id
+          overwritten++;
+          continue;
+        }
+        added.push(incoming);
+        bySku.set(skuKey, incoming.id);
+        if (bcKey) byBarcode.set(bcKey, incoming.id);
+      }
+      return withToast(
+        withAudit({ ...state, products: [...added, ...nextProducts] }, "stock",
+          `Imported ${added.length + overwritten} products from CSV`),
+        "success", `Imported ${added.length} new · ${overwritten} updated`,
+      );
+    }
 
     /* Phase G: apply an AI-suggested reorder level — user-initiated from the forecast dialog */
     case "SET_REORDER_LEVEL": {
