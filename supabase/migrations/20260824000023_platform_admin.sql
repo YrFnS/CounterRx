@@ -28,7 +28,15 @@ alter table public.staff drop constraint if exists staff_role_check;
 alter table public.staff add constraint staff_role_check
   check (role in ('super_admin','pharmacy_admin','pharmacist','manager','cashier'));
 
-/* 3. RLS: platform admins span orgs ---------------------------------------- */
+/* 3. super_admin predicate (defined before policies reference it) -------- */
+create or replace function public.is_super_admin()
+returns boolean
+language sql stable security definer set search_path = public as
+$$
+  select public.current_role() = 'super_admin';
+$$;
+
+/* 4. RLS: platform admins span orgs ---------------------------------------- */
 -- Drop the org-scoped staff/settings policies from migration 003 so we can
 -- re-issue them with super_admin bypass (current_org_id() still gates everyone else).
 drop policy if exists staff_read on public.staff;
@@ -46,14 +54,6 @@ create policy organizations_read on public.organizations for select to authentic
 create policy organizations_write on public.organizations for all to authenticated
   using (public.is_super_admin())
   with check (public.is_super_admin());
-
-/* 4. super_admin predicate ------------------------------------------------- */
-create or replace function public.is_super_admin()
-returns boolean
-language sql stable security definer set search_path = public as
-$$
-  select public.current_role() = 'super_admin';
-$$;
 
 /* 5. helper: suspend / activate a tenant ----------------------------------- */
 create or replace function public.set_org_status(org uuid, new_status text)
