@@ -34,6 +34,14 @@ export default function Customers() {
   const totalPoints = state.customers.reduce((s, c) => s + c.points, 0);
   const loyal = rows.filter((r) => r.visits >= 3).length;
 
+  /* W3.1 — customers whose linked store-credit balance fell below the org threshold */
+  const threshold = state.settings.notifications.creditLowThreshold;
+  const creditLow = state.storeCredits
+    .filter((sc) => sc.customerId && sc.balance > 0 && sc.balance <= threshold)
+    .map((sc) => ({ c: state.customers.find((x) => x.id === sc.customerId)!, balance: sc.balance }))
+    .filter((x) => x.c);
+  const [notified, setNotified] = useState<Set<string>>(new Set());
+
   return (
     <div className="h-full flex flex-col px-3 sm:px-6 py-4 sm:py-5 min-h-0">
       <div className="flex items-end justify-between flex-wrap gap-3">
@@ -57,6 +65,25 @@ export default function Customers() {
       </div>
 
       <div className="mt-4 flex-1 min-h-0 overflow-auto scroll-slim rounded-xl border border-mist bg-card shadow-lift">
+        {/* W3.1 — store-credit-low banner: customers below the org threshold get a one-click notify */}
+        {creditLow.length > 0 && (
+          <div className="m-3 flex flex-wrap items-center gap-2.5 rounded-lg border border-brick-300/60 bg-brick-50 px-4 py-3 anim-fade-up">
+            <IAlert size={14} className="text-brick-700 shrink-0" />
+            <span className="text-xs font-bold text-brick-700">{t("customers.creditLow", { count: creditLow.length, threshold: money(threshold) })}</span>
+            <div className="flex flex-wrap gap-1.5 ms-auto">
+              {creditLow.map(({ c, balance }) => {
+                const sent = notified.has(c.id);
+                return (
+                  <button key={c.id}
+                    onClick={() => { dispatch({ type: "NOTIFY_SEND", kind: "creditLow", to: c.phone || c.email || c.name, vars: { customer: c.name, balance: money(balance) } }); setNotified((s) => new Set(s).add(c.id)); }}
+                    className={cx("px-2.5 py-1 rounded-md text-[11px] font-bold border transition active:scale-95",
+                      sent ? "border-pine-200 bg-pine-50 text-pine-700" : "border-brick-300 bg-card text-brick-700 hover:bg-brick-100")}>
+                    {sent ? <ICheck size={11} className="inline" /> : "✉"} {c.name} · {money(balance)}
+                  </button>);
+              })}
+            </div>
+          </div>
+        )}
         {rows.length === 0 ? (
           <Empty icon={<IUsers size={22} />} title={t("customers.noMatch")} hint={t("customers.noMatchHint")} />
         ) : (

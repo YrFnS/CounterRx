@@ -237,7 +237,8 @@
     "loyaltyInPlay": "نقاط الولاء قيد الاستخدام",
     "search": "الاسم أو الهاتف…",
     "noMatch": "لا يوجد عملاء مطابقون",
-    "noMatchHint": "جرّب اسماً آخر أو رقم هاتف."
+    "noMatchHint": "جرّب اسماً آخر أو رقم هاتف.",
+    "creditLow": "{{count}} عميل تحت حد {{threshold}} من رصيد المتجر — أبلغهم"
   },
   "inventory": {
     "title": "المخزون",
@@ -686,7 +687,24 @@
     "invoiceOverdue": "فاتورة متأخرة",
     "refillReminder": "تذكير بإعادة الصرف",
     "pickupReady": "الوصفة جاهزة للاستلام",
-    "taskAssigned": "تم تعيين مهمة لك"
+    "taskAssigned": "تم تعيين مهمة لك",
+    "sentToast": "تم جدولة إشعار لـ {{to}}",
+    "hint": "مفاتيح تشغيل لكل تنبيه وقوالب رسائل — المزود الحالي تجريبي (Console) حتى ربط Resend/Twilio.",
+    "rxReady": "الوصفة جاهزة",
+    "rxReadyHint": "تُرسل للعميل المرتبط عند صرف الوصفة",
+    "refillDue": "تجديد مستحق",
+    "refillDueHint": "تذكيرات رادار التجديد وأزرار التنبيه لنقص المخزون",
+    "creditLow": "رصيد الائتمان منخفض",
+    "creditLowHint": "لافتة عند انخفاض رصيد العميل تحت الحد",
+    "templatesTitle": "قوالب الرسائل",
+    "templatesHint": "تُستبدل المتغيرات {{var}} عند الإرسال",
+    "consoleNote": "التسليم حالياً عبر Console — اربط مزوداً حقيقياً (Resend/Twilio) في src/lib/notify.ts.",
+    "recentTitle": "أحدث الإشعارات",
+    "recentHint": "آخر 20 إشعار · تُحفظ أيضاً في notification_log",
+    "emptyLog": "لم يُرسل شيء بعد.",
+    "notify": "تنبيه",
+    "notifySupplier": "اطلب من المورد التسريع — يمكن تذكير العملاء المنتظرين",
+    "refillDueBtn": "ذكّر المرضى بانتظار تجديد هذا الدواء"
   },
   "deliveries": {
     "title": "التوصيل",

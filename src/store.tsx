@@ -25,6 +25,7 @@ import { makeStaff, makeSettings, makeBackOrders, makeRxTransfers, SNAPS_KEY, ha
 import type { BackendData, LoadResult } from "./lib/sync";
 import { loadBackendData, persistBackendData, signOutStaff, subscribeToBackend, getSessionStaffId, buildOrgExport, validateOrgExport, backendDataFromExport } from "./lib/sync";
 import { setRuntimeInteractions } from "./lib/clinical";
+import { sendNotification, notifierFor, type NotificationKind, type NotificationLogEntry } from "./lib/notify";
 import i18n from "./i18n";
 
 export type View = "register" | "dashboard" | "customers" | "inventory" | "finance" | "reports" | "prescriptions" | "deliveries" | "history" | "settings";
@@ -63,6 +64,7 @@ interface State {
   coupons: Coupon[];
   categories: Category[];
   branches: Branch[];
+  notificationLog: NotificationLogEntry[];
   currentShift: Shift | null;
   cart: { productId: string; qty: number; note?: string; priceOverride?: number; daw?: number; substitutedFrom?: string; uom?: string; lineDiscount?: { mode: "amt" | "pct"; value: number }; rxId?: string }[];
   held: HeldSale[];
@@ -192,7 +194,8 @@ type Action =
   | { type: "GENERATE_X_REPORT"; shiftId: string }
   | { type: "GENERATE_Z_REPORT"; shiftId: string }
   | { type: "HYDRATE_BACKEND"; data: BackendData }
-  | { type: "BACKEND_OFFLINE" };
+  | { type: "BACKEND_OFFLINE" }
+  | { type: "NOTIFY_SEND"; kind: NotificationKind; to: string; vars: Record<string, string | number> };
 
 let toastSeq = 1;
 let heldSeq = 1;
@@ -241,6 +244,7 @@ function load(): State {
     view: "register", invPreset: "all",
     payOpen: false, receipt: null, toasts: [], flashId: null, flashKey: 0, snapshotVersion: 0,
     storeCredits: [],
+    notificationLog: [],
   };
   try {
     const raw = localStorage.getItem(LS_KEY);
@@ -365,6 +369,20 @@ function withAudit(s: State, kind: AuditKind, detail: string): State {
   const nextId = Math.max(auditSeq, (s.audit[0]?.id ?? 0) + 1);
   auditSeq = nextId + 1;
   return { ...s, audit: [{ id: nextId, at: Date.now(), actor: s.user?.name ?? "", kind, detail }, ...s.audit].slice(0, 250) };
+}
+
+/* -------- notifications (W3.1) --------
+   One funnel for every trigger: appends the local audit echo (instant readout in
+   Settings), then fires the provider send which also inserts the auditable
+   notification_log row server-side. No-op when the org toggle is off. */
+function enqueueNotification(s: State, kind: NotificationKind, to: string, vars: Record<string, string | number>): State {
+  if (!s.settings.notifications.enabled[kind]) return s;
+  const entry: NotificationLogEntry = {
+    id: crypto.randomUUID(), recipient: to, channel: notifierFor(s.settings).channel,
+    template: kind, payload: vars, status: "sent", at: Date.now(),
+  };
+  void sendNotification(s.settings, kind, { to, template: s.settings.notifications.templates[kind], vars });
+  return { ...s, notificationLog: [entry, ...s.notificationLog] };
 }
 
 /* ---------------- snapshot persistence (§9 automated backups) ---------------- */
@@ -674,7 +692,6 @@ export function reducer(state: State, a: Action): State {
       if (avail <= 0) return withToast(state, "error", i18n.t("toast.outOfStock", { name: p.name }));
       const factor = uomFactor(state, p.id, a.uom);
       const maxUom = Math.max(1, Math.floor(avail / factor));  // sellable count in this UOM
-      const uomLabel = p.uoms?.find((u) => u.code === a.uom)?.label;
       const same = (c: { productId: string; uom?: string }) => c.productId === p.id && (c.uom ?? "") === (a.uom ?? "");
       const line = state.cart.find(same);
       if (line) {
@@ -701,6 +718,10 @@ export function reducer(state: State, a: Action): State {
         withAudit({ ...state, prescriptions }, "rx", `Pickup notification sent — ${rx.id} · ${rx.patient}${rx.phone ? ` · ${rx.phone}` : ""}`),
         "success", `"Ready for pickup" sent to ${rx.patient}${rx.phone ? ` · ${rx.phone}` : ""}`);
     }
+
+    /* -------- notifications (W3.1) -------- */
+    case "NOTIFY_SEND":
+      return withToast(enqueueNotification(state, a.kind, a.to, a.vars), "success", i18n.t("notifications.sentToast", { to: a.to }));
 
     /* -------- prior authorization (§3) -------- */
     case "PA_SUBMIT": {
@@ -1167,6 +1188,12 @@ export function reducer(state: State, a: Action): State {
         for (const rxId of pickupRxIds) {
           const rx = state.prescriptions.find((x) => x.id === rxId)!;
           next = withAudit(next, "rx", `${rxId} dispensed on pickup via ${tx.id} — ${rx.patient} · ${rx.qty} × ${state.products.find((p) => p.id === rx.productId)?.name ?? rx.productId}`);
+          /* W3.1: charge-on-pickup dispense also fires "Rx ready" for the linked customer */
+          const patient = next.customers.find((c) => c.name === rx.patient || c.phone === rx.phone);
+          if (patient) {
+            next = enqueueNotification(next, "rxReady", patient.phone || patient.email || patient.name,
+              { patient: rx.patient, rxId, product: state.products.find((p) => p.id === rx.productId)?.name ?? rx.productId, pharmacy: next.settings.orgName });
+          }
         }
       }
       /* restricted / behind-the-counter OTC — mandatory purchase log with ID capture (§3) */
@@ -1282,7 +1309,6 @@ export function reducer(state: State, a: Action): State {
         return withToast({ ...state, cart }, "info", `${p.name} line discount removed`);
       }
       const base = unitPrice(state, p.id, a.uom);
-      const factor = uomFactor(state, p.id, a.uom);
       const qty = state.cart.filter(same).reduce((s, c) => s + c.qty, 0);
       const gross = base * qty;
       const frac = a.discount.mode === "pct" ? Math.min(100, a.discount.value) / 100 : Math.min(1, a.discount.value / Math.max(0.01, gross));
@@ -1436,10 +1462,14 @@ export function reducer(state: State, a: Action): State {
     case "REMIND_RX": {
       const rx = state.prescriptions.find((x) => x.id === a.id);
       if (!rx) return state;
-      return withToast(
-        { ...state, prescriptions: state.prescriptions.map((x) => (x.id === a.id ? { ...x, remindedAt: Date.now() } : x)) },
-        "info", `Refill reminder sent to ${rx.patient} (${rx.id})`,
-      );
+      let next = { ...state, prescriptions: state.prescriptions.map((x) => (x.id === a.id ? { ...x, remindedAt: Date.now() } : x)) };
+      /* W3.1: refill-due notification through the provider framework */
+      const patient = next.customers.find((c) => c.name === rx.patient || c.phone === rx.phone);
+      if (patient && !rx.remindedAt) {
+        next = enqueueNotification(next, "refillDue", patient.phone || patient.email || patient.name,
+          { patient: rx.patient, product: next.products.find((p) => p.id === rx.productId)?.name ?? rx.productId, pharmacy: next.settings.orgName });
+      }
+      return withToast(next, "info", `Refill reminder sent to ${rx.patient} (${rx.id})`);
     }
 
     case "NEW_REFILL": {
@@ -1569,6 +1599,12 @@ export function reducer(state: State, a: Action): State {
       };
       if (a.status === "dispensed") {
         next = withAudit(next, "rx", `${rx.id} dispensed — ${rx.patient} · ${rx.qty} × ${rx.productId}${rx.refillsRemaining !== undefined ? ` · ${Math.max(0, rx.refillsRemaining - 1)} refill(s) left` : ""}`);
+        /* W3.1: "Rx ready" notification to the linked customer */
+        const patient = next.customers.find((c) => c.name === rx.patient || c.phone === rx.phone);
+        if (patient) {
+          next = enqueueNotification(next, "rxReady", patient.phone || patient.email || patient.name,
+            { patient: rx.patient, rxId: rx.id, product: next.products.find((p) => p.id === rx.productId)?.name ?? rx.productId, pharmacy: next.settings.orgName });
+        }
       }
       return withToast(next, "success", msg);
     }
@@ -1883,6 +1919,7 @@ export function reducer(state: State, a: Action): State {
         coupons: a.data.coupons ?? [],
         categories: a.data.categories ?? CATEGORIES_FALLBACK,
         branches: a.data.branches ?? BRANCHES_FALLBACK,
+        notificationLog: a.data.notificationLog ?? [],
       } as State;
       /* W2.5 — each successful hydration rotates a local full-org backup snapshot */
       rotateBackup(hydrated);
@@ -1944,7 +1981,7 @@ export function reducer(state: State, a: Action): State {
     case "GENERATE_X_REPORT": {
       const shift = state.shifts.find(s => s.id === a.shiftId);
       if (!shift) return state;
-      const report = generateXReport(shift);
+      generateXReport(shift);
       // In a real app, this would show a modal or navigate to a report view
       return withToast(state, "info", `X Report generated for shift ${shift.id}`);
     }
@@ -2006,6 +2043,7 @@ export const backendDataFromState = (state: State): BackendData => ({
   coupons: state.coupons ?? [],
   categories: state.categories ?? [],
   branches: state.branches ?? [],
+  notificationLog: state.notificationLog ?? [],
 });
 
 export function PosProvider({ children }: { children: ReactNode }) {

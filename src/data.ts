@@ -790,6 +790,12 @@ export interface OrgSettings {
   terminalId: string;
   hardwareEnabled: boolean;        // Phase E: Web Serial hardware (printer/drawer/scale)
   savedReportViews: import("./lib/report-filters").SavedReportView[]; // named report-builder views (JSONB via settings tail column — no migration)
+  notifications: {
+    channel: string;               // provider key resolved by notifierFor() in lib/notify.ts
+    enabled: { rxReady: boolean; refillDue: boolean; creditLow: boolean };
+    templates: { rxReady: string; refillDue: string; creditLow: string }; // {{var}} interpolated
+    creditLowThreshold: number;    // store-credit banner threshold
+  };
 }
 
 export const CURRENCIES = ["USD", "EUR", "GBP", "NGN", "KES", "ZAR", "GHS", "INR", "CAD"];
@@ -808,6 +814,16 @@ export function makeSettings(): OrgSettings {
     terminalId: "T-01",
     hardwareEnabled: false,
     savedReportViews: [],
+    notifications: {
+      channel: "console",
+      enabled: { rxReady: true, refillDue: true, creditLow: true },
+      templates: {
+        rxReady: "Hello {{patient}}, your prescription {{rxId}} is ready for pickup at {{pharmacy}}.",
+        refillDue: "Hi {{patient}}, your {{product}} supply is running low — time for a refill at {{pharmacy}}.",
+        creditLow: "Hi {{customer}}, your store credit is down to {{balance}}.",
+      },
+      creditLowThreshold: 10,
+    },
   };
 }
 

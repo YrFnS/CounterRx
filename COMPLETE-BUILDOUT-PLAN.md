@@ -58,8 +58,8 @@ Scheduled local backup (daily auto-download prompt / localStorage rotation) + fu
 
 ## WAVE 3 — engagement + resilience
 
-### W3.1 Notifications framework ✦ `feat/notifications`
-Provider-agnostic sender interface (`src/lib/notify.ts`) with console/stub backend; org settings toggles + template strings (i18n); triggers: Rx ready, refill due, credit balance low. [EXTERNAL] real Resend/Twilio later — drop-in adapter point documented. Log table `notification_log` (migration 0016) so history is auditable.
+### W3.1 Notifications framework ✦ `feat/notifications` — DONE
+Provider-agnostic sender interface (`src/lib/notify.ts`) with console/stub backend; org settings toggles + template strings (i18n); triggers: Rx ready, refill due, credit balance low. [EXTERNAL] real Resend/Twilio later — drop-in adapter point documented. Log table `notification_log` (migration 0016→0017) so history is auditable.
 
 ### W3.2 Delivery module (patient deliveries) ✦ `feat/delivery-module`
 Build on Deliveries: patient delivery intake from sale (address book reuses customer.address), driver assignment from staff roster, route list view, POD capture (existing proof field), fee policy in settings.

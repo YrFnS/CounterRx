@@ -31,6 +31,7 @@ function makeTestState(overrides: Partial<State> = {}): State {
     snapshotVersion: 0,
     shifts: [],
     storeCredits: [],
+    notificationLog: [],
     ...overrides,
   };
 }
