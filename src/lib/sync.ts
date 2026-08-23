@@ -70,28 +70,36 @@ const TABLES = [
   "backorders", "rx_transfers", "suppliers", "purchase_orders", "ap_invoices", "expenses",
   "deliveries", "web_orders", "time_entries", "staff", "settings", "restricted_log",
   "audit_log", "shifts", "store_credits", "snapshots", "interaction_pairs", "cold_chain_log", "coupons", "categories", "branches",
-  "notification_log"
+  "notification_log",
 ] as const;
 
 type TableName = (typeof TABLES)[number];
 
-const isRow = (value: unknown): value is Row => !!value && typeof value === "object" && !Array.isArray(value);
-const rowList = (value: unknown): Row[] => Array.isArray(value) ? value.filter(isRow) : [];
-const text = (row: Row, key: string, fallback = "") => typeof row[key] === "string" ? row[key] as string : fallback;
+const isRow = (value: unknown): value is Row =>
+  !!value && typeof value === "object" && !Array.isArray(value);
+const rowList = (value: unknown): Row[] =>
+  Array.isArray(value) ? value.filter(isRow) : [];
+const text = (row: Row, key: string, fallback = "") =>
+  typeof row[key] === "string" ? (row[key] as string) : fallback;
 const optionalText = (row: Row, key: string) => {
   const value = row[key];
   return typeof value === "string" && value.length > 0 ? value : undefined;
 };
 const numberValue = (row: Row, key: string, fallback = 0) => {
-  const value = typeof row[key] === "number" || typeof row[key] === "string" ? Number(row[key]) : NaN;
+  const value =
+    typeof row[key] === "number" || typeof row[key] === "string"
+      ? Number(row[key])
+      : NaN;
   return Number.isFinite(value) ? value : fallback;
 };
 const optionalNumber = (row: Row, key: string) => {
   const value = numberValue(row, key, NaN);
   return Number.isFinite(value) ? value : undefined;
 };
-const booleanValue = (row: Row, key: string, fallback = false) => typeof row[key] === "boolean" ? row[key] as boolean : fallback;
-const jsonValue = <T>(row: Row, key: string, fallback: T): T => row[key] == null ? fallback : row[key] as T;
+const booleanValue = (row: Row, key: string, fallback = false) =>
+  typeof row[key] === "boolean" ? (row[key] as boolean) : fallback;
+const jsonValue = <T>(row: Row, key: string, fallback: T): T =>
+  row[key] == null ? fallback : (row[key] as T);
 
 /** Accepts both epoch milliseconds and the timestamptz strings returned by PostgREST. */
 const epoch = (value: unknown, fallback = 0): number => {
@@ -104,9 +112,11 @@ const epoch = (value: unknown, fallback = 0): number => {
   }
   return fallback;
 };
-const rowEpoch = (row: Row, key: string, fallback = 0) => epoch(row[key], fallback);
-const timestamp = (value: number | undefined) => value === undefined ? null : new Date(value).toISOString();
-const nullable = (value: unknown) => value === undefined ? null : value;
+const rowEpoch = (row: Row, key: string, fallback = 0) =>
+  epoch(row[key], fallback);
+const timestamp = (value: number | undefined) =>
+  value === undefined ? null : new Date(value).toISOString();
+const nullable = (value: unknown) => (value === undefined ? null : value);
 
 function warn(operation: string, error: unknown): void {
   console.warn(`[sync] ${operation} failed`, error);
@@ -114,101 +124,196 @@ function warn(operation: string, error: unknown): void {
 
 function productFrom(row: Row): Product {
   return {
-    id: text(row, "id"), sku: text(row, "sku"), barcode: text(row, "barcode"), name: text(row, "name"),
-    generic: text(row, "generic"), brand: text(row, "brand"), category: text(row, "category", "compound") as Product["category"],
-    form: text(row, "form"), price: numberValue(row, "price"), cost: numberValue(row, "cost"),
-    reorderLevel: numberValue(row, "reorder_level"), rx: booleanValue(row, "rx"), supplier: text(row, "supplier"),
-    batches: jsonValue(row, "batches", []), uoms: jsonValue(row, "uoms", []), fields: jsonValue(row, "fields", []),
-    kit: jsonValue(row, "kit", []), ndc: optionalText(row, "ndc"), gtin: optionalText(row, "gtin"),
+    id: text(row, "id"),
+    sku: text(row, "sku"),
+    barcode: text(row, "barcode"),
+    name: text(row, "name"),
+    generic: text(row, "generic"),
+    brand: text(row, "brand"),
+    category: text(row, "category", "compound") as Product["category"],
+    form: text(row, "form"),
+    price: numberValue(row, "price"),
+    cost: numberValue(row, "cost"),
+    reorderLevel: numberValue(row, "reorder_level"),
+    rx: booleanValue(row, "rx"),
+    supplier: text(row, "supplier"),
+    batches: jsonValue(row, "batches", []),
+    uoms: jsonValue(row, "uoms", []),
+    fields: jsonValue(row, "fields", []),
+    kit: jsonValue(row, "kit", []),
+    ndc: optionalText(row, "ndc"),
+    gtin: optionalText(row, "gtin"),
     controlled: optionalText(row, "controlled") as Product["controlled"],
-    restricted: jsonValue(row, "restricted", undefined), genericOf: optionalText(row, "generic_of"),
-    variantOf: optionalText(row, "variant_of"), compound: booleanValue(row, "compound"), coldChain: booleanValue(row, "cold_chain"),
+    restricted: jsonValue(row, "restricted", undefined),
+    genericOf: optionalText(row, "generic_of"),
+    variantOf: optionalText(row, "variant_of"),
+    compound: booleanValue(row, "compound"),
+    coldChain: booleanValue(row, "cold_chain"),
   };
 }
 
 function transactionFrom(row: Row): Transaction {
   return {
-    id: text(row, "id"), at: rowEpoch(row, "at"), lines: jsonValue(row, "lines", []), subtotal: numberValue(row, "subtotal"),
-    discount: numberValue(row, "discount"), tax: numberValue(row, "tax"), total: numberValue(row, "total"),
-    method: text(row, "method", "cash") as Transaction["method"], cashier: text(row, "cashier"),
-    tendered: optionalNumber(row, "tendered"), change: optionalNumber(row, "change"),
-    ...(row.payments !== undefined ? { payments: jsonValue(row, "payments", []) } : {}),
-    refundOf: optionalText(row, "refund_of"), customerId: optionalText(row, "customer_id"), reason: optionalText(row, "reason"),
-    refundedAt: optionalNumber(row, "refunded_at"), taxExempt: booleanValue(row, "tax_exempt"), bulkSavings: optionalNumber(row, "bulk_savings"),
-    loyaltyDeduct: optionalNumber(row, "loyalty_deduct"), pointsEarned: optionalNumber(row, "points_earned"), pointsRedeemed: optionalNumber(row, "points_redeemed"),
+    id: text(row, "id"),
+    at: rowEpoch(row, "at"),
+    lines: jsonValue(row, "lines", []),
+    subtotal: numberValue(row, "subtotal"),
+    discount: numberValue(row, "discount"),
+    tax: numberValue(row, "tax"),
+    total: numberValue(row, "total"),
+    method: text(row, "method", "cash") as Transaction["method"],
+    cashier: text(row, "cashier"),
+    tendered: optionalNumber(row, "tendered"),
+    change: optionalNumber(row, "change"),
+    ...(row.payments !== undefined
+      ? { payments: jsonValue(row, "payments", []) }
+      : {}),
+    refundOf: optionalText(row, "refund_of"),
+    customerId: optionalText(row, "customer_id"),
+    reason: optionalText(row, "reason"),
+    refundedAt: optionalNumber(row, "refunded_at"),
+    taxExempt: booleanValue(row, "tax_exempt"),
+    bulkSavings: optionalNumber(row, "bulk_savings"),
+    loyaltyDeduct: optionalNumber(row, "loyalty_deduct"),
+    pointsEarned: optionalNumber(row, "points_earned"),
+    pointsRedeemed: optionalNumber(row, "points_redeemed"),
   };
 }
 
 function prescriptionFrom(row: Row): Prescription {
   return {
-    id: text(row, "id"), patient: text(row, "patient"), age: numberValue(row, "age"), productId: text(row, "product_id"),
-    qty: numberValue(row, "qty", 1), prescriberId: text(row, "prescriber_id"), status: text(row, "status", "new") as Prescription["status"],
-    createdAt: rowEpoch(row, "created_at_tx"), note: optionalText(row, "note"), daysSupply: optionalNumber(row, "days_supply"),
-    refillsAuthorized: optionalNumber(row, "refills_authorized"), refillsRemaining: optionalNumber(row, "refills_remaining"),
-    rxExpiry: optionalText(row, "rx_expiry"), phone: optionalText(row, "phone"), insurance: jsonValue(row, "insurance", undefined),
-    pa: jsonValue(row, "pa", undefined), notifiedAt: optionalNumber(row, "notified_at"), dispensedAt: optionalNumber(row, "dispensed_at"),
-    remindedAt: optionalNumber(row, "reminded_at"), scan: optionalText(row, "scan"), scanAt: optionalNumber(row, "scan_at"),
+    id: text(row, "id"),
+    patient: text(row, "patient"),
+    age: numberValue(row, "age"),
+    productId: text(row, "product_id"),
+    qty: numberValue(row, "qty", 1),
+    prescriberId: text(row, "prescriber_id"),
+    status: text(row, "status", "new") as Prescription["status"],
+    createdAt: rowEpoch(row, "created_at_tx"),
+    note: optionalText(row, "note"),
+    daysSupply: optionalNumber(row, "days_supply"),
+    refillsAuthorized: optionalNumber(row, "refills_authorized"),
+    refillsRemaining: optionalNumber(row, "refills_remaining"),
+    rxExpiry: optionalText(row, "rx_expiry"),
+    phone: optionalText(row, "phone"),
+    insurance: jsonValue(row, "insurance", undefined),
+    pa: jsonValue(row, "pa", undefined),
+    notifiedAt: optionalNumber(row, "notified_at"),
+    dispensedAt: optionalNumber(row, "dispensed_at"),
+    remindedAt: optionalNumber(row, "reminded_at"),
+    scan: optionalText(row, "scan"),
+    scanAt: optionalNumber(row, "scan_at"),
     transferredOut: jsonValue(row, "transferred_out", undefined),
   };
 }
 
 function interactionPairFrom(row: Row): InteractionPair {
   return {
-    a: text(row, "a"), b: text(row, "b"),
-    severity: (text(row, "severity", "moderate") as InteractionPair["severity"]) || "moderate",
-    effect: text(row, "effect"), action: text(row, "action"),
+    a: text(row, "a"),
+    b: text(row, "b"),
+    severity:
+      (text(row, "severity", "moderate") as InteractionPair["severity"]) ||
+      "moderate",
+    effect: text(row, "effect"),
+    action: text(row, "action"),
   };
 }
 
 function prescriberFrom(row: Row): Prescriber {
   return {
-    id: text(row, "id"), name: text(row, "name"), credentials: text(row, "credentials"), specialty: text(row, "specialty"),
-    npi: text(row, "npi"), dea: text(row, "dea"), phone: text(row, "phone"), fax: text(row, "fax"), active: booleanValue(row, "active", true),
+    id: text(row, "id"),
+    name: text(row, "name"),
+    credentials: text(row, "credentials"),
+    specialty: text(row, "specialty"),
+    npi: text(row, "npi"),
+    dea: text(row, "dea"),
+    phone: text(row, "phone"),
+    fax: text(row, "fax"),
+    active: booleanValue(row, "active", true),
     archived: booleanValue(row, "archived", false),
   };
 }
 
 function customerFrom(row: Row): Customer {
   return {
-    id: text(row, "id"), name: text(row, "name"), phone: text(row, "phone"), email: optionalText(row, "email"),
-    createdAt: rowEpoch(row, "created_at_tx"), notes: optionalText(row, "notes"), points: numberValue(row, "points"),
-    allergies: jsonValue(row, "allergies", []), dob: optionalText(row, "dob"), gender: optionalText(row, "gender") as Customer["gender"],
-    address: optionalText(row, "address"), bloodType: optionalText(row, "blood_type"),
-    primaryPrescriberId: optionalText(row, "primary_prescriber_id"), insurancePlan: optionalText(row, "insurance_plan"),
-    clinicalNotes: optionalText(row, "clinical_notes"), taxExempt: booleanValue(row, "tax_exempt"), fields: jsonValue(row, "fields", []),
+    id: text(row, "id"),
+    name: text(row, "name"),
+    phone: text(row, "phone"),
+    email: optionalText(row, "email"),
+    createdAt: rowEpoch(row, "created_at_tx"),
+    notes: optionalText(row, "notes"),
+    points: numberValue(row, "points"),
+    allergies: jsonValue(row, "allergies", []),
+    dob: optionalText(row, "dob"),
+    gender: optionalText(row, "gender") as Customer["gender"],
+    address: optionalText(row, "address"),
+    bloodType: optionalText(row, "blood_type"),
+    primaryPrescriberId: optionalText(row, "primary_prescriber_id"),
+    insurancePlan: optionalText(row, "insurance_plan"),
+    clinicalNotes: optionalText(row, "clinical_notes"),
+    taxExempt: booleanValue(row, "tax_exempt"),
+    fields: jsonValue(row, "fields", []),
   };
 }
 
 function transferFrom(row: Row): Transfer {
   return {
-    id: text(row, "id"), productId: text(row, "product_id"), qty: numberValue(row, "qty", 1), toBranch: text(row, "to_branch"),
-    status: text(row, "status", "requested") as Transfer["status"], createdAt: rowEpoch(row, "created_at"),
-    requestedBy: text(row, "requested_by"), note: optionalText(row, "note"),
+    id: text(row, "id"),
+    productId: text(row, "product_id"),
+    qty: numberValue(row, "qty", 1),
+    toBranch: text(row, "to_branch"),
+    status: text(row, "status", "requested") as Transfer["status"],
+    createdAt: rowEpoch(row, "created_at"),
+    requestedBy: text(row, "requested_by"),
+    note: optionalText(row, "note"),
   };
 }
 
 function backorderFrom(row: Row): BackOrder {
   return {
-    id: text(row, "id"), patient: text(row, "patient"), phone: optionalText(row, "phone"), productId: text(row, "product_id"),
-    qty: numberValue(row, "qty", 1), createdAt: rowEpoch(row, "created_at"), status: text(row, "status", "ordered") as BackOrder["status"],
-    etaDays: numberValue(row, "eta_days"), supplier: text(row, "supplier"), arrivedAt: optionalNumber(row, "arrived_at"), notifiedAt: optionalNumber(row, "notified_at"),
+    id: text(row, "id"),
+    patient: text(row, "patient"),
+    phone: optionalText(row, "phone"),
+    productId: text(row, "product_id"),
+    qty: numberValue(row, "qty", 1),
+    createdAt: rowEpoch(row, "created_at"),
+    status: text(row, "status", "ordered") as BackOrder["status"],
+    etaDays: numberValue(row, "eta_days"),
+    supplier: text(row, "supplier"),
+    arrivedAt: optionalNumber(row, "arrived_at"),
+    notifiedAt: optionalNumber(row, "notified_at"),
   };
 }
 
 function rxTransferFrom(row: Row): RxTransfer {
   return {
-    id: text(row, "id"), transferNo: text(row, "transfer_no"), direction: text(row, "direction", "out") as RxTransfer["direction"],
-    patient: text(row, "patient"), drug: text(row, "drug"), qty: numberValue(row, "qty"), otherPharmacy: text(row, "other_pharmacy"),
-    otherPhone: text(row, "other_phone"), prescriber: text(row, "prescriber"), refillsRemaining: numberValue(row, "refills_remaining"),
-    pharmacist: text(row, "pharmacist"), at: rowEpoch(row, "at"), note: optionalText(row, "note"),
+    id: text(row, "id"),
+    transferNo: text(row, "transfer_no"),
+    direction: text(row, "direction", "out") as RxTransfer["direction"],
+    patient: text(row, "patient"),
+    drug: text(row, "drug"),
+    qty: numberValue(row, "qty"),
+    otherPharmacy: text(row, "other_pharmacy"),
+    otherPhone: text(row, "other_phone"),
+    prescriber: text(row, "prescriber"),
+    refillsRemaining: numberValue(row, "refills_remaining"),
+    pharmacist: text(row, "pharmacist"),
+    at: rowEpoch(row, "at"),
+    note: optionalText(row, "note"),
     prescriptionId: optionalText(row, "prescription_id"),
   };
 }
 
 function supplierFrom(row: Row): Supplier {
   return {
-    id: text(row, "id"), name: text(row, "name"), contact: text(row, "contact"), phone: text(row, "phone"), email: optionalText(row, "email"),
-    terms: numberValue(row, "terms", 30), leadDays: numberValue(row, "lead_days", 7), minOrder: numberValue(row, "min_order"),
+    id: text(row, "id"),
+    name: text(row, "name"),
+    contact: text(row, "contact"),
+    phone: text(row, "phone"),
+    email: optionalText(row, "email"),
+    terms: numberValue(row, "terms", 30),
+    leadDays: numberValue(row, "lead_days", 7),
+    minOrder: numberValue(row, "min_order"),
     priceBook: jsonValue(row, "price_book", []),
     archived: booleanValue(row, "archived", false),
   };
@@ -216,24 +321,41 @@ function supplierFrom(row: Row): Supplier {
 
 function purchaseOrderFrom(row: Row): PurchaseOrder {
   return {
-    id: text(row, "id"), supplierId: text(row, "supplier_id"), lines: jsonValue(row, "lines", []),
-    status: text(row, "status", "ordered") as PurchaseOrder["status"], createdAt: rowEpoch(row, "created_at"),
-    expectedAt: rowEpoch(row, "expected_at"), receivedAt: optionalNumber(row, "received_at"), invoiceId: optionalText(row, "invoice_id"), note: optionalText(row, "note"),
+    id: text(row, "id"),
+    supplierId: text(row, "supplier_id"),
+    lines: jsonValue(row, "lines", []),
+    status: text(row, "status", "ordered") as PurchaseOrder["status"],
+    createdAt: rowEpoch(row, "created_at"),
+    expectedAt: rowEpoch(row, "expected_at"),
+    receivedAt: optionalNumber(row, "received_at"),
+    invoiceId: optionalText(row, "invoice_id"),
+    note: optionalText(row, "note"),
   };
 }
 
 function apInvoiceFrom(row: Row): ApInvoice {
   return {
-    id: text(row, "id"), number: text(row, "number"), supplierId: text(row, "supplier_id"), poId: optionalText(row, "po_id"),
-    date: rowEpoch(row, "date"), dueDays: numberValue(row, "due_days", 30), total: numberValue(row, "total"),
-    payments: jsonValue(row, "payments", []), credits: jsonValue(row, "credits", []),
+    id: text(row, "id"),
+    number: text(row, "number"),
+    supplierId: text(row, "supplier_id"),
+    poId: optionalText(row, "po_id"),
+    date: rowEpoch(row, "date"),
+    dueDays: numberValue(row, "due_days", 30),
+    total: numberValue(row, "total"),
+    payments: jsonValue(row, "payments", []),
+    credits: jsonValue(row, "credits", []),
   };
 }
 
 function expenseFrom(row: Row): Expense {
   return {
-    id: text(row, "id"), category: text(row, "category", "Misc"), amount: numberValue(row, "amount"), date: rowEpoch(row, "date"),
-    payee: text(row, "payee"), note: optionalText(row, "note"), recurring: booleanValue(row, "recurring"),
+    id: text(row, "id"),
+    category: text(row, "category", "Misc"),
+    amount: numberValue(row, "amount"),
+    date: rowEpoch(row, "date"),
+    payee: text(row, "payee"),
+    note: optionalText(row, "note"),
+    recurring: booleanValue(row, "recurring"),
   };
 }
 
@@ -247,23 +369,40 @@ function deliveryFrom(row: Row): Delivery {
 
 function webOrderFrom(row: Row): WebOrder {
   return {
-    id: text(row, "id"), customerName: text(row, "customer_name"), phone: text(row, "phone"), items: jsonValue(row, "items", []),
-    type: text(row, "type", "otc") as WebOrder["type"], channel: text(row, "channel", "web") as WebOrder["channel"],
-    pickup: text(row, "pickup", "in_store") as WebOrder["pickup"], status: text(row, "status", "new") as WebOrder["status"],
-    note: optionalText(row, "note"), declineReason: optionalText(row, "decline_reason"), createdAt: rowEpoch(row, "created_at"),
+    id: text(row, "id"),
+    customerName: text(row, "customer_name"),
+    phone: text(row, "phone"),
+    items: jsonValue(row, "items", []),
+    type: text(row, "type", "otc") as WebOrder["type"],
+    channel: text(row, "channel", "web") as WebOrder["channel"],
+    pickup: text(row, "pickup", "in_store") as WebOrder["pickup"],
+    status: text(row, "status", "new") as WebOrder["status"],
+    note: optionalText(row, "note"),
+    declineReason: optionalText(row, "decline_reason"),
+    createdAt: rowEpoch(row, "created_at"),
   };
 }
 
 function staffFrom(row: Row): Staff {
   return {
-    id: text(row, "id"), name: text(row, "name"), role: text(row, "role", "cashier") as Staff["role"],
-    pinHash: text(row, "pin_hash"), initials: text(row, "initials"), active: booleanValue(row, "active", true), createdAt: rowEpoch(row, "created_at"),
+    id: text(row, "id"),
+    name: text(row, "name"),
+    role: text(row, "role", "cashier") as Staff["role"],
+    pinHash: text(row, "pin_hash"),
+    initials: text(row, "initials"),
+    active: booleanValue(row, "active", true),
+    createdAt: rowEpoch(row, "created_at"),
   };
 }
 
-function settingsFrom(row: Row | undefined, fallback: OrgSettings): OrgSettings {
+function settingsFrom(
+  row: Row | undefined,
+  fallback: OrgSettings,
+): OrgSettings {
   if (!row) return fallback;
-  const loyaltyBlob = jsonValue<Record<string, unknown>>(row, "loyalty", { ...fallback.loyalty });
+  const loyaltyBlob = jsonValue<Record<string, unknown>>(row, "loyalty", {
+    ...fallback.loyalty,
+  });
   const rawViews = loyaltyBlob.savedReportViews;
   const { savedReportViews: _dropped, ...loyalty } = loyaltyBlob;
   return {
@@ -295,45 +434,86 @@ function mergeNotifications(stored: unknown, fallback: OrgSettings["notification
 
 function restrictedFrom(row: Row): RestrictedLogEntry {
   return {
-    id: numberValue(row, "id"), at: rowEpoch(row, "at"), productId: text(row, "product_id"), qty: numberValue(row, "qty", 1),
-    purchaser: text(row, "purchaser"), idType: text(row, "id_type"), idLast4: text(row, "id_last4"), cashier: text(row, "cashier"),
+    id: numberValue(row, "id"),
+    at: rowEpoch(row, "at"),
+    productId: text(row, "product_id"),
+    qty: numberValue(row, "qty", 1),
+    purchaser: text(row, "purchaser"),
+    idType: text(row, "id_type"),
+    idLast4: text(row, "id_last4"),
+    cashier: text(row, "cashier"),
   };
 }
 
 function auditFrom(row: Row): AuditEntry {
-  return { id: numberValue(row, "id"), at: rowEpoch(row, "at"), actor: text(row, "actor"), kind: text(row, "kind", "system") as AuditEntry["kind"], detail: text(row, "detail") };
+  return {
+    id: numberValue(row, "id"),
+    at: rowEpoch(row, "at"),
+    actor: text(row, "actor"),
+    kind: text(row, "kind", "system") as AuditEntry["kind"],
+    detail: text(row, "detail"),
+  };
 }
 
 function shiftFrom(row: Row): Shift {
   return {
-    id: text(row, "id"), terminalId: text(row, "terminal_id"), cashierId: text(row, "cashier_id"), cashierName: text(row, "cashier_name"),
-    openedAt: rowEpoch(row, "opened_at"), closedAt: optionalNumber(row, "closed_at"), status: text(row, "status", "open") as Shift["status"],
-    openingBalance: numberValue(row, "opening_balance"), closingBalance: optionalNumber(row, "closing_balance"), countedCash: optionalNumber(row, "counted_cash"),
-    transactions: jsonValue(row, "transactions", []), cashMovements: jsonValue(row, "cash_movements", []), salesTotal: numberValue(row, "sales_total"),
-    refundsTotal: numberValue(row, "refunds_total"), cardTotal: numberValue(row, "card_total"), insuranceTotal: numberValue(row, "insurance_total"),
-    storeCreditTotal: numberValue(row, "store_credit_total"), paidInTotal: numberValue(row, "paid_in_total"), paidOutTotal: numberValue(row, "paid_out_total"),
-    expectedCash: numberValue(row, "expected_cash"), overShort: optionalNumber(row, "over_short"), notes: optionalText(row, "notes"),
+    id: text(row, "id"),
+    terminalId: text(row, "terminal_id"),
+    cashierId: text(row, "cashier_id"),
+    cashierName: text(row, "cashier_name"),
+    openedAt: rowEpoch(row, "opened_at"),
+    closedAt: optionalNumber(row, "closed_at"),
+    status: text(row, "status", "open") as Shift["status"],
+    openingBalance: numberValue(row, "opening_balance"),
+    closingBalance: optionalNumber(row, "closing_balance"),
+    countedCash: optionalNumber(row, "counted_cash"),
+    transactions: jsonValue(row, "transactions", []),
+    cashMovements: jsonValue(row, "cash_movements", []),
+    salesTotal: numberValue(row, "sales_total"),
+    refundsTotal: numberValue(row, "refunds_total"),
+    cardTotal: numberValue(row, "card_total"),
+    insuranceTotal: numberValue(row, "insurance_total"),
+    storeCreditTotal: numberValue(row, "store_credit_total"),
+    paidInTotal: numberValue(row, "paid_in_total"),
+    paidOutTotal: numberValue(row, "paid_out_total"),
+    expectedCash: numberValue(row, "expected_cash"),
+    overShort: optionalNumber(row, "over_short"),
+    notes: optionalText(row, "notes"),
   };
 }
 
 function storeCreditFrom(row: Row): StoreCredit {
   return {
-    id: text(row, "id"), customerId: optionalText(row, "customer_id") ?? null, balance: numberValue(row, "balance"),
-    issuedAt: rowEpoch(row, "issued_at"), expiresAt: optionalNumber(row, "expires_at"), code: optionalText(row, "code"), note: optionalText(row, "note"),
+    id: text(row, "id"),
+    customerId: optionalText(row, "customer_id") ?? null,
+    balance: numberValue(row, "balance"),
+    issuedAt: rowEpoch(row, "issued_at"),
+    expiresAt: optionalNumber(row, "expires_at"),
+    code: optionalText(row, "code"),
+    note: optionalText(row, "note"),
   };
 }
 
 function snapshotFrom(row: Row): Snapshot {
   return {
-    meta: { id: text(row, "id"), at: rowEpoch(row, "at"), label: text(row, "label"), auto: booleanValue(row, "auto") },
+    meta: {
+      id: text(row, "id"),
+      at: rowEpoch(row, "at"),
+      label: text(row, "label"),
+      auto: booleanValue(row, "auto"),
+    },
     data: jsonValue(row, "data", {}),
   };
 }
 
 function coldChainLogFrom(row: Row): ColdChainLog {
   return {
-    id: text(row, "id"), productId: text(row, "product_id"), tempC: numberValue(row, "temp_c"),
-    inRange: booleanValue(row, "in_range", true), staff: optionalText(row, "staff"), note: optionalText(row, "note"),
+    id: text(row, "id"),
+    productId: text(row, "product_id"),
+    tempC: numberValue(row, "temp_c"),
+    inRange: booleanValue(row, "in_range", true),
+    staff: optionalText(row, "staff"),
+    note: optionalText(row, "note"),
     at: rowEpoch(row, "created_at"),
   };
 }
@@ -386,30 +566,109 @@ function notificationLogFrom(row: Row): NotificationLogEntry {
 export function rowsFor(data: BackendData): Record<TableName, Row[]> {
   return {
     products: data.products.map((p) => ({
-      id: p.id, sku: p.sku, barcode: p.barcode, name: p.name, generic: p.generic, brand: p.brand, category: p.category, form: p.form,
-      price: p.price, cost: p.cost, reorder_level: p.reorderLevel, rx: p.rx, supplier: p.supplier, batches: p.batches, uoms: p.uoms ?? [],
-      fields: p.fields ?? [], kit: p.kit ?? [], ndc: nullable(p.ndc), gtin: nullable(p.gtin), controlled: nullable(p.controlled), restricted: nullable(p.restricted),
-      generic_of: nullable(p.genericOf), variant_of: nullable(p.variantOf), compound: p.compound ?? false, cold_chain: p.coldChain ?? false,
+      id: p.id,
+      sku: p.sku,
+      barcode: p.barcode,
+      name: p.name,
+      generic: p.generic,
+      brand: p.brand,
+      category: p.category,
+      form: p.form,
+      price: p.price,
+      cost: p.cost,
+      reorder_level: p.reorderLevel,
+      rx: p.rx,
+      supplier: p.supplier,
+      batches: p.batches,
+      uoms: p.uoms ?? [],
+      fields: p.fields ?? [],
+      kit: p.kit ?? [],
+      ndc: nullable(p.ndc),
+      gtin: nullable(p.gtin),
+      controlled: nullable(p.controlled),
+      restricted: nullable(p.restricted),
+      generic_of: nullable(p.genericOf),
+      variant_of: nullable(p.variantOf),
+      compound: p.compound ?? false,
+      cold_chain: p.coldChain ?? false,
     })),
     transactions: data.transactions.map((t) => ({
-      id: t.id, at: t.at, lines: t.lines, subtotal: t.subtotal, discount: t.discount, tax: t.tax, total: t.total, method: t.method, cashier: t.cashier,
-      tendered: nullable(t.tendered), change: nullable(t.change), refund_of: nullable(t.refundOf), customer_id: nullable(t.customerId), reason: nullable(t.reason), refunded_at: nullable(t.refundedAt),
-      payments: t.payments ?? [], tax_exempt: t.taxExempt ?? false, bulk_savings: nullable(t.bulkSavings), loyalty_deduct: nullable(t.loyaltyDeduct),
-      points_earned: nullable(t.pointsEarned), points_redeemed: nullable(t.pointsRedeemed),
+      id: t.id,
+      at: t.at,
+      lines: t.lines,
+      subtotal: t.subtotal,
+      discount: t.discount,
+      tax: t.tax,
+      total: t.total,
+      method: t.method,
+      cashier: t.cashier,
+      tendered: nullable(t.tendered),
+      change: nullable(t.change),
+      refund_of: nullable(t.refundOf),
+      customer_id: nullable(t.customerId),
+      reason: nullable(t.reason),
+      refunded_at: nullable(t.refundedAt),
+      payments: t.payments ?? [],
+      tax_exempt: t.taxExempt ?? false,
+      bulk_savings: nullable(t.bulkSavings),
+      loyalty_deduct: nullable(t.loyaltyDeduct),
+      points_earned: nullable(t.pointsEarned),
+      points_redeemed: nullable(t.pointsRedeemed),
     })),
     prescriptions: data.prescriptions.map((p) => ({
-      id: p.id, patient: p.patient, age: p.age, product_id: p.productId, qty: p.qty, prescriber_id: p.prescriberId, status: p.status,
-      created_at_tx: timestamp(p.createdAt), note: nullable(p.note), days_supply: nullable(p.daysSupply), refills_authorized: nullable(p.refillsAuthorized),
-      refills_remaining: nullable(p.refillsRemaining), rx_expiry: nullable(p.rxExpiry), phone: nullable(p.phone), insurance: nullable(p.insurance), pa: nullable(p.pa),
-      notified_at: nullable(p.notifiedAt), dispensed_at: nullable(p.dispensedAt),
-      reminded_at: nullable(p.remindedAt), scan: nullable(p.scan), scan_at: nullable(p.scanAt), transferred_out: nullable(p.transferredOut),
+      id: p.id,
+      patient: p.patient,
+      age: p.age,
+      product_id: p.productId,
+      qty: p.qty,
+      prescriber_id: p.prescriberId,
+      status: p.status,
+      created_at_tx: timestamp(p.createdAt),
+      note: nullable(p.note),
+      days_supply: nullable(p.daysSupply),
+      refills_authorized: nullable(p.refillsAuthorized),
+      refills_remaining: nullable(p.refillsRemaining),
+      rx_expiry: nullable(p.rxExpiry),
+      phone: nullable(p.phone),
+      insurance: nullable(p.insurance),
+      pa: nullable(p.pa),
+      notified_at: nullable(p.notifiedAt),
+      dispensed_at: nullable(p.dispensedAt),
+      reminded_at: nullable(p.remindedAt),
+      scan: nullable(p.scan),
+      scan_at: nullable(p.scanAt),
+      transferred_out: nullable(p.transferredOut),
     })),
-    prescribers: data.prescribers.map((p) => ({ id: p.id, name: p.name, credentials: p.credentials, specialty: p.specialty, npi: nullable(p.npi), dea: nullable(p.dea), phone: nullable(p.phone), fax: nullable(p.fax), active: p.active, archived: p.archived ?? false })),
+    prescribers: data.prescribers.map((p) => ({
+      id: p.id,
+      name: p.name,
+      credentials: p.credentials,
+      specialty: p.specialty,
+      npi: nullable(p.npi),
+      dea: nullable(p.dea),
+      phone: nullable(p.phone),
+      fax: nullable(p.fax),
+      active: p.active,
+      archived: p.archived ?? false,
+    })),
     customers: data.customers.map((c) => ({
-      id: c.id, name: c.name, phone: c.phone, email: nullable(c.email), created_at_tx: timestamp(c.createdAt), notes: nullable(c.notes), points: c.points,
-      allergies: c.allergies ?? [], dob: nullable(c.dob), gender: nullable(c.gender), address: nullable(c.address), blood_type: nullable(c.bloodType),
-      primary_prescriber_id: nullable(c.primaryPrescriberId), insurance_plan: nullable(c.insurancePlan), clinical_notes: nullable(c.clinicalNotes),
-      tax_exempt: c.taxExempt ?? false, fields: c.fields ?? [],
+      id: c.id,
+      name: c.name,
+      phone: c.phone,
+      email: nullable(c.email),
+      created_at_tx: timestamp(c.createdAt),
+      notes: nullable(c.notes),
+      points: c.points,
+      allergies: c.allergies ?? [],
+      dob: nullable(c.dob),
+      gender: nullable(c.gender),
+      address: nullable(c.address),
+      blood_type: nullable(c.bloodType),
+      primary_prescriber_id: nullable(c.primaryPrescriberId),
+      insurance_plan: nullable(c.insurancePlan),
+      clinical_notes: nullable(c.clinicalNotes),
+      tax_exempt: c.taxExempt ?? false,
+      fields: c.fields ?? [],
     })),
     transfers: data.transfers.map((t) => ({ id: t.id, product_id: t.productId, qty: t.qty, to_branch: t.toBranch, status: t.status, created_at: t.createdAt, requested_by: t.requestedBy, note: nullable(t.note) })),
     backorders: data.backorders.map((b) => ({ id: b.id, patient: b.patient, phone: nullable(b.phone), product_id: b.productId, qty: b.qty, created_at: b.createdAt, status: b.status, eta_days: b.etaDays, supplier: b.supplier, arrived_at: nullable(b.arrivedAt), notified_at: nullable(b.notifiedAt) })),
@@ -450,30 +709,69 @@ export interface OrgExportBundle {
 
 /** Which BackendData collection backs each export table name (mirrors rowsFor: tables). */
 const TABLE_COLLECTION: Record<string, keyof BackendData> = {
-  products: "products", transactions: "transactions", prescriptions: "prescriptions", prescribers: "prescribers",
-  customers: "customers", transfers: "transfers", backorders: "backorders", rx_transfers: "rxTransfers",
-  suppliers: "suppliers", purchase_orders: "purchaseOrders", ap_invoices: "apInvoices", expenses: "expenses",
-  deliveries: "deliveries", web_orders: "webOrders", time_entries: "timeEntries", staff: "staff", settings: "settings",
-  restricted_log: "restrictedLog", audit_log: "audit", shifts: "shifts", store_credits: "storeCredits", snapshots: "snapshots",
-  interaction_pairs: "interactionPairs", cold_chain_log: "coldChainLog", coupons: "coupons", categories: "categories", branches: "branches",
+  products: "products",
+  transactions: "transactions",
+  prescriptions: "prescriptions",
+  prescribers: "prescribers",
+  customers: "customers",
+  transfers: "transfers",
+  backorders: "backorders",
+  rx_transfers: "rxTransfers",
+  suppliers: "suppliers",
+  purchase_orders: "purchaseOrders",
+  ap_invoices: "apInvoices",
+  expenses: "expenses",
+  deliveries: "deliveries",
+  web_orders: "webOrders",
+  time_entries: "timeEntries",
+  staff: "staff",
+  settings: "settings",
+  restricted_log: "restrictedLog",
+  audit_log: "audit",
+  shifts: "shifts",
+  store_credits: "storeCredits",
+  snapshots: "snapshots",
+  interaction_pairs: "interactionPairs",
+  cold_chain_log: "coldChainLog",
+  coupons: "coupons",
+  categories: "categories",
+  branches: "branches",
 };
 
 /** Build the full-org export bundle from a BackendData snapshot (single source of truth: rowsFor). */
-export function buildOrgExport(data: BackendData, organizationId = "00000000-0000-0000-0000-000000000001"): OrgExportBundle {
+export function buildOrgExport(
+  data: BackendData,
+  organizationId = "00000000-0000-0000-0000-000000000001",
+): OrgExportBundle {
   const rows = rowsFor(data);
   const tables: Record<string, Row[]> = {};
   for (const table of TABLES) tables[table] = rows[table];
-  return { exportedAt: new Date().toISOString(), version: 1, organization_id: organizationId, tables };
+  return {
+    exportedAt: new Date().toISOString(),
+    version: 1,
+    organization_id: organizationId,
+    tables,
+  };
 }
 
 /** Validate the shape of a parsed export/backup before applying it. */
 export function validateOrgExport(value: unknown): value is OrgExportBundle {
   if (!value || typeof value !== "object") return false;
   const v = value as Record<string, unknown>;
-  if (typeof v.exportedAt !== "string" || typeof v.version !== "number" || typeof v.organization_id !== "string") return false;
+  if (
+    typeof v.exportedAt !== "string" ||
+    typeof v.version !== "number" ||
+    typeof v.organization_id !== "string"
+  )
+    return false;
   if (!v.tables || typeof v.tables !== "object") return false;
   // Require at least the core ledger tables to be present and array-shaped.
-  for (const core of ["products", "transactions", "prescriptions", "customers"]) {
+  for (const core of [
+    "products",
+    "transactions",
+    "prescriptions",
+    "customers",
+  ]) {
     const t = (v.tables as Record<string, unknown>)[core];
     if (!Array.isArray(t)) return false;
   }
@@ -481,7 +779,10 @@ export function validateOrgExport(value: unknown): value is OrgExportBundle {
 }
 
 /** Rehydrate a BackendData from an export bundle, falling back to seed for missing collections. */
-export function backendDataFromExport(bundle: OrgExportBundle, seed: BackendData): BackendData {
+export function backendDataFromExport(
+  bundle: OrgExportBundle,
+  seed: BackendData,
+): BackendData {
   const out = { ...seed } as Record<keyof BackendData, unknown>;
   for (const [table, collection] of Object.entries(TABLE_COLLECTION)) {
     const rows = bundle.tables[table];
@@ -492,7 +793,10 @@ export function backendDataFromExport(bundle: OrgExportBundle, seed: BackendData
   return out as unknown as BackendData;
 }
 
-async function readTable(client: SupabaseClient, table: TableName): Promise<{ table: TableName; rows: Row[]; error: unknown }> {
+async function readTable(
+  client: SupabaseClient,
+  table: TableName,
+): Promise<{ table: TableName; rows: Row[]; error: unknown }> {
   try {
     const { data, error } = await client.from(table).select("*");
     return { table, rows: rowList(data), error };
@@ -509,14 +813,22 @@ export type LoadResult =
 /** Load all backend collections; returns explicit success/failure signal. */
 export async function loadBackendData(seed: BackendData): Promise<LoadResult> {
   if (!isSupabaseConfigured) return { ok: false, failedTable: null };
-  const results = await Promise.all(TABLES.map((table) => readTable(supabase, table)));
+  const results = await Promise.all(
+    TABLES.map((table) => readTable(supabase, table)),
+  );
   const failed = results.find((result) => result.error);
   if (failed) {
     warn(`load ${failed.table}`, failed.error);
     return { ok: false, failedTable: failed.table };
   }
-  const byTable = Object.fromEntries(results.map((result) => [result.table, result.rows])) as Record<TableName, Row[]>;
-  if (byTable.products.length === 0 && byTable.customers.length === 0 && byTable.staff.length === 0) {
+  const byTable = Object.fromEntries(
+    results.map((result) => [result.table, result.rows]),
+  ) as Record<TableName, Row[]>;
+  if (
+    byTable.products.length === 0 &&
+    byTable.customers.length === 0 &&
+    byTable.staff.length === 0
+  ) {
     // Empty tenant is a real state — do NOT auto-write demo seed.
     return { ok: false, failedTable: null };
   }
@@ -524,15 +836,35 @@ export async function loadBackendData(seed: BackendData): Promise<LoadResult> {
     return {
       ok: true,
       data: {
-        products: byTable.products.map(productFrom), transactions: byTable.transactions.map(transactionFrom), prescriptions: byTable.prescriptions.map(prescriptionFrom),
-        prescribers: byTable.prescribers.map(prescriberFrom), customers: byTable.customers.map(customerFrom), transfers: byTable.transfers.map(transferFrom),
-        backorders: byTable.backorders.map(backorderFrom), rxTransfers: byTable.rx_transfers.map(rxTransferFrom), suppliers: byTable.suppliers.map(supplierFrom),
-        purchaseOrders: byTable.purchase_orders.map(purchaseOrderFrom), apInvoices: byTable.ap_invoices.map(apInvoiceFrom), expenses: byTable.expenses.map(expenseFrom),
-        deliveries: byTable.deliveries.map(deliveryFrom), webOrders: byTable.web_orders.map(webOrderFrom),
-        timeEntries: byTable.time_entries.map((row) => ({ id: numberValue(row, "id"), staffId: text(row, "staff_id"), inAt: rowEpoch(row, "in_at"), outAt: optionalNumber(row, "out_at") })),
-        staff: byTable.staff.map(staffFrom), settings: settingsFrom(byTable.settings[0], seed.settings), restrictedLog: byTable.restricted_log.map(restrictedFrom),
-        audit: byTable.audit_log.map(auditFrom), shifts: byTable.shifts.map(shiftFrom), storeCredits: byTable.store_credits.map(storeCreditFrom), snapshots: byTable.snapshots.map(snapshotFrom),
-        interactionPairs: byTable.interaction_pairs.map(interactionPairFrom), coldChainLog: byTable.cold_chain_log.map(coldChainLogFrom),
+        products: byTable.products.map(productFrom),
+        transactions: byTable.transactions.map(transactionFrom),
+        prescriptions: byTable.prescriptions.map(prescriptionFrom),
+        prescribers: byTable.prescribers.map(prescriberFrom),
+        customers: byTable.customers.map(customerFrom),
+        transfers: byTable.transfers.map(transferFrom),
+        backorders: byTable.backorders.map(backorderFrom),
+        rxTransfers: byTable.rx_transfers.map(rxTransferFrom),
+        suppliers: byTable.suppliers.map(supplierFrom),
+        purchaseOrders: byTable.purchase_orders.map(purchaseOrderFrom),
+        apInvoices: byTable.ap_invoices.map(apInvoiceFrom),
+        expenses: byTable.expenses.map(expenseFrom),
+        deliveries: byTable.deliveries.map(deliveryFrom),
+        webOrders: byTable.web_orders.map(webOrderFrom),
+        timeEntries: byTable.time_entries.map((row) => ({
+          id: numberValue(row, "id"),
+          staffId: text(row, "staff_id"),
+          inAt: rowEpoch(row, "in_at"),
+          outAt: optionalNumber(row, "out_at"),
+        })),
+        staff: byTable.staff.map(staffFrom),
+        settings: settingsFrom(byTable.settings[0], seed.settings),
+        restrictedLog: byTable.restricted_log.map(restrictedFrom),
+        audit: byTable.audit_log.map(auditFrom),
+        shifts: byTable.shifts.map(shiftFrom),
+        storeCredits: byTable.store_credits.map(storeCreditFrom),
+        snapshots: byTable.snapshots.map(snapshotFrom),
+        interactionPairs: byTable.interaction_pairs.map(interactionPairFrom),
+        coldChainLog: byTable.cold_chain_log.map(coldChainLogFrom),
         coupons: byTable.coupons.map(couponFrom),
         categories: byTable.categories.map(categoryFrom),
         branches: byTable.branches.map(branchFrom),
@@ -555,20 +887,38 @@ export async function persistBackendData(data: BackendData): Promise<void> {
     warn("serialize backend data", error);
     return;
   }
-  await Promise.all(TABLES.map(async (table) => {
-    if (payload[table].length === 0) return undefined;
-    try {
-      const { error } = await supabase.from(table).upsert(payload[table]);
-      if (error) warn(`persist ${table}`, error);
-    } catch (error) {
-      warn(`persist ${table}`, error);
-    }
-    return undefined;
-  }));
+  await Promise.all(
+    TABLES.map(async (table) => {
+      if (payload[table].length === 0) return undefined;
+      try {
+        const { error } = await supabase.from(table).upsert(payload[table]);
+        if (error) warn(`persist ${table}`, error);
+      } catch (error) {
+        warn(`persist ${table}`, error);
+      }
+      return undefined;
+    }),
+  );
+}
+
+/** Best-effort single-row upsert — used by the offline outbox keep-local override. */
+export async function upsertRow(
+  table: string,
+  row: Record<string, unknown>,
+): Promise<void> {
+  if (!isSupabaseConfigured) return;
+  try {
+    const { error } = await supabase.from(table as TableName).upsert(row);
+    if (error) warn(`upsert ${table}`, error);
+  } catch (error) {
+    warn(`upsert ${table}`, error);
+  }
 }
 
 /** Subscribe to public-table changes and reload once RLS access becomes available. */
-export function subscribeToBackend(onChange: (source: TableName | "auth") => void): () => void {
+export function subscribeToBackend(
+  onChange: (source: TableName | "auth") => void,
+): () => void {
   if (!isSupabaseConfigured) return () => undefined;
   try {
     const notify = (source: TableName | "auth") => {
@@ -581,12 +931,16 @@ export function subscribeToBackend(onChange: (source: TableName | "auth") => voi
     const channel = supabase
       .channel("counterrx-backend")
       .on("postgres_changes", { event: "*", schema: "public" }, (payload) => {
-        if ((TABLES as readonly string[]).includes(payload.table)) notify(payload.table as TableName);
+        if ((TABLES as readonly string[]).includes(payload.table))
+          notify(payload.table as TableName);
       })
       .subscribe((status) => {
-        if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") warn("realtime subscription", status);
+        if (status === "CHANNEL_ERROR" || status === "TIMED_OUT")
+          warn("realtime subscription", status);
       });
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((event) => {
       if (event === "SIGNED_IN") queueMicrotask(() => notify("auth"));
     });
     let removed = false;
@@ -594,7 +948,9 @@ export function subscribeToBackend(onChange: (source: TableName | "auth") => voi
       if (removed) return;
       removed = true;
       subscription.unsubscribe();
-      void supabase.removeChannel(channel).catch((error) => warn("realtime cleanup", error));
+      void supabase
+        .removeChannel(channel)
+        .catch((error) => warn("realtime cleanup", error));
     };
   } catch (error) {
     warn("realtime subscription", error);
@@ -609,7 +965,9 @@ export async function getSessionStaffId(): Promise<string | null> {
     const { data } = await supabase.auth.getSession();
     const email = data.session?.user.email ?? "";
     const compact = email.split("@")[0];
-    return /^s\d{3}$/i.test(compact) ? `S-${compact.slice(1).toUpperCase()}` : null;
+    return /^s\d{3}$/i.test(compact)
+      ? `S-${compact.slice(1).toUpperCase()}`
+      : null;
   } catch {
     return null;
   }
@@ -636,14 +994,19 @@ export async function signInStaffByEmail(
     return { staffId: null, authenticated: false };
   }
   try {
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
+    const { error } = await supabase.auth.signInWithPassword({
+      email,
+      password,
+    });
     if (error) {
       warn("staff sign-in (email)", error.message);
       return { staffId: null, authenticated: false };
     }
     // Map seeded email back to the local staff id (s001@… → S-001)
     const compactId = email.trim().split("@")[0];
-    const staffId = /^s\d{3}$/i.test(compactId) ? `S-${compactId.slice(1).toUpperCase()}` : null;
+    const staffId = /^s\d{3}$/i.test(compactId)
+      ? `S-${compactId.slice(1).toUpperCase()}`
+      : null;
     return { staffId, authenticated: true };
   } catch (error) {
     warn("staff sign-in (email)", error);
@@ -651,7 +1014,10 @@ export async function signInStaffByEmail(
   }
 }
 
-export async function signInStaff(staffId: string, pin: string): Promise<boolean> {
+export async function signInStaff(
+  staffId: string,
+  pin: string,
+): Promise<boolean> {
   if (!isSupabaseConfigured) return false;
   const compactId = staffId.replace(/-/g, "").toUpperCase();
   try {

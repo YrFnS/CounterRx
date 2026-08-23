@@ -45,6 +45,8 @@ function makeState(overrides: Record<string, unknown> = {}) {
     flashId: null,
     flashKey: 0,
     snapshotVersion: 0,
+    outboxCount: 0,
+    conflicts: [],
     notificationLog: [] as NotificationLogEntry[],
     ...overrides,
   };

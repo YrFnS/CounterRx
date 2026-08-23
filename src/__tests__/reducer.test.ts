@@ -31,6 +31,8 @@ function makeTestState(overrides: Partial<State> = {}): State {
     flashId: null,
     flashKey: 0,
     snapshotVersion: 0,
+    outboxCount: 0,
+    conflicts: [],
     shifts: [],
     storeCredits: [],
     notificationLog: [],
