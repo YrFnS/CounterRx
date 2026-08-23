@@ -7,8 +7,9 @@ import { catLabel } from "../data";
 import { fefoBatches, generateXReport, generateZReport, calculateLTV, supplierPerformance, expiryAtRisk } from "../data";
 import type { Product, TxLine, Transaction, PayMethod, Shift, ZReport, Customer, Supplier, PurchaseOrder, ApInvoice } from "../data";
 import { cx, Badge, Empty, Modal } from "../ui";
-import { ITrendUp, IDownload, IX, IPlus, IBox, ICash, ISearch, ICalendar } from "../icons";
+import { ITrendUp, IDownload, IX, IPlus, IBox, ICash, ISearch, ICalendar, IAlert, ICheck } from "../icons";
 import { buildXlsx } from "../lib/export";
+import { patientsForBatchCode } from "../data";
 
 /* ------------------------------------------------------------------ */
 /*  Costing helpers — every figure below derives from lot-level cost    */
@@ -41,7 +42,7 @@ const PRESETS: { id: Preset; label: string }[] = [
 ];
 
 /* ================= MAIN VIEW ================= */
-type Tab = "margin" | "valuation" | "pnl" | "builder" | "till" | "analytics";
+type Tab = "margin" | "valuation" | "pnl" | "builder" | "till" | "analytics" | "recall";
 export default function Reports() {
   const { t } = useTranslation();
   const { state } = usePos();
@@ -63,6 +64,7 @@ export default function Reports() {
     { id: "builder", label: i18n.t("reports.builder"), icon: <ISearch size={14} /> },
     { id: "till", label: i18n.t("reports.till"), icon: <ICash size={14} /> },
     { id: "analytics", label: i18n.t("analytics.title"), icon: <ITrendUp size={14} /> },
+    { id: "recall", label: i18n.t("reports.recallLookup"), icon: <IAlert size={14} /> },
   ];
 
   return (
@@ -106,6 +108,7 @@ export default function Reports() {
         {tab === "builder" && <BuilderTab from={from} to={to} preset={preset} />}
         {tab === "till" && <TillTab />}
         {tab === "analytics" && <AnalyticsTab />}
+        {tab === "recall" && <RecallLookupTab />}
       </div>
     </div>
   );
@@ -887,6 +890,208 @@ function AnalyticsTab() {
           </div>
         )}
       </div>
+    </div>
+  );
+}
+
+function RecallLookupTab() {
+  const { t, i18n: i18nInst } = useTranslation();
+  const { state, dispatch } = usePos();
+  const [batch, setBatch] = useState("");
+  const [searched, setSearched] = useState("");
+
+  const doSearch = () => { setSearched(batch.trim()); };
+  const clearSearch = () => { setBatch(""); setSearched(""); };
+
+  const hits = useMemo(
+    () => searched ? patientsForBatchCode(state.transactions, searched) : [],
+    [state.transactions, searched],
+  );
+
+  const enriched = useMemo(
+    () => hits.map((h) => {
+      const c = state.customers.find((x) => x.id === h.customerId);
+      return { ...h, customer: c };
+    }),
+    [hits, state.customers],
+  );
+
+  const uniquePatients = useMemo(
+    () => [...new Set(enriched.filter((h) => h.customerId).map((h) => h.customerId!))],
+    [enriched],
+  );
+
+  const escapeHtml = (s: string) =>
+    s.replace(/[&<>"']/g, (c) =>
+      ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" } as Record<string, string>)[c]);
+
+  const printContactSheet = () => {
+    if (!enriched.length || !uniquePatients.length) return;
+    const printRoot = document.getElementById("print-root");
+    if (!printRoot) return;
+    const tableRows = uniquePatients.map((pid) => {
+      const c = enriched.find((h) => h.customerId === pid)!.customer!;
+      const lines = enriched.filter((h) => h.customerId === pid);
+      const total = lines.reduce((s, h) => s + h.qty, 0);
+      return `<tr><td>${escapeHtml(c.name)}</td><td>${escapeHtml(c.phone ?? "—")}</td><td>${escapeHtml(c.address ?? "—")}</td><td class="num">${total}</td></tr>`;
+    }).join("");
+    const html = `
+      <html><head><title>${escapeHtml(t("reports.recallPrintHint", { batch: searched }))}</title>
+      <style>
+        @page { margin: 1in; }
+        body { font-family: system-ui, sans-serif; font-size: 12pt; }
+        h1 { font-size: 14pt; margin-bottom: 4pt; }
+        h2 { font-size: 10pt; color: #666; margin-bottom: 12pt; }
+        table { border-collapse: collapse; width: 100%; }
+        th, td { border: 1px solid #ccc; padding: 4pt 6pt; text-align: left; }
+        th { background: #f0f0f0; font-size: 8pt; text-transform: uppercase; }
+        .num { text-align: right; }
+      </style></head>
+      <body>
+        <h1>${escapeHtml(t("reports.recallResults"))}</h1>
+        <h2>${escapeHtml(t("reports.recallPrintHint", { batch: searched }))} — ${escapeHtml(new Date().toLocaleDateString(i18nInst.language))}</h2>
+        <table>
+          <thead><tr><th>${escapeHtml(t("reports.recallName"))}</th><th>${escapeHtml(t("reports.recallPhone"))}</th><th>${escapeHtml(t("reports.recallAddress"))}</th><th class="num">${escapeHtml(t("reports.recallQty"))}</th></tr></thead>
+          <tbody>${tableRows}</tbody>
+        </table>
+      </body></html>`;
+    printRoot.innerHTML = html;
+    printRoot.style.display = "block";
+    window.print();
+    printRoot.innerHTML = "";
+    printRoot.style.display = "none";
+  };
+
+  const ExportCsv = () => {
+    const head = [t("reports.recallProduct"), t("reports.recallDate"), t("reports.recallName"),
+      t("reports.recallPhone"), t("reports.recallAddress"), t("reports.recallQty"), "Receipt"];
+    const rows = enriched.map((h) => [
+      h.customer ? h.customer.name : "walk-in",
+      h.at,
+      h.customer ? h.customer.name : "",
+      h.customer ? (h.customer.phone ?? "") : "",
+      h.customer ? (h.customer.address ?? "") : "",
+      h.qty,
+      h.txId,
+    ]);
+    const blob = new Blob([[head.join(","), ...rows.map((r) => r.map((v) => `"${v}"`).join(","))].join("\n")], { type: "text/csv" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url; a.download = `recall-${searched}.csv`;
+    a.click(); URL.revokeObjectURL(url);
+    dispatch({ type: "TOAST", kind: "success", msg: `Exported ${rows.length} rows to CSV` });
+  };
+
+  const ExportXlsx = () => {
+    const rows = enriched.map((h) => ({
+      [t("reports.recallProduct")]: h.productName,
+      [t("reports.recallDate")]: new Date(h.at).toLocaleString(),
+      [t("reports.recallName")]: h.customer?.name ?? "walk-in",
+      [t("reports.recallPhone")]: h.customer?.phone ?? "",
+      [t("reports.recallAddress")]: h.customer?.address ?? "",
+      [t("reports.recallQty")]: h.qty,
+      receipt: h.txId,
+    }));
+    const buf = buildXlsx(rows, `recall-${searched}.xlsx`);
+    const blob = new Blob([buf], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url; a.download = `recall-${searched}.xlsx`;
+    a.click(); URL.revokeObjectURL(url);
+    dispatch({ type: "TOAST", kind: "success", msg: `Exported ${rows.length} rows to XLSX` });
+  };
+
+  return (
+    <div className="space-y-4">
+      {/* input card */}
+      <div className="rounded-xl border border-mist bg-card shadow-lift p-4 anim-fade-up">
+        <div className="flex items-center gap-2 mb-3">
+          <IAlert size={16} className="text-brick-700" />
+          <h2 className="font-display font-bold text-ink">{t("reports.recallLookup")}</h2>
+        </div>
+        <p className="text-xs text-inksoft mb-3">{t("reports.recallScan")}</p>
+        <div className="flex gap-2 max-w-md">
+          <input value={batch} onChange={(e) => setBatch(e.target.value.toUpperCase())}
+            placeholder={t("reports.recallBatch")}
+            className="flex-1 px-3 py-2 rounded-lg border border-mist bg-paper text-sm font-mono focus:border-pine-500 focus:outline-none"
+            onKeyDown={(e) => { if (e.key === "Enter") doSearch(); }}
+            autoFocus />
+          <button onClick={doSearch} disabled={!batch.trim()}
+            className="px-4 py-2 rounded-lg bg-pine-700 text-pine-50 text-xs font-bold hover:bg-pine-600 disabled:opacity-40 transition active:scale-95">
+            {t("reports.recallSearch")}
+          </button>
+          {searched && (
+            <button onClick={clearSearch}
+              className="px-2 py-1.5 rounded-lg border border-mist bg-mist/40 text-xs text-inksoft hover:bg-mist transition">
+              <IX size={12} />
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* results */}
+      {searched && (
+        <div className="rounded-xl border border-mist bg-card shadow-lift overflow-hidden anim-fade-up">
+          <div className="px-4 py-3 border-b border-mist flex items-center justify-between">
+            <div>
+              <h3 className="font-display font-bold text-ink">{t("reports.recallResults")}</h3>
+              {enriched.length > 0
+                ? <p className="text-xs text-inksoft mt-0.5">{t("reports.recallFound", { count: enriched.length, qty: enriched.reduce((s, h) => s + h.qty, 0), batch: searched })}</p>
+                : <p className="text-xs text-inksoft mt-0.5">{t("reports.recallNoMatch")}</p>}
+            </div>
+            {uniquePatients.length > 0 && (
+              <div className="flex gap-1.5">
+                <button onClick={printContactSheet}
+                  className="flex items-center gap-1 px-3 py-1.5 rounded-lg border border-mist bg-card text-xs font-semibold text-ink hover:border-pine-400 hover:bg-pine-50 transition">
+                  <ICheck size={13} /> {t("reports.recallPrintContact")}
+                </button>
+                <button onClick={ExportCsv}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-mist bg-card text-xs font-semibold text-ink hover:border-pine-400 hover:bg-pine-50 transition">
+                  <IDownload size={13} /> CSV
+                </button>
+                <button onClick={ExportXlsx}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-mist bg-card text-xs font-semibold text-ink hover:border-pine-400 hover:bg-pine-50 transition">
+                  <IDownload size={13} /> XLSX
+                </button>
+              </div>
+            )}
+          </div>
+          {enriched.length > 0 ? (
+            <div className="overflow-auto scroll-slim max-h-[500px]">
+              <table className="w-full text-sm border-collapse min-w-[800px]">
+                <thead className="sticky top-0 z-10">
+                  <tr className="bg-pine-900 text-pine-100 text-start text-[10px] uppercase tracking-[0.14em]">
+                    <th className="px-4 py-2.5 font-bold">{t("reports.recallProduct")}</th>
+                    <th className="px-3 py-2.5 font-bold">{t("reports.recallDate")}</th>
+                    <th className="px-3 py-2.5 font-bold">{t("reports.recallName")}</th>
+                    <th className="px-3 py-2.5 font-bold">{t("reports.recallPhone")}</th>
+                    <th className="px-3 py-2.5 font-bold">{t("reports.recallAddress")}</th>
+                    <th className="px-3 py-2.5 font-bold text-center">{t("reports.recallQty")}</th>
+                    <th className="px-3 py-2.5 font-bold text-center">Receipt</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {enriched.map((h, i) => (
+                    <tr key={`${h.txId}-${h.productId}`} className={cx("border-t border-mist/70", i % 2 === 1 && "bg-paper/50")}>
+                      <td className="px-4 py-2 font-semibold text-ink">{h.productName}</td>
+                      <td className="px-3 py-2 num text-inksoft">{new Date(h.at).toLocaleDateString()} {clockTime(h.at)}</td>
+                      <td className="px-3 py-2">{h.customer ? h.customer.name : <span className="text-inksoft italic">walk-in</span>}</td>
+                      <td className="px-3 py-2 num text-inksoft">{h.customer?.phone ?? "—"}</td>
+                      <td className="px-3 py-2 text-inksoft">{h.customer?.address?.slice(0, 50) ?? "—"}</td>
+                      <td className="px-3 py-2 text-center num font-bold text-pine-800">×{h.qty}</td>
+                      <td className="px-3 py-2 num text-[10px] text-inksoft">{h.txId.slice(0, 8)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <div className="px-4 py-6 text-center">
+              <Empty icon={<IAlert size={20} />} title={t("reports.recallNoMatch")} hint={t("reports.recallEmptyHint")} />
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }

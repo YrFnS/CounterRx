@@ -217,6 +217,26 @@ export function patientsForLot(
 }
 
 /**
+ * Recall lookup (W2.2): enter any lot/batch code — no product selection — and find every
+ * patient who received units from that batch, across all products.
+ */
+export function patientsForBatchCode(
+  transactions: Transaction[],
+  batch: string,
+): { txId: string; at: number; customerId?: string; qty: number; productId: string; productName: string }[] {
+  const out: { txId: string; at: number; customerId?: string; qty: number; productId: string; productName: string }[] = [];
+  for (const tx of transactions) {
+    if (tx.refundOf) continue;
+    for (const l of tx.lines) {
+      if (!l.alloc) continue;
+      const hit = l.alloc.find((a) => a.batch === batch);
+      if (hit) out.push({ txId: tx.id, at: tx.at, customerId: tx.customerId, qty: hit.qty, productId: l.productId, productName: l.name });
+    }
+  }
+  return out.sort((a, b) => b.at - a.at);
+}
+
+/**
  * Consume `need` units from lots in FEFO order.
  * Returns the remaining lots plus an allocation trail for the receipt.
  */
