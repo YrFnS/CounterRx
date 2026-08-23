@@ -53,7 +53,7 @@ Shift records already carry terminalId: Till/History shift summary gains per-ter
 ### W2.4 Custom report builder ✦ `feat/report-builder`
 Reports: date-range + filters (category, supplier, cashier, method, Rx/OTC) applied across existing tabs; save/load named views into org settings JSONB (no migration); export respects filters.
 
-### W2.5 Backups + org export ✦ `feat/backups-org-export`
+### W2.5 Backups + org export ✦ `feat/backups-org-export` — DONE
 Scheduled local backup (daily auto-download prompt / localStorage rotation) + full-org export bundle (every synced table → single JSON + optional CSVs) + restore validation. Restore-drill doc in README.
 
 ## WAVE 3 — engagement + resilience

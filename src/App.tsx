@@ -3,7 +3,7 @@ import type { ReactNode, ChangeEvent } from "react";
 import { useTranslation } from "react-i18next";
 import i18n from "./i18n";
 import { PosProvider, usePos } from "./store";
-import { signInStaffByEmail } from "./lib/sync";
+import { signInStaffByEmail, validateOrgExport } from "./lib/sync";
 import type { View } from "./store";
 import { daysUntil, nearestExpiry, stockOf, ROLE_LABEL, VIEW_ROLES } from "./data";
 import type { Product, Transaction, Prescription } from "./data";
@@ -190,6 +190,10 @@ function Shell() {
     reader.onload = () => {
       try {
         const d = JSON.parse(String(reader.result)) as { products?: unknown; transactions?: unknown; prescriptions?: unknown };
+        if (validateOrgExport(d)) {
+          dispatch({ type: "RESTORE_EXPORT", bundle: d });
+          return;
+        }
         if (!Array.isArray(d.products) || !Array.isArray(d.transactions) || !Array.isArray(d.prescriptions)) throw new Error("invalid backup");
         dispatch({
           type: "RESTORE",

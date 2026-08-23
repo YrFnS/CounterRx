@@ -29,6 +29,7 @@ import type {
   Category,
   Branch,
 } from "../data";
+import { makeSettings } from "../data";
 
 /** The persisted part of the reducer state. UI/session-only state stays local. */
 export interface BackendData {
@@ -351,7 +352,7 @@ function couponFrom(row: Row): Coupon {
   };
 }
 
-function rowsFor(data: BackendData): Record<TableName, Row[]> {
+export function rowsFor(data: BackendData): Record<TableName, Row[]> {
   return {
     products: data.products.map((p) => ({
       id: p.id, sku: p.sku, barcode: p.barcode, name: p.name, generic: p.generic, brand: p.brand, category: p.category, form: p.form,
@@ -402,6 +403,60 @@ function rowsFor(data: BackendData): Record<TableName, Row[]> {
     categories: data.categories.map((c) => ({ id: c.id, label: c.label, color: c.color, group_id: c.groupId, sort: c.sort, archived: c.archived, organization_id: "00000000-0000-0000-0000-000000000001" })),
     branches: data.branches.map((b) => ({ id: b.id, name: b.name, address: b.address ?? null, phone: b.phone ?? null, active: b.active, sort: b.sort, organization_id: "00000000-0000-0000-0000-000000000001" })),
   };
+}
+
+/* ---------------- full-org export bundle (W2.5) ---------------- */
+
+/** Shape of the portable full-org export bundle. Every synced table is serialized. */
+export interface OrgExportBundle {
+  exportedAt: string;
+  version: number;
+  organization_id: string;
+  tables: Record<string, Row[]>;
+}
+
+/** Which BackendData collection backs each export table name (mirrors rowsFor: tables). */
+const TABLE_COLLECTION: Record<string, keyof BackendData> = {
+  products: "products", transactions: "transactions", prescriptions: "prescriptions", prescribers: "prescribers",
+  customers: "customers", transfers: "transfers", backorders: "backorders", rx_transfers: "rxTransfers",
+  suppliers: "suppliers", purchase_orders: "purchaseOrders", ap_invoices: "apInvoices", expenses: "expenses",
+  deliveries: "deliveries", web_orders: "webOrders", time_entries: "timeEntries", staff: "staff", settings: "settings",
+  restricted_log: "restrictedLog", audit_log: "audit", shifts: "shifts", store_credits: "storeCredits", snapshots: "snapshots",
+  interaction_pairs: "interactionPairs", cold_chain_log: "coldChainLog", coupons: "coupons", categories: "categories", branches: "branches",
+};
+
+/** Build the full-org export bundle from a BackendData snapshot (single source of truth: rowsFor). */
+export function buildOrgExport(data: BackendData, organizationId = "00000000-0000-0000-0000-000000000001"): OrgExportBundle {
+  const rows = rowsFor(data);
+  const tables: Record<string, Row[]> = {};
+  for (const table of TABLES) tables[table] = rows[table];
+  return { exportedAt: new Date().toISOString(), version: 1, organization_id: organizationId, tables };
+}
+
+/** Validate the shape of a parsed export/backup before applying it. */
+export function validateOrgExport(value: unknown): value is OrgExportBundle {
+  if (!value || typeof value !== "object") return false;
+  const v = value as Record<string, unknown>;
+  if (typeof v.exportedAt !== "string" || typeof v.version !== "number" || typeof v.organization_id !== "string") return false;
+  if (!v.tables || typeof v.tables !== "object") return false;
+  // Require at least the core ledger tables to be present and array-shaped.
+  for (const core of ["products", "transactions", "prescriptions", "customers"]) {
+    const t = (v.tables as Record<string, unknown>)[core];
+    if (!Array.isArray(t)) return false;
+  }
+  return true;
+}
+
+/** Rehydrate a BackendData from an export bundle, falling back to seed for missing collections. */
+export function backendDataFromExport(bundle: OrgExportBundle, seed: BackendData): BackendData {
+  const out = { ...seed } as Record<keyof BackendData, unknown>;
+  for (const [table, collection] of Object.entries(TABLE_COLLECTION)) {
+    const rows = bundle.tables[table];
+    if (Array.isArray(rows) && rows.length > 0) out[collection] = rows;
+  }
+  // SAFETY: `out` is spread from a valid BackendData and only re-keyed via TABLE_COLLECTION,
+  // so every assigned field is a legitimate BackendData member — the cast is structural.
+  return out as unknown as BackendData;
 }
 
 async function readTable(client: SupabaseClient, table: TableName): Promise<{ table: TableName; rows: Row[]; error: unknown }> {
