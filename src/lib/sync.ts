@@ -28,6 +28,7 @@ import type {
   Coupon,
   Category,
   Branch,
+  Vaccination,
 } from "../data";
 import { makeSettings } from "../data";
 
@@ -60,6 +61,7 @@ export interface BackendData {
   coupons: Coupon[];
   categories: Category[];
   branches: Branch[];
+  vaccinations: Vaccination[];
 }
 
 type Row = Record<string, unknown>;
@@ -67,7 +69,7 @@ const TABLES = [
   "products", "transactions", "prescriptions", "prescribers", "customers", "transfers",
   "backorders", "rx_transfers", "suppliers", "purchase_orders", "ap_invoices", "expenses",
   "deliveries", "web_orders", "time_entries", "staff", "settings", "restricted_log",
-  "audit_log", "shifts", "store_credits", "snapshots", "interaction_pairs", "cold_chain_log", "coupons", "categories", "branches"
+  "audit_log", "shifts", "store_credits", "snapshots", "interaction_pairs", "cold_chain_log", "coupons", "categories", "branches", "vaccinations"
 ] as const;
 
 type TableName = (typeof TABLES)[number];
@@ -332,6 +334,16 @@ function categoryFrom(row: Row): Category {
   };
 }
 
+function vaccinationFrom(row: Row): Vaccination {
+  return {
+    id: text(row, "id"), patientId: text(row, "patient_id"), productId: text(row, "product_id"),
+    lot: optionalText(row, "lot"), doseNumber: numberValue(row, "dose_number", 1),
+    site: optionalText(row, "site"), administrator: text(row, "administrator"),
+    administeredAt: rowEpoch(row, "administered_at"), nextDue: optionalNumber(row, "next_due"),
+    notes: optionalText(row, "notes"), createdAt: rowEpoch(row, "created_at"),
+  };
+}
+
 function branchFrom(row: Row): Branch {
   return {
     id: text(row, "id"),
@@ -407,6 +419,7 @@ export function rowsFor(data: BackendData): Record<TableName, Row[]> {
     coupons: data.coupons.map((c) => ({ id: c.id, code: c.code, type: c.type, value: c.value, expires_at: nullable(c.expiresAt), customer_id: nullable(c.customerId), active: c.active, created_at: timestamp(c.createdAt), updated_at: timestamp(c.updatedAt) })),
     categories: data.categories.map((c) => ({ id: c.id, label: c.label, color: c.color, group_id: c.groupId, sort: c.sort, archived: c.archived, parent_id: nullable(c.parentId), organization_id: "00000000-0000-0000-0000-000000000001" })),
     branches: data.branches.map((b) => ({ id: b.id, name: b.name, address: b.address ?? null, phone: b.phone ?? null, active: b.active, sort: b.sort, organization_id: "00000000-0000-0000-0000-000000000001" })),
+    vaccinations: data.vaccinations.map((v) => ({ id: v.id, patient_id: v.patientId, product_id: v.productId, lot: nullable(v.lot), dose_number: v.doseNumber, site: nullable(v.site), administrator: v.administrator, administered_at: timestamp(v.administeredAt), next_due: timestamp(v.nextDue), notes: nullable(v.notes), created_at: timestamp(v.createdAt) })),
   };
 }
 
@@ -428,6 +441,7 @@ const TABLE_COLLECTION: Record<string, keyof BackendData> = {
   deliveries: "deliveries", web_orders: "webOrders", time_entries: "timeEntries", staff: "staff", settings: "settings",
   restricted_log: "restrictedLog", audit_log: "audit", shifts: "shifts", store_credits: "storeCredits", snapshots: "snapshots",
   interaction_pairs: "interactionPairs", cold_chain_log: "coldChainLog", coupons: "coupons", categories: "categories", branches: "branches",
+  vaccinations: "vaccinations",
 };
 
 /** Build the full-org export bundle from a BackendData snapshot (single source of truth: rowsFor). */
@@ -508,6 +522,7 @@ export async function loadBackendData(seed: BackendData): Promise<LoadResult> {
         coupons: byTable.coupons.map(couponFrom),
         categories: byTable.categories.map(categoryFrom),
         branches: byTable.branches.map(branchFrom),
+        vaccinations: byTable.vaccinations.map(vaccinationFrom),
       },
     };
   } catch (error) {

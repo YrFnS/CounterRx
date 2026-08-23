@@ -237,7 +237,30 @@
     "loyaltyInPlay": "نقاط الولاء قيد الاستخدام",
     "search": "الاسم أو الهاتف…",
     "noMatch": "لا يوجد عملاء مطابقون",
-    "noMatchHint": "جرّب اسماً آخر أو رقم هاتف."
+    "noMatchHint": "جرّب اسماً آخر أو رقم هاتف.",
+    "profileTab": "الملف الشخصي",
+    "vaxTab": "التطعيمات",
+    "vaxHistory": "سجل التطعيمات",
+    "vaxNone": "لا توجد تطعيمات مسجلة بعد.",
+    "vaxAdd": "إضافة سجل",
+    "vaxAddTitle": "تطعيم جديد",
+    "vaxEditTitle": "تعديل التطعيم",
+    "vaxSaveNew": "حفظ السجل",
+    "vaxSaveEdit": "حفظ التغييرات",
+    "vaxVaccine": "اللقاح",
+    "vaxLot": "الدفعة",
+    "vaxDoseLabel": "الجرعة رقم",
+    "vaxDose": "جرعة {{n}}",
+    "vaxSite": "الموقع",
+    "vaxDate": "تاريخ الإعطاء",
+    "vaxNextDue": "الاستحقاق القادم",
+    "vaxNextDueOptional": "الاستحقاق القادم (اختياري)",
+    "vaxAdministrator": "أعطاه",
+    "vaxUnknownStaff": "غير معروف",
+    "vaxPrintCard": "طباعة بطاقة CDC",
+    "vaxCardTitle": "سجل التطعيمات",
+    "vaxCardIssued": "صدر في",
+    "vaxCardFooter": "هذا السجل ملخص للقاحات التي تم إعطاؤها. احتفظ به في ملفك الطبي الشخصي."
   },
   "inventory": {
     "title": "المخزون",
@@ -397,7 +420,14 @@
     "savedViews": "العروض المحفوظة",
     "viewSaved": "تم حفظ العرض",
     "builderHint": "تجميع الأبعاد حسب المبيعات المفلترة — شريط التصفية العام يحدد المبيعات المضمنة.",
-    "deleteView": "حذف العرض"
+    "deleteView": "حذف العرض",
+    "vaxDueTitle": "التطعيمات المستحقة",
+    "vaxDueHint": "الجرعات التي يقع استحقاقها خلال الثلاثين يوماً القادمة.",
+    "vaxDueCount": "جرعة مستحقة",
+    "vaxDueEmpty": "لا شيء مستحق خلال الثلاثين يوماً القادمة",
+    "vaxDueEmptyHint": "ستظهر هنا السجلات التي يقع استحقاقها داخل نافذة الثلاثين يوماً.",
+    "vaxNotify": "إشعار",
+    "vaxInDays": "خلال {{n}} يوم"
   },
   "settings": {
     "title": "الإعدادات",
@@ -760,7 +790,10 @@
     "dupeBackorder": "طلب مؤجل مكرر",
     "couponCreated": "تم إنشاء القسيمة",
     "couponUpdated": "تم تحديث القسيمة",
-    "couponDeleted": "تم حذف القسيمة"
+    "couponDeleted": "تم حذف القسيمة",
+    "vaccinationRecorded": "تم تسجيل التطعيم — {{patient}} · {{vaccine}}",
+    "vaccinationUpdated": "تم تحديث سجل التطعيم",
+    "vaxDueNotified": "تم جدولة تذكير الاستحقاق لـ {{patient}} ({{count}} جرعة)"
   },
   "history": {
     "customerReturn": "إرجاع عميل",

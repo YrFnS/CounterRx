@@ -37,3 +37,29 @@
   EVIDENCE: typecheck clean, 54 tests pass (21 new clinical), build OK.
 
 Deferred (documented in `src/views/__mount_clinical.md`): Register basket DDI mounting, restricted-OTC limit enforcement at the till, C-II logging at COMPLETE_SALE, scan-upload reducer hook — Phase A owns the till flow; wired when Register integration lands.
+
+## W3.5 — Vaccination records (`feat/vaccinations`)
+
+- [x] Migration 0019 `vaccinations` (patient, product, lot, dose#, site, administrator, date, next_due).
+  CHECK: `supabase/migrations/20260823000019_vaccinations.sql`
+  EXPECT: table with org default `current_org_id()`, FKs to customers/products; RLS mirroring customers (org-scoped read, clinical-staff write); realtime publication membership.
+  EVIDENCE: applied to live DB 2026-08-23 — information_schema confirms all 12 columns, `pg_policies` shows `vaccinations_read`/`vaccinations_write`, `pg_publication_tables` count = 1.
+- [x] Sync layer: TABLES, BackendData, mapper, state.vaccinations, persist.
+  CHECK: `grep -n 'vaccinations' src/lib/sync.ts src/store.tsx | head`
+  EXPECT: `vaccinationFrom` row mapper + `rowsFor.vaccinations` serializer + BackendData member + HYDRATE/persist wiring + localStorage persistence.
+  EVIDENCE: sync.ts exports include vaccinations in TABLES/TABLE_COLLECTION; store seeds via `makeVaccinations`, persists on change (dep array includes `state.vaccinations`).
+- [x] Customers profile tab "Vaccinations" — list per patient + add record modal (product picker, lot, dose#, site, administrator = current user, date, next due optional).
+  CHECK: `grep -n 'VaccinationTab\\|AddVaxModal' src/views/Customers.tsx`
+  EXPECT: tabbed profile modal (Profile / Vaccinations), add/edit modal, administrator prefilled from session user, clinical-role-gated editing.
+  EVIDENCE: components present; ADD_VACCINATION / UPDATE_VACCINATION reducer cases with audit + toast.
+- [x] Due-list report: vaccinations where next_due within next 30 days, grouped by patient, Notify action (console stub + toast, standalone of W3.1).
+  CHECK: `grep -n 'VaxDueTab' src/views/Reports.tsx` + `vaccinationsDue()` in src/data.ts
+  EXPECT: Reports → "Vaccinations due" tab; grouped cards per patient with days-left badges; TODO(W3.1) hook documented at the notify stub.
+  EVIDENCE: window math unit-tested in `vaccinations.test.ts`; console.info + toast notify stub carries `TODO(W3.1)` marker.
+- [x] CDC-style card print (patient name, DOB, vaccine, lot, dates, administrator) via window.print() hidden region.
+  CHECK: `grep -n 'printVaxCard\\|buildVaxCardData' src/views/Customers.tsx src/data.ts`
+  EXPECT: pure `buildVaxCardData()` payload builder (oldest→newest rows) feeding a hidden #print-root region + window.print(), same path as receipts/recall report.
+  EVIDENCE: card data shape covered by tests; XSS-safe escaping before innerHTML write.
+- [x] i18n parity + full gate green.
+  CHECK: `npm run typecheck && npm run test && npm run build`
+  EVIDENCE: typecheck clean; 189 tests pass (12 new vaccination); build OK; i18n-key-parity test green for all new customers.vax*/reports.vax*/toast keys in en+ar.

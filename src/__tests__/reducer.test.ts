@@ -68,6 +68,7 @@ describe("reducer - HYDRATE_BACKEND", () => {
       coupons: [],
       categories: [],
       branches: [],
+      vaccinations: [],
     };
 
     const action: Action = { type: "HYDRATE_BACKEND", data: backendData };
@@ -116,6 +117,7 @@ describe("reducer - HYDRATE_BACKEND", () => {
       coupons: [],
       categories: [],
       branches: [],
+      vaccinations: [],
     };
 
     const action: Action = { type: "HYDRATE_BACKEND", data: backendData };
@@ -159,6 +161,7 @@ describe("reducer - HYDRATE_BACKEND", () => {
       coupons: [],
       categories: [],
       branches: [],
+      vaccinations: [],
     };
 
     const action: Action = { type: "HYDRATE_BACKEND", data: backendData };

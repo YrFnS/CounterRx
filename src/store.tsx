@@ -3,7 +3,7 @@ import type { ReactNode, Dispatch } from "react";
 import {
   makeProducts, makePrescriptions, makeTransactions, makeCustomers, makeTransfers, makePrescribers,
   makeSuppliers, makePurchaseOrders, makeApInvoices, makeExpenses, invoiceBalance,
-  makeDeliveries, makeWebOrders, makeTimeEntries, makeColdChainLogs,
+  makeDeliveries, makeWebOrders, makeTimeEntries, makeColdChainLogs, makeVaccinations,
   stockOf, nearestExpiry, allocFEFO, fefoBatches, newBatchCode, daysUntil,
   genericSubstituteFor, substitutionSaving,
   bulkPct, REDEEM_CHUNK_PTS, REDEEM_CHUNK_VALUE, can, tenderTypeOf, applyStoreCredit, pruneExpiredHolds,
@@ -20,6 +20,7 @@ import type {
   Delivery, DeliveryStatus, WebOrder, WebOrderStatus, TimeEntry,
   Shift, XReport, ZReport, CashMovement, ShiftTransaction, TxType, TenderType, StoreCredit,
   InteractionPair, ColdChainLog, Coupon, Branch,
+  Vaccination,
 } from "./data";
 import { makeStaff, makeSettings, makeBackOrders, makeRxTransfers, SNAPS_KEY, hashPin, ROLE_LABEL } from "./data";
 import type { BackendData, LoadResult } from "./lib/sync";
@@ -63,6 +64,7 @@ interface State {
   coupons: Coupon[];
   categories: Category[];
   branches: Branch[];
+  vaccinations: Vaccination[];
   currentShift: Shift | null;
   cart: { productId: string; qty: number; note?: string; priceOverride?: number; daw?: number; substitutedFrom?: string; uom?: string; lineDiscount?: { mode: "amt" | "pct"; value: number }; rxId?: string }[];
   held: HeldSale[];
@@ -95,6 +97,8 @@ type Action =
   | { type: "RTV"; productId: string; batch: string; qty: number; reason: string }
   | { type: "WRITE_OFF"; productId: string; batch: string; reason: string; approvedBy?: string }
   | { type: "COLD_CHAIN_LOG"; productId: string; tempC: number; note?: string }
+  | { type: "ADD_VACCINATION"; vax: Omit<Vaccination, "id" | "createdAt"> }
+  | { type: "UPDATE_VACCINATION"; id: string; patch: Partial<Pick<Vaccination, "lot" | "doseNumber" | "site" | "administeredAt" | "nextDue" | "notes">> }
   | { type: "TOGGLE_RESTRICTED"; productId: string; restricted: { limitPerSale: number } | undefined }
   | { type: "UPDATE_SETTINGS"; patch: Partial<Omit<OrgSettings, "loyalty">> & { loyalty?: Partial<OrgSettings["loyalty"]> } }
   | { type: "SNAPSHOT_SAVE"; label: string; auto: boolean }
@@ -198,7 +202,7 @@ let toastSeq = 1;
 let heldSeq = 1;
 let auditSeq = 100;
 
-export const seed = (): Pick<State, "products" | "transactions" | "prescriptions" | "prescribers" | "customers" | "audit" | "transfers" | "backorders" | "rxTransfers" | "suppliers" | "purchaseOrders" | "apInvoices" | "expenses" | "deliveries" | "webOrders" | "timeEntries" | "staff" | "settings" | "shifts" | "storeCredits" | "interactionPairs" | "coldChainLog" | "coupons" | "categories" | "branches"> => {
+export const seed = (): Pick<State, "products" | "transactions" | "prescriptions" | "prescribers" | "customers" | "audit" | "transfers" | "backorders" | "rxTransfers" | "suppliers" | "purchaseOrders" | "apInvoices" | "expenses" | "deliveries" | "webOrders" | "timeEntries" | "staff" | "settings" | "shifts" | "storeCredits" | "interactionPairs" | "coldChainLog" | "coupons" | "categories" | "branches" | "vaccinations"> => {
   const now = Date.now();
   const products = makeProducts(now);
   const customers = makeCustomers(now);
@@ -220,6 +224,7 @@ export const seed = (): Pick<State, "products" | "transactions" | "prescriptions
     webOrders: makeWebOrders(now),
     timeEntries: makeTimeEntries(now),
     coldChainLog: makeColdChainLogs(now),
+    vaccinations: makeVaccinations(now),
     shifts: [],
     interactionPairs: [],
     coupons: [],
@@ -270,6 +275,7 @@ function load(): State {
           storeCredits: saved.storeCredits ?? [],
           interactionPairs: saved.interactionPairs ?? [],
           coldChainLog: saved.coldChainLog ?? [],
+          vaccinations: saved.vaccinations ?? [],
           coupons: saved.coupons ?? [],
           categories: saved.categories ?? CATEGORIES_FALLBACK,
           branches: saved.branches ?? BRANCHES_FALLBACK,
@@ -1847,6 +1853,35 @@ export function reducer(state: State, a: Action): State {
         "success", `${c.name}'s profile saved`);
     }
 
+    /* W3.5 — record an administered vaccine against a patient's immunization history */
+    case "ADD_VACCINATION": {
+      const v = a.vax;
+      if (!state.customers.some((x) => x.id === v.patientId)) return state;
+      if (!state.products.some((p) => p.id === v.productId)) return state;
+      if (!Number.isFinite(v.administeredAt) || !Number.isFinite(v.doseNumber)) return state;
+      const entry: Vaccination = {
+        id: `VAX-${Date.now().toString(36)}${Math.floor(Math.random() * 90 + 10)}`,
+        createdAt: Date.now(), ...v,
+      };
+      const p = state.products.find((x) => x.id === v.productId)!;
+      const patient = state.customers.find((x) => x.id === v.patientId)!;
+      const next = withAudit({ ...state, vaccinations: [entry, ...state.vaccinations] }, "rx",
+        `Vaccination recorded — ${patient.name} · ${p.name}${v.lot ? ` · lot ${v.lot}` : ""} · dose ${v.doseNumber} · by ${v.administrator}`);
+      return withToast(next, "success", i18n.t("toast.vaccinationRecorded", { patient: patient.name, vaccine: p.name }));
+    }
+
+    /* W3.5 — amend a vaccination row (lot / site / dates / notes) */
+    case "UPDATE_VACCINATION": {
+      const existing = state.vaccinations.find((x) => x.id === a.id);
+      if (!existing) return state;
+      const vaccinations = state.vaccinations.map((x) => (x.id === a.id ? { ...x, ...a.patch } : x));
+      const p = state.products.find((x) => x.id === existing.productId);
+      const patient = state.customers.find((x) => x.id === existing.patientId);
+      const next = withAudit({ ...state, vaccinations }, "rx",
+        `Vaccination updated — ${patient?.name ?? existing.patientId} · ${p?.name ?? existing.productId} · dose ${existing.doseNumber}`);
+      return withToast(next, "success", i18n.t("toast.vaccinationUpdated"));
+    }
+
     case "HYDRATE_BACKEND": {
       const hydratedUser = state.user
         ? a.data.staff.find((staff) => staff.id === state.user?.id && staff.active) ?? state.user
@@ -1883,6 +1918,7 @@ export function reducer(state: State, a: Action): State {
         coupons: a.data.coupons ?? [],
         categories: a.data.categories ?? CATEGORIES_FALLBACK,
         branches: a.data.branches ?? BRANCHES_FALLBACK,
+        vaccinations: a.data.vaccinations ?? [],
       } as State;
       /* W2.5 — each successful hydration rotates a local full-org backup snapshot */
       rotateBackup(hydrated);
@@ -2006,6 +2042,7 @@ export const backendDataFromState = (state: State): BackendData => ({
   coupons: state.coupons ?? [],
   categories: state.categories ?? [],
   branches: state.branches ?? [],
+  vaccinations: state.vaccinations ?? [],
 });
 
 export function PosProvider({ children }: { children: ReactNode }) {
@@ -2117,7 +2154,7 @@ export function PosProvider({ children }: { children: ReactNode }) {
     state.transfers, state.backorders, state.rxTransfers, state.suppliers, state.purchaseOrders,
     state.apInvoices, state.expenses, state.deliveries, state.webOrders, state.timeEntries,
     state.staff, state.settings, state.restrictedLog, state.audit, state.shifts, state.snapshotVersion, state.coldChainLog,
-    state.categories, state.coupons]);
+    state.categories, state.coupons, state.vaccinations]);
 
   /* track connectivity so the UI can show offline state (6.5); retry persist on reconnect (F11) */
   useEffect(() => {

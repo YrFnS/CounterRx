@@ -1,11 +1,12 @@
 import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
+import i18n from "../i18n";
 import type { ReactNode } from "react";
 import { usePos, money, relTime, clockTime } from "../store";
-import { ALLERGENS, can, outstandingBalance } from "../data";
-import type { Customer } from "../data";
+import { ALLERGENS, can, outstandingBalance, VACCINATION_SITES, buildVaxCardData } from "../data";
+import type { Customer, Vaccination, VaxCardData } from "../data";
 import { cx, Badge, Modal, Empty, CustomFieldsBlock } from "../ui";
-import { IUsers, ISearch, IPlus, IX, IChevD, IStar, IRegister, IHistory, IPill, ICheck, IAlert } from "../icons";
+import { IUsers, ISearch, IPlus, IX, IChevD, IStar, IRegister, IHistory, IPill, ICheck, IAlert, IPrint, IEdit } from "../icons";
 
 const day = 86_400_000;
 
@@ -296,8 +297,10 @@ function Kpi({ label, value, accent, star }: { label: string; value: string; acc
 const pIn = "w-full px-2.5 py-2 rounded-lg border border-mist bg-card text-xs focus:border-pine-500 focus:outline-none transition";
 
 function ProfileModal({ c, onClose }: { c: Customer; onClose: () => void }) {
-  const { state, dispatch, prescriber } = usePos();
+  const { t } = useTranslation();
+  const { state, dispatch } = usePos();
   const clinical = can(state.user?.role, "verify_rx"); /* pharmacist-scoped (§3 HIPAA) */
+  const [tab, setTab] = useState<"profile" | "vaccinations">("profile");
   const [f, setF] = useState({
     dob: c.dob ?? "", gender: c.gender ?? "", address: c.address ?? "",
     bloodType: c.bloodType ?? "", primaryPrescriberId: c.primaryPrescriberId ?? "",
@@ -335,6 +338,20 @@ function ProfileModal({ c, onClose }: { c: Customer; onClose: () => void }) {
         <button onClick={onClose} className="p-1.5 rounded-md hover:bg-mist/60 text-inksoft" aria-label="Close"><IX size={14} /></button>
       </div>
 
+      {/* W3.5 — profile / vaccinations tabs */}
+      <div className="px-5 pt-3 flex gap-1 border-b border-mist">
+        {(["profile", "vaccinations"] as const).map((id) => (
+          <button key={id} onClick={() => setTab(id)}
+            className={cx("px-3 py-2 -mb-px text-xs font-bold border-b-2 transition-colors",
+              tab === id ? "border-pine-700 text-pine-700" : "border-transparent text-inksoft hover:text-ink")}>
+            {id === "profile"
+              ? <span className="flex items-center gap-1.5"><IUsers size={12} />{t("customers.profileTab")}</span>
+              : <span className="flex items-center gap-1.5"><IPill size={12} />{t("customers.vaxTab")}</span>}
+          </button>
+        ))}
+      </div>
+
+      {tab === "profile" && (
       <div className="p-5 grid sm:grid-cols-2 gap-3">
         <label className="block">
           <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-inksoft">Date of birth</span>
@@ -404,6 +421,9 @@ function ProfileModal({ c, onClose }: { c: Customer; onClose: () => void }) {
           )}
         </div>
       </div>
+      )}
+
+      {tab === "vaccinations" && <VaccinationTab patient={c} />}
 
       <div className="px-5 py-3.5 border-t border-mist flex justify-end gap-2">
         <button onClick={onClose} className="px-4 py-2 rounded-lg border border-mist text-xs font-semibold text-inksoft hover:text-ink transition">Close</button>
@@ -427,4 +447,218 @@ function ProfileModal({ c, onClose }: { c: Customer; onClose: () => void }) {
       </div>
     </Modal>
   );
+}
+
+/* ---------------- W3.5 — vaccination records (profile tab) ---------------- */
+
+function VaccinationTab({ patient }: { patient: Customer }) {
+  const { t } = useTranslation();
+  const { state } = usePos();
+  const [adding, setAdding] = useState(false);
+  const [editing, setEditing] = useState<Vaccination | null>(null);
+  const records = state.vaccinations
+    .filter((v) => v.patientId === patient.id)
+    .sort((a, b) => b.administeredAt - a.administeredAt);
+  const productName = (id: string) => state.products.find((p) => p.id === id)?.name ?? id;
+  const canEdit = can(state.user?.role, "verify_rx");
+
+  return (
+    <div className="p-5 space-y-3">
+      <div className="flex items-center justify-between gap-2">
+        <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-inksoft">
+          {t("customers.vaxHistory")} · {records.length}
+        </p>
+        <div className="flex items-center gap-2">
+          <button onClick={() => {
+            const card = buildVaxCardData(patient.name, patient.dob, state.settings.orgName,
+              records, (id) => productName(id));
+            printVaxCard(card);
+          }}
+            disabled={records.length === 0}
+            className={cx("flex items-center gap-1.5 px-2.5 py-1.5 rounded-md border text-[11px] font-bold transition active:scale-95",
+              records.length ? "border-pine-300 bg-pine-50 text-pine-700 hover:bg-pine-100" : "border-mist bg-mist/40 text-inksoft cursor-not-allowed")}>
+            <IPrint size={11} /> {t("customers.vaxPrintCard")}
+          </button>
+          <button onClick={() => setAdding(true)}
+            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md bg-pine-700 text-pine-50 text-[11px] font-bold hover:bg-pine-600 transition active:scale-95 shadow-lift">
+            <IPlus size={11} /> {t("customers.vaxAdd")}
+          </button>
+        </div>
+      </div>
+
+      {records.length === 0 ? (
+        <p className="text-[11px] text-inksoft rounded-lg border border-dashed border-mist bg-paper/60 px-3 py-4 text-center">
+          {t("customers.vaxNone")}
+        </p>
+      ) : (
+        <div className="space-y-1.5">
+          {records.map((v) => (
+            <div key={v.id} className="rounded-lg border border-mist bg-card px-3 py-2 flex items-center gap-3 flex-wrap">
+              <div className="min-w-[160px] flex-1">
+                <p className="text-xs font-bold text-ink truncate">{productName(v.productId)}</p>
+                <p className="text-[10px] text-inksoft num">
+                  {new Date(v.administeredAt).toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" })}
+                  {v.lot && <> · {t("customers.vaxLot")} {v.lot}</>}
+                </p>
+              </div>
+              <Badge tone="pine">{t("customers.vaxDose", { n: v.doseNumber })}</Badge>
+              {v.site && <span className="text-[10px] text-inksoft">{v.site}</span>}
+              <span className="text-[10px] text-inksoft truncate max-w-[140px]">{v.administrator}</span>
+              {typeof v.nextDue === "number" && (
+                <span className={cx("px-1.5 py-0.5 rounded text-[9px] font-bold num",
+                  v.nextDue <= Date.now() + 30 * 86_400_000 ? "bg-honey-100 text-honey-700" : "bg-mist/60 text-inksoft")}>
+                  {t("customers.vaxNextDue")}: {new Date(v.nextDue).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
+                </span>
+              )}
+              {canEdit && (
+                <button onClick={() => setEditing(v)} aria-label={t("common.actions")}
+                  className="ms-auto p-1.5 rounded-md hover:bg-mist/60 text-inksoft hover:text-ink transition">
+                  <IEdit size={12} />
+                </button>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {adding && <AddVaxModal patient={patient} onClose={() => setAdding(false)} />}
+      {editing && <AddVaxModal patient={patient} existing={editing} onClose={() => setEditing(null)} />}
+    </div>
+  );
+}
+
+function AddVaxModal({ patient, existing, onClose }: { patient: Customer; existing?: Vaccination; onClose: () => void }) {
+  const { t } = useTranslation();
+  const { state, dispatch } = usePos();
+  const [productId, setProductId] = useState(existing?.productId ?? "");
+  const [lot, setLot] = useState(existing?.lot ?? "");
+  const [dose, setDose] = useState(String(existing?.doseNumber ?? 1));
+  const [site, setSite] = useState(existing?.site ?? "");
+  const [administeredAt, setAdministeredAt] = useState(
+    new Date(existing?.administeredAt ?? Date.now()).toISOString().slice(0, 10));
+  const [nextDue, setNextDue] = useState(existing?.nextDue ? new Date(existing.nextDue).toISOString().slice(0, 10) : "");
+  const [notes, setNotes] = useState(existing?.notes ?? "");
+
+  const ok = !!productId && Number.isFinite(Number(dose)) && Number(dose) >= 1;
+  const save = () => {
+    if (!ok) return;
+    if (existing) {
+      dispatch({
+        type: "UPDATE_VACCINATION", id: existing.id,
+        patch: {
+          lot: lot.trim() || undefined, doseNumber: Math.round(Number(dose)),
+          site: site || undefined,
+          administeredAt: administeredAt ? new Date(administeredAt + "T00:00:00").getTime() : undefined,
+          nextDue: nextDue ? new Date(nextDue + "T00:00:00").getTime() : undefined,
+          notes: notes.trim() || undefined,
+        },
+      });
+    } else {
+      dispatch({
+        type: "ADD_VACCINATION",
+        vax: {
+          patientId: patient.id, productId,
+          lot: lot.trim() || undefined, doseNumber: Math.round(Number(dose)),
+          site: site || undefined, administrator: state.user?.name ?? i18n.t("customers.vaxUnknownStaff"),
+          administeredAt: administeredAt ? new Date(administeredAt + "T00:00:00").getTime() : Date.now(),
+          nextDue: nextDue ? new Date(nextDue + "T00:00:00").getTime() : undefined,
+          notes: notes.trim() || undefined,
+        },
+      });
+    }
+    onClose();
+  };
+
+  return (
+    <Modal onClose={onClose} width={480} labelledBy="vax-title">
+      <div className="px-5 py-4 border-b border-mist flex items-start justify-between">
+        <div>
+          <h2 id="vax-title" className="font-display font-bold text-ink flex items-center gap-2">
+            <IPill size={17} className="text-pine-700" />
+            {existing ? t("customers.vaxEditTitle") : t("customers.vaxAddTitle")}
+          </h2>
+          <p className="text-xs text-inksoft mt-0.5">{patient.name} · {patient.id}</p>
+        </div>
+        <button onClick={onClose} className="p-1.5 rounded-md hover:bg-mist/60 text-inksoft" aria-label="Close"><IX size={14} /></button>
+      </div>
+      <div className="p-5 space-y-3">
+        <Field label={t("customers.vaxVaccine") + " *"}>
+          <select autoFocus value={productId} onChange={(e) => setProductId(e.target.value)} className={inputCls}>
+            <option value="">—</option>
+            {state.products.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+          </select>
+        </Field>
+        <div className="grid grid-cols-2 gap-3">
+          <Field label={t("customers.vaxLot")}><input value={lot} onChange={(e) => setLot(e.target.value)} placeholder="e.g. FLU-25K42" className={cx(inputCls, "num")} /></Field>
+          <Field label={t("customers.vaxDoseLabel") + " *"}><input type="number" min={1} value={dose} onChange={(e) => setDose(e.target.value)} className={cx(inputCls, "num")} /></Field>
+        </div>
+        <div className="grid grid-cols-2 gap-3">
+          <Field label={t("customers.vaxSite")}>
+            <select value={site} onChange={(e) => setSite(e.target.value)} className={inputCls}>
+              <option value="">—</option>
+              {VACCINATION_SITES.map((s) => <option key={s}>{s}</option>)}
+            </select>
+          </Field>
+          <Field label={t("customers.vaxDate") + " *"}>
+            <input type="date" value={administeredAt} onChange={(e) => setAdministeredAt(e.target.value)} className={cx(inputCls, "num")} />
+          </Field>
+        </div>
+        <div className="grid grid-cols-2 gap-3">
+          <Field label={t("customers.vaxNextDueOptional")}>
+            <input type="date" value={nextDue} onChange={(e) => setNextDue(e.target.value)} className={cx(inputCls, "num")} />
+          </Field>
+          <Field label={t("customers.vaxAdministrator")}>
+            <input value={state.user?.name ?? ""} readOnly disabled className={cx(inputCls, "num opacity-70")} />
+          </Field>
+        </div>
+        <Field label={t("customers.notes")}><input value={notes} onChange={(e) => setNotes(e.target.value)} className={inputCls} /></Field>
+        <button disabled={!ok} onClick={save}
+          className={cx("w-full py-2.5 rounded-lg font-display font-bold text-sm transition-all flex items-center justify-center gap-2",
+            ok ? "bg-pine-700 text-pine-50 hover:bg-pine-600 active:scale-[0.98] shadow-lift" : "bg-mist text-inksoft cursor-not-allowed")}>
+          <ICheck size={15} /> {existing ? t("customers.vaxSaveEdit") : t("customers.vaxSaveNew")}
+        </button>
+      </div>
+    </Modal>
+  );
+}
+
+/** CDC-style printable immunization card — hidden #print-root region + window.print()
+ *  (same print path as receipts and the recall report). */
+export function printVaxCard(card: VaxCardData): void {
+  const esc = (s: string) =>
+    s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+  const fmtDay = (ms: number) => new Date(ms).toLocaleDateString(i18n.language, { year: "numeric", month: "short", day: "numeric" });
+  const rows = card.rows.map((r) =>
+    `<tr><td>${esc(r.vaccine)}</td><td>${esc(r.lot ?? "—")}</td><td class="num">${r.doseNumber}</td>` +
+    `<td>${esc(r.site ?? "—")}</td><td>${fmtDay(r.administeredAt)}</td><td>${esc(r.administrator)}</td></tr>`);
+  const html = `<html><head><title>${esc(card.patientName)}</title><style>
+      @page { margin: 0.75in; }
+      body { font-family: system-ui, sans-serif; font-size: 12pt; color: #12251f; }
+      h1 { font-size: 16pt; margin: 0 0 2pt; }
+      h2 { font-size: 9pt; letter-spacing: 0.14em; text-transform: uppercase; color: #4a5f57; margin: 0 0 12pt; }
+      .meta { margin-bottom: 12pt; font-size: 10pt; }
+      table { border-collapse: collapse; width: 100%; }
+      th, td { border: 1px solid #b9c4be; padding: 5pt 7pt; text-align: left; }
+      th { background: #eef3f0; font-size: 8pt; text-transform: uppercase; letter-spacing: 0.08em; }
+      .num { text-align: right; }
+      footer { margin-top: 14pt; font-size: 8pt; color: #4a5f57; }
+    </style></head><body>
+      <h1>${i18n.t("customers.vaxCardTitle")}</h1>
+      <h2>${esc(card.orgName)}</h2>
+      <p class="meta"><strong>${esc(card.patientName)}</strong>${card.dob ? ` · ${i18n.t("customers.dob")}: ${esc(card.dob)}` : ""}
+        · ${i18n.t("customers.vaxCardIssued")}: ${fmtDay(card.generatedAt)}</p>
+      <table><thead><tr>
+        <th>${i18n.t("customers.vaxVaccine")}</th><th>${i18n.t("customers.vaxLot")}</th><th>${i18n.t("customers.vaxDoseLabel")}</th>
+        <th>${i18n.t("customers.vaxSite")}</th><th>${i18n.t("customers.vaxDate")}</th><th>${i18n.t("customers.vaxAdministrator")}</th>
+      </tr></thead><tbody>${rows.join("")}</tbody></table>
+      <footer>${i18n.t("customers.vaxCardFooter")}</footer>
+    </body></html>`;
+
+  const root = document.getElementById("print-root");
+  if (!root) return;
+  root.innerHTML = html;
+  root.style.display = "block";
+  window.print();
+  root.innerHTML = "";
+  root.style.display = "none";
 }
