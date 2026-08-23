@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { ReactNode } from "react";
 import { usePos, money, relTime, clockTime } from "../store";
-import { ALLERGENS, can } from "../data";
+import { ALLERGENS, can, outstandingBalance } from "../data";
 import type { Customer } from "../data";
 import { cx, Badge, Modal, Empty, CustomFieldsBlock } from "../ui";
 import { IUsers, ISearch, IPlus, IX, IChevD, IStar, IRegister, IHistory, IPill, ICheck, IAlert } from "../icons";
@@ -97,10 +97,14 @@ function CustomerRow({ c, visits, spend, last, txs, expanded, onToggle }: {
   txs: { id: string; at: number; total: number; lines: { name: string; qty: number }[]; refundOf?: string }[];
   expanded: boolean; onToggle: () => void;
 }) {
-  const { dispatch } = usePos();
+  const { t } = useTranslation();
+  const { dispatch, state } = usePos();
+  const { money } = usePos();
   const [profileOpen, setProfileOpen] = useState(false);
   const tier = c.points >= 300 ? "Gold" : c.points >= 100 ? "Silver" : "Bronze";
   const tierTone = c.points >= 300 ? "bg-honey-100 text-honey-700 border-honey-300/60" : c.points >= 100 ? "bg-mist/60 text-ink border-mist" : "bg-brick-100/60 text-brick-700 border-brick-200/60";
+  const balance = outstandingBalance(c.id, state.transactions);
+  const hasBalance = balance > 0;
   return (
     <>
       <tr onClick={onToggle}
@@ -115,6 +119,11 @@ function CustomerRow({ c, visits, spend, last, txs, expanded, onToggle }: {
               <p className="text-[10px] text-inksoft flex items-center gap-1">
                 <span className={cx("px-1.5 py-px rounded border text-[9px] font-bold", tierTone)}>{tier}</span>
                 {c.notes && <span className="truncate">· {c.notes}</span>}
+                {hasBalance && (
+                  <span className={cx("px-1.5 py-px rounded border text-[9px] font-bold", "bg-brick-100 text-brick-700 border-brick-300/60")}>
+                    {t("pos.payLaterBalance")}: {money(balance)}
+                  </span>
+                )}
               </p>
             </div>
           </div>

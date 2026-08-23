@@ -231,8 +231,8 @@ export interface TxLine {
 export const LINE_DISCOUNT_PIN_THRESHOLD = 0.1;   // 10% off a single line
 export const INVOICE_DISCOUNT_PCT_PIN_THRESHOLD = 20; // percent off the invoice
 export const INVOICE_DISCOUNT_AMT_PIN_THRESHOLD = 50; // currency amount off the invoice
-export type PayMethod = "cash" | "card" | "insurance" | "store_credit";
-export interface PaymentLeg { method: PayMethod; amount: number; ref?: string; }
+export type PayMethod = "cash" | "card" | "insurance" | "store_credit" | "pay_later";
+export interface PaymentLeg { method: PayMethod; amount: number; ref?: string; dueDate?: number; settledAt?: number; }
 export interface Transaction {
   id: string; at: number; lines: TxLine[];
   subtotal: number; discount: number; tax: number; total: number;
@@ -459,6 +459,20 @@ export interface Customer {
   primaryPrescriberId?: string;
   insurancePlan?: string;
   clinicalNotes?: string;   // pharmacist-only (§3 HIPAA role-scoped)
+}
+
+/** Outstanding AR balance for a customer — sum of unsettled pay_later legs across transactions */
+export function outstandingBalance(customerId: string, transactions: Transaction[]): number {
+  let balance = 0;
+  for (const tx of transactions) {
+    if (tx.customerId !== customerId || tx.refundOf) continue;
+    for (const leg of tx.payments ?? []) {
+      if (leg.method === "pay_later" && !leg.settledAt) {
+        balance += leg.amount;
+      }
+    }
+  }
+  return Math.round(balance * 100) / 100;
 }
 
 /** Coupon — configurable discount code (§9 Phase F) */
@@ -790,7 +804,7 @@ export interface StoreCredit {
 }
 
 export const tenderTypeOf = (m: PayMethod): TenderType =>
-  m === "insurance" ? "insurance" : m === "card" ? "card" : m === "store_credit" ? "store_credit" : "cash";
+  m === "insurance" ? "insurance" : m === "card" ? "card" : m === "store_credit" ? "store_credit" : m === "pay_later" ? "cash" : "cash";
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
 

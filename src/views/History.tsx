@@ -4,9 +4,9 @@ import i18n from "../i18n";
 import type { ReactNode } from "react";
 import { usePos, money, clockTime, relTime } from "../store";
 import { can, hashPin } from "../data";
-import type { PayMethod, Transaction } from "../data";
+import type { PayMethod, Transaction, PaymentLeg } from "../data";
 import { cx, Badge, Empty, Modal } from "../ui";
-import { IHistory, ISearch, ICash, ICard, IShield, IPill, IX, IRecall, ICalendar, IDownload, IReport, IAlert } from "../icons";
+import { IHistory, ISearch, ICash, ICard, IShield, IPill, IX, IRecall, ICalendar, IDownload, IReport, IAlert, IUsers } from "../icons";
 import type { AuditKind } from "../data";
 
 const REFUND_REASONS = [i18n.t("history.customerReturn"), i18n.t("history.wrongItem"), i18n.t("history.damagedGoods"), i18n.t("history.pricingError"), i18n.t("history.duplicateCharge")];
@@ -14,19 +14,23 @@ const REFUND_REASONS = [i18n.t("history.customerReturn"), i18n.t("history.wrongI
 export default function History() {
   const { t } = useTranslation();
   const { state, dispatch, todayStats } = usePos();
-  const [method, setMethod] = useState<PayMethod | "all">("all");
+  const [method, setMethod] = useState<PayMethod | "all" | "unsettled">("all");
   const [q, setQ] = useState("");
   const [refunding, setRefunding] = useState<Transaction | null>(null);
   const [voiding, setVoiding] = useState<Transaction | null>(null);
   const [shiftOpen, setShiftOpen] = useState(false);
   const [auditOpen, setAuditOpen] = useState(false);
   const [btcOpen, setBtcOpen] = useState(false);
+  const [settling, setSettling] = useState<{ transaction: Transaction; legIndex: number } | null>(null);
   const canRefund = can(state.user?.role, "refund");
 
   const rows = useMemo(() => {
     const needle = q.trim().toLowerCase();
     return state.transactions.filter((t) => {
-      if (method !== "all" && t.method !== method) return false;
+      if (method === "unsettled") {
+        const hasUnsettled = t.payments?.some((p) => p.method === "pay_later" && !p.settledAt) ?? false;
+        if (!hasUnsettled) return false;
+      } else if (method !== "all" && t.method !== method) return false;
       if (!needle) return true;
       return t.id.toLowerCase().includes(needle) ||
         (t.refundOf ?? "").toLowerCase().includes(needle) ||
@@ -38,11 +42,13 @@ export default function History() {
   const refundCount = rows.filter((t) => t.refundOf).length;
   const dayStart = new Date(); dayStart.setHours(0, 0, 0, 0);
 
-  const chips: { id: PayMethod | "all"; label: string; icon?: ReactNode }[] = [
+  const chips: { id: PayMethod | "all" | "unsettled"; label: string; icon?: ReactNode }[] = [
     { id: "all", label: i18n.t("history.all") },
     { id: "cash", label: "Cash", icon: <ICash size={12} /> },
     { id: "card", label: "Card", icon: <ICard size={12} /> },
     { id: "insurance", label: "Insurance", icon: <IShield size={12} /> },
+    { id: "pay_later", label: "Pay later", icon: <IUsers size={12} /> },
+    { id: "unsettled", label: t("pos.payLaterHistoryFilter"), icon: <IAlert size={12} /> },
   ];
 
   return (
