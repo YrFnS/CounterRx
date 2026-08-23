@@ -560,6 +560,8 @@ export interface Customer {
   bloodType?: string;
   primaryPrescriberId?: string;
   insurancePlan?: string;
+  /** Insurance card photo/scan (JPEG data-URL, resized client-side) — W4.2. */
+  insuranceCardImage?: string;
   clinicalNotes?: string;   // pharmacist-only (§3 HIPAA role-scoped)
 }
 

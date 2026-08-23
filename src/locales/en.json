@@ -901,7 +901,9 @@
     "noteAdded": "Note added to {{name}}'s chart",
     "vaccinationRecorded": "Vaccination recorded — {{patient}} · {{vaccine}}",
     "vaccinationUpdated": "Vaccination record updated",
-    "vaxDueNotified": "Due reminder queued for {{patient}} ({{count}} dose{{count === 1 ? '' : 's'}})"
+    "vaxDueNotified": "Due reminder queued for {{patient}} ({{count}} dose{{count === 1 ? '' : 's'}})",
+    "cardAttached": "Insurance card saved for {{name}}",
+    "cardRemoved": "Insurance card removed for {{name}}"
   },
   "history": {
     "customerReturn": "Customer return",
@@ -1155,5 +1157,29 @@
     "productTh": "Product",
     "qtyTh": "Qty",
     "none": "None"
+  },
+  "eligibility": {
+    "cardLabel": "Insurance card",
+    "removeCard": "Remove",
+    "cardAlt": "{{name}} — insurance card",
+    "uploadCard": "Upload photo of insurance card",
+    "processing": "Processing…",
+    "title": "Eligibility check",
+    "checking": "Checking…",
+    "runCheck": "Check eligibility",
+    "needPlan": "Enter an insurance plan to check eligibility.",
+    "status": "Status",
+    "active": "Active",
+    "inactive": "Inactive",
+    "copay": "Copay",
+    "deductible": "Deductible remaining",
+    "formulary": "Formulary",
+    "form": {
+      "preferred": "Preferred",
+      "non-preferred": "Non-preferred",
+      "not-covered": "Not covered"
+    },
+    "sandboxNote": "Sandbox response — real-time payer connection not yet integrated.",
+    "unknownPayer": "Unknown payer"
   }
 }

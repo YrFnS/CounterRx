@@ -325,6 +325,8 @@ type Action =
     } }
   | { type: "SCAN_ATTACH"; id: string; dataUrl: string }
   | { type: "SCAN_REMOVE"; id: string }
+  | { type: "CUSTOMER_CARD_ATTACH"; id: string; dataUrl: string }
+  | { type: "CUSTOMER_CARD_REMOVE"; id: string }
   | {
       type: "TRANSFER_RX_OUT";
       prescriptionId: string;
@@ -1829,6 +1831,41 @@ export function reducer(state: State, a: Action): State {
         x.id === a.id ? { ...x, scan: undefined, scanAt: undefined } : x,
       );
       return withToast({ ...state, prescriptions }, "info", "Scan removed");
+    }
+
+    /* W4.2 — insurance card photo on the customer profile (mirrors Rx scan attach). */
+    case "CUSTOMER_CARD_ATTACH": {
+      const c = state.customers.find((x) => x.id === a.id);
+      if (!c) return state;
+      const customers = state.customers.map((x) =>
+        x.id === a.id ? { ...x, insuranceCardImage: a.dataUrl } : x,
+      );
+      return withToast(
+        withAudit(
+          { ...state, customers },
+          "rx",
+          `Insurance card scan attached to ${c.id} — ${c.name}`,
+        ),
+        "success",
+        i18n.t("toast.cardAttached", { name: c.name }),
+      );
+    }
+
+    case "CUSTOMER_CARD_REMOVE": {
+      const c = state.customers.find((x) => x.id === a.id);
+      if (!c) return state;
+      const customers = state.customers.map((x) =>
+        x.id === a.id ? { ...x, insuranceCardImage: undefined } : x,
+      );
+      return withToast(
+        withAudit(
+          { ...state, customers },
+          "rx",
+          `Insurance card scan removed from ${c.id} — ${c.name}`,
+        ),
+        "info",
+        i18n.t("toast.cardRemoved", { name: c.name }),
+      );
     }
 
     case "CUSTOMER_ALLERGIES": {
