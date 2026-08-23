@@ -10,6 +10,7 @@ import { cx, Badge, Empty, Modal } from "../ui";
 import { ITrendUp, IDownload, IX, IPlus, IBox, ICash, ISearch, ICalendar, IAlert, ICheck } from "../icons";
 import { buildXlsx } from "../lib/export";
 import { patientsForBatchCode } from "../data";
+import { applyReportFilters, emptyFilters, saveView, loadView, deleteView, type ReportFilters, type SavedReportView, type FilterCtx } from "../lib/report-filters";
 
 /* ------------------------------------------------------------------ */
 /*  Costing helpers — every figure below derives from lot-level cost    */
@@ -45,17 +46,27 @@ const PRESETS: { id: Preset; label: string }[] = [
 type Tab = "margin" | "valuation" | "pnl" | "builder" | "till" | "analytics" | "recall";
 export default function Reports() {
   const { t } = useTranslation();
-  const { state } = usePos();
+  const { state, dispatch } = usePos();
   const [tab, setTab] = useState<Tab>("margin");
-  const [preset, setPreset] = useState<Preset>("30d");
-  const { from, to } = rangeFor(preset);
+  const [preset, setPreset] = useState<Preset | "custom">("30d");
+  const [filters, setFilters] = useState<ReportFilters>(() => ({ ...emptyFilters(), ...rangeFor("30d") }));
+  const [viewName, setViewName] = useState("");
+  const [loadedViewId, setLoadedViewId] = useState<string | null>(null);
 
-  /* partition the ledger once for the whole view */
+  const views = state.settings.savedReportViews;
+  const setRange = (r: { from: number; to: number }, p: Preset | "custom") => {
+    setFilters((f) => ({ ...f, ...r }));
+    setPreset(p);
+  };
+
+  /* one filtered ledger for the whole view — every tab + export consumes this */
+  const ctx = useMemo<FilterCtx>(() => ({ products: state.products, staff: state.staff }), [state.products, state.staff]);
+  const filtered = useMemo(() => applyReportFilters(state.transactions, filters, ctx), [state.transactions, filters, ctx]);
   const ledger = useMemo(() => {
-    const sales = state.transactions.filter((t) => !t.refundOf && inRange(t.at, from, to));
-    const refunds = state.transactions.filter((t) => t.refundOf && inRange(t.at, from, to));
+    const sales = filtered.filter((t) => !t.refundOf);
+    const refunds = filtered.filter((t) => t.refundOf);
     return { sales, refunds };
-  }, [state.transactions, from, to]);
+  }, [filtered]);
 
   const TABS: { id: Tab; label: string; icon: ReactNode }[] = [
     { id: "margin", label: i18n.t("reports.margin"), icon: <ITrendUp size={14} /> },
@@ -81,7 +92,7 @@ export default function Reports() {
         <div className="flex-1" />
         <div className="flex items-center gap-1 rounded-lg border border-mist bg-card p-1">
           {PRESETS.map((p) => (
-            <button key={p.id} onClick={() => setPreset(p.id)}
+            <button key={p.id} onClick={() => { setRange(rangeFor(p.id), p.id); setLoadedViewId(null); }}
               className={cx("px-2.5 py-1.5 rounded-md text-[11px] font-bold transition-all duration-150",
                 preset === p.id ? "bg-pine-700 text-pine-50 shadow-lift" : "text-inksoft hover:text-ink hover:bg-mist/60")}>
               {p.label}
@@ -89,6 +100,26 @@ export default function Reports() {
           ))}
         </div>
       </div>
+
+      {/* filter bar — applies to every report tab + exports */}
+      <FilterBar filters={filters} setFilters={setFilters} setRange={setRange}
+        views={views} viewName={viewName} setViewName={setViewName} loadedViewId={loadedViewId}
+        onLoad={(id) => {
+          const v = loadView(views, id);
+          if (v) { setFilters({ ...emptyFilters(), ...v.filters }); setPreset("custom"); setLoadedViewId(id); }
+        }}
+        onSave={() => {
+          if (!viewName.trim()) return;
+          const next = saveView(views, viewName, filters, loadedViewId ?? undefined);
+          dispatch({ type: "UPDATE_SETTINGS", patch: { savedReportViews: next } });
+          setViewName(""); setLoadedViewId(null);
+          dispatch({ type: "TOAST", kind: "success", msg: t("reports.viewSaved") });
+        }}
+        onDelete={(id) => {
+          const next = deleteView(views, id);
+          dispatch({ type: "UPDATE_SETTINGS", patch: { savedReportViews: next } });
+          if (loadedViewId === id) setLoadedViewId(null);
+        }} />
 
       {/* tab bar */}
       <div className="mt-4 flex gap-1.5 overflow-x-auto scroll-slim pb-1">
@@ -105,10 +136,141 @@ export default function Reports() {
         {tab === "margin" && <MarginTab ledger={ledger} />}
         {tab === "valuation" && <ValuationTab ledger={ledger} />}
         {tab === "pnl" && <PnlTab ledger={ledger} />}
-        {tab === "builder" && <BuilderTab from={from} to={to} preset={preset} />}
-        {tab === "till" && <TillTab />}
-        {tab === "analytics" && <AnalyticsTab />}
+        {tab === "builder" && <BuilderTab transactions={filtered} preset={preset} />}
+        {tab === "till" && <TillTab filters={filters} />}
+        {tab === "analytics" && <AnalyticsTab transactions={filtered} />}
         {tab === "recall" && <RecallLookupTab />}
+      </div>
+    </div>
+  );
+}
+
+/* ================= FILTER BAR (global — every tab) ================= */
+const dayInput = (ms: number) => {
+  const d = new Date(ms);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+};
+const parseDay = (v: string, endOfDay: boolean) => {
+  const d = new Date(`${v}T00:00:00`);
+  return endOfDay ? d.getTime() + 86_400_000 - 1 : d.getTime();
+};
+
+/** Global report filter bar: date range + category/supplier/cashier/method/Rx-OTC, plus saved-view save/load. */
+function FilterBar({ filters, setFilters, setRange, views, viewName, setViewName, loadedViewId, onLoad, onSave, onDelete }: {
+  filters: ReportFilters;
+  setFilters: (updater: (f: ReportFilters) => ReportFilters) => void;
+  setRange: (r: { from: number; to: number }, p: Preset | "custom") => void;
+  views: SavedReportView[];
+  viewName: string;
+  setViewName: (v: string) => void;
+  loadedViewId: string | null;
+  onLoad: (id: string) => void;
+  onSave: () => void;
+  onDelete: (id: string) => void;
+}) {
+  const { t } = useTranslation();
+  const { state } = usePos();
+  const pick = (key: keyof ReportFilters) =>
+    (filters[key] as string[])[0] ?? "";
+  const setPick = (key: keyof ReportFilters, v: string) =>
+    setFilters((f) => ({ ...f, [key]: v ? [v] : [] } as ReportFilters));
+
+  const methodLabel = (m: PayMethod): string => {
+    switch (m) {
+      case "cash": return t("pos.cash");
+      case "card": return t("pos.card");
+      case "insurance": return t("pos.insurance");
+      case "store_credit": return t("pos.storeCredit");
+      case "pay_later": return t("pos.payLater");
+    }
+  };
+
+  const selectCls = "min-w-0 px-2 py-1.5 rounded-md border border-mist bg-card text-[11px] font-semibold text-ink focus:border-pine-500 focus:outline-none";
+  const inputCls = "w-32 px-2 py-1.5 rounded-md border border-mist bg-card text-[11px] font-semibold text-ink focus:border-pine-500 focus:outline-none";
+
+  return (
+    <div className="mt-3 flex flex-wrap items-center gap-2 rounded-xl border border-mist bg-card px-3 py-2">
+      {/* date range */}
+      <label className="flex items-center gap-1.5 text-[10px] font-bold text-inksoft">
+        {t("reports.from")}
+        <input type="date" value={dayInput(filters.from)} onChange={(e) => setRange({ from: parseDay(e.target.value, false), to: filters.to }, "custom")}
+          className={inputCls} />
+      </label>
+      <label className="flex items-center gap-1.5 text-[10px] font-bold text-inksoft">
+        {t("reports.to")}
+        <input type="date" value={dayInput(filters.to)} onChange={(e) => setRange({ from: filters.from, to: parseDay(e.target.value, true) }, "custom")}
+          className={inputCls} />
+      </label>
+
+      <span className="mx-0.5 h-5 w-px bg-mist" aria-hidden />
+
+      {/* category */}
+      <label className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wide text-inksoft">
+        {t("reports.category")}
+        <select className={selectCls} value={pick("categories")} onChange={(e) => setPick("categories", e.target.value)}>
+          <option value="">{t("reports.all")}</option>
+          {state.categories.filter((c) => !c.archived).map((c) => <option key={c.id} value={c.id}>{c.label}</option>)}
+        </select>
+      </label>
+
+      {/* supplier */}
+      <label className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wide text-inksoft">
+        {t("reports.supplier")}
+        <select className={selectCls} value={pick("suppliers")} onChange={(e) => setPick("suppliers", e.target.value)}>
+          <option value="">{t("reports.all")}</option>
+          {state.suppliers.filter((s) => !s.archived).map((s) => <option key={s.id} value={s.name}>{s.name}</option>)}
+        </select>
+      </label>
+
+      {/* cashier */}
+      <label className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wide text-inksoft">
+        {t("reports.cashier")}
+        <select className={selectCls} value={pick("cashiers")} onChange={(e) => setPick("cashiers", e.target.value)}>
+          <option value="">{t("reports.all")}</option>
+          {state.staff.filter((s) => s.active).map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+        </select>
+      </label>
+
+      {/* payment method */}
+      <label className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wide text-inksoft">
+        {t("reports.method")}
+        <select className={selectCls} value={pick("methods")} onChange={(e) => setPick("methods", e.target.value)}>
+          <option value="">{t("reports.all")}</option>
+          {(["cash", "card", "insurance", "store_credit", "pay_later"] as PayMethod[]).map((m) => <option key={m} value={m}>{methodLabel(m)}</option>)}
+        </select>
+      </label>
+
+      {/* Rx / OTC */}
+      <label className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wide text-inksoft">
+        {t("reports.rxOtc")}
+        <select className={selectCls} value={filters.kind} onChange={(e) => setFilters((f) => ({ ...f, kind: e.target.value as ReportFilters["kind"] }))}>
+          <option value="all">{t("reports.all")}</option>
+          <option value="rx">{t("reports.rxOnly")}</option>
+          <option value="otc">{t("reports.otcOnly")}</option>
+        </select>
+      </label>
+
+      <span className="mx-0.5 h-5 w-px bg-mist" aria-hidden />
+
+      {/* saved views: save (name input) + load (dropdown) + delete current */}
+      <div className="flex items-center gap-1.5">
+        <input value={viewName} onChange={(e) => setViewName(e.target.value)} placeholder={t("reports.viewName")}
+          className="w-32 px-2 py-1.5 rounded-md border border-mist bg-card text-[11px] font-semibold text-ink focus:border-pine-500 focus:outline-none" />
+        <button onClick={onSave}
+          className="flex items-center gap-1 px-2.5 py-1.5 rounded-md bg-pine-700 text-pine-50 text-[11px] font-bold hover:bg-pine-600 transition active:scale-95">
+          <IPlus size={12} /> {t("reports.saveView")}
+        </button>
+        <select className={selectCls} value={loadedViewId ?? ""}
+          onChange={(e) => e.target.value && onLoad(e.target.value)}>
+          <option value="">{t("reports.savedViews")}</option>
+          {views.map((v) => <option key={v.id} value={v.id}>{v.name}</option>)}
+        </select>
+        {loadedViewId && (
+          <button onClick={() => onDelete(loadedViewId)} aria-label={t("reports.deleteView")}
+            className="p-1 rounded-md text-inksoft hover:text-brick-700 hover:bg-mist/60 transition">
+            <IX size={12} />
+          </button>
+        )}
       </div>
     </div>
   );
@@ -351,24 +513,16 @@ function PnlTab({ ledger }: { ledger: { sales: Transaction[]; refunds: Transacti
 /* ================= REPORT BUILDER TAB ================= */
 interface BuilderConfig {
   groupBy: "product" | "category" | "day" | "method";
-  kind: "all" | "rx" | "otc";
-  method: "all" | PayMethod;
   showUnits: boolean; showCogs: boolean; showMargin: boolean;
 }
-const DEFAULT_CONFIG: BuilderConfig = { groupBy: "category", kind: "all", method: "all", showUnits: true, showCogs: true, showMargin: true };
-const VIEWS_KEY = "counterrx:reportviews";
+const DEFAULT_CONFIG: BuilderConfig = { groupBy: "category", showUnits: true, showCogs: true, showMargin: true };
 
-function BuilderTab({ from, to, preset }: { from: number; to: number; preset: Preset }) {
+function BuilderTab({ transactions, preset }: { transactions: Transaction[]; preset: Preset | "custom" }) {
   const { t } = useTranslation();
   const { state } = usePos();
   const [cfg, setCfg] = useState<BuilderConfig>(DEFAULT_CONFIG);
-  const [views, setViews] = useState<{ name: string; cfg: BuilderConfig }[]>(() => {
-    try { return JSON.parse(localStorage.getItem(VIEWS_KEY) ?? "[]"); } catch { return []; }
-  });
-  const [saveName, setSaveName] = useState("");
 
-  useEffect(() => { try { localStorage.setItem(VIEWS_KEY, JSON.stringify(views)); } catch { /* full */ } }, [views]);
-
+  /** Rows aggregate the globally filtered ledger; group/column toggles are local presentation. */
   const rows = useMemo(() => {
     const keyOf = (t: Transaction, l: TxLine): string => {
       switch (cfg.groupBy) {
@@ -394,10 +548,7 @@ function BuilderTab({ from, to, preset }: { from: number; to: number; preset: Pr
     };
     const agg = new Map<string, { label: string; count: number; units: number; revenue: number; cogs: number }>();
     const consider = (t: Transaction, sign: 1 | -1) => {
-      if (cfg.method !== "all" && t.method !== cfg.method) return;
       for (const l of t.lines) {
-        if (cfg.kind === "rx" && !l.rx) continue;
-        if (cfg.kind === "otc" && l.rx) continue;
         const k = rollUp(keyOf(t, l));
         const cur = agg.get(k) ?? { label: labelOf(k), count: 0, units: 0, revenue: 0, cogs: 0 };
         cur.count += sign;
@@ -407,11 +558,11 @@ function BuilderTab({ from, to, preset }: { from: number; to: number; preset: Pr
         agg.set(k, cur);
       }
     };
-    state.transactions.filter((t) => inRange(t.at, from, to)).forEach((t) => consider(t, t.refundOf ? -1 : 1));
+    transactions.forEach((t) => consider(t, t.refundOf ? -1 : 1));
     return [...agg.values()]
       .map((r) => ({ ...r, margin: r.revenue - r.cogs }))
       .sort((a, b) => b.revenue - a.revenue);
-  }, [cfg, state.transactions, state.products, from, to]);
+  }, [cfg, transactions, state.products, state.categories]);
 
   const head = ["group", "lines", ...(cfg.showUnits ? ["units"] : []), "revenue", ...(cfg.showCogs ? ["cogs"] : []), ...(cfg.showMargin ? ["margin"] : [])];
   const exportRows = rows.map((r) => [r.label, r.count, ...(cfg.showUnits ? [String(r.units)] : []), r.revenue.toFixed(2), ...(cfg.showCogs ? [r.cogs.toFixed(2)] : []), ...(cfg.showMargin ? [r.margin.toFixed(2)] : [])]);
@@ -420,19 +571,12 @@ function BuilderTab({ from, to, preset }: { from: number; to: number; preset: Pr
     <div className="grid lg:grid-cols-4 gap-4">
       {/* config rail */}
       <div className="lg:col-span-1 rounded-xl border border-mist bg-card shadow-lift p-4 h-fit anim-fade-up">
-        <h3 className="font-display font-bold text-[14px] text-ink mb-3">Build a report</h3>
-        <Field label="Group by">
+        <h3 className="font-display font-bold text-[14px] text-ink mb-3">{t("reports.builder")}</h3>
+        <Field label={t("reports.groupBy")}>
           <Seg value={cfg.groupBy} onChange={(v) => setCfg({ ...cfg, groupBy: v })}
             options={[{ id: "product", label: "Product" }, { id: "category", label: "Category" }, { id: "day", label: "Day" }, { id: "method", label: "Tender" }]} vertical />
         </Field>
-        <Field label="Item type">
-          <Seg value={cfg.kind} onChange={(v) => setCfg({ ...cfg, kind: v })}
-            options={[{ id: "all", label: "All" }, { id: "rx", label: "℞ only" }, { id: "otc", label: "OTC only" }]} vertical />
-        </Field>
-        <Field label="Tender">
-          <Seg value={cfg.method} onChange={(v) => setCfg({ ...cfg, method: v })}
-            options={[{ id: "all", label: "All" }, { id: "cash", label: "Cash" }, { id: "card", label: "Card" }, { id: "insurance", label: "Insurance" }]} vertical />
-        </Field>
+        <p className="text-[10px] text-inksoft -mt-1 mb-3">{t("reports.builderHint")}</p>
         <div className="mt-3 space-y-1.5">
           {([["showUnits", "Units"], ["showCogs", "COGS"], ["showMargin", t("reports.margin")]] as const).map(([k, label]) => (
             <label key={k} className="flex items-center gap-2 text-xs font-semibold text-ink cursor-pointer">
@@ -441,27 +585,6 @@ function BuilderTab({ from, to, preset }: { from: number; to: number; preset: Pr
               {label}
             </label>
           ))}
-        </div>
-
-        <div className="mt-4 pt-3 border-t border-mist">
-          <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-inksoft mb-1.5">Saved views</p>
-          <div className="flex gap-1.5">
-            <input value={saveName} onChange={(e) => setSaveName(e.target.value)} placeholder="View name"
-              className="flex-1 min-w-0 px-2 py-1.5 rounded-md border border-mist text-xs focus:border-pine-500 focus:outline-none" />
-            <button onClick={() => { if (saveName.trim()) { setViews((v) => [...v, { name: saveName.trim(), cfg }]); setSaveName(""); } }}
-              className="px-2 rounded-md bg-pine-700 text-pine-50 hover:bg-pine-600 transition active:scale-95" aria-label="Save view"><IPlus size={13} /></button>
-          </div>
-          <div className="mt-2 space-y-1">
-            {views.map((v, i) => (
-              <div key={`${v.name}-${i}`} className="flex items-center gap-1.5 group">
-                <button onClick={() => setCfg(v.cfg)}
-                  className="flex-1 text-start text-xs font-semibold text-ink hover:text-pine-700 truncate transition-colors">{v.name}</button>
-                <button onClick={() => setViews((vs) => vs.filter((_, j) => j !== i))}
-                  className="p-0.5 rounded text-inksoft opacity-0 group-hover:opacity-100 hover:text-brick-700 transition" aria-label={`Delete ${v.name}`}><IX size={11} /></button>
-              </div>
-            ))}
-            {views.length === 0 && <p className="text-[10px] text-inksoft">No saved views yet.</p>}
-          </div>
         </div>
       </div>
 
@@ -592,7 +715,7 @@ function ExportCsv({ name, head, rows }: { name: string; head: string[]; rows: (
 }
 
 /* ================= TILL TAB (Phase A) — X/Z reports ================= */
-function TillTab() {
+function TillTab({ filters }: { filters: ReportFilters }) {
   const { t } = useTranslation();
   const { state, dispatch } = usePos();
   const [closing, setClosing] = useState<Shift | null>(null);
@@ -601,9 +724,15 @@ function TillTab() {
   const [viewShift, setViewShift] = useState<Shift | null>(null);
 
   const openShift = state.currentShift;
-  const closedShifts = useMemo(
-    () => state.shifts.filter((s) => s.status === "closed").sort((a, b) => b.openedAt - a.openedAt),
-    [state.shifts]);
+  /* closed-shift history respects the global date range + cashier filter; X/Z totals are per-shift tender math */
+  const closedShifts = useMemo(() => {
+    const cashiers = filters.cashiers.length
+      ? new Set(state.staff.filter((s) => filters.cashiers.includes(s.id)).map((s) => s.name))
+      : null;
+    return state.shifts
+      .filter((s) => s.status === "closed" && s.openedAt >= filters.from && s.openedAt <= filters.to && (!cashiers || cashiers.has(s.cashierName)))
+      .sort((a, b) => b.openedAt - a.openedAt);
+  }, [state.shifts, state.staff, filters]);
 
   const xReport = openShift ? generateXReport(openShift) : null;
   const [eodZ, setEodZ] = useState<Date | null>(null);
@@ -874,28 +1003,16 @@ function AllTerminalsZModal({ shifts, fallbackTerminalId, day, onClose }: { shif
 }
 
 /* ================= ANALYTICS TAB (Phase F) ================= */
-function AnalyticsTab() {
+function AnalyticsTab({ transactions }: { transactions: Transaction[] }) {
   const { t } = useTranslation();
   const { state } = usePos();
-  const [preset, setPreset] = useState<Preset>("30d");
-  const { from, to } = rangeFor(preset);
 
-  const ltv = useMemo(() => calculateLTV(state.customers, state.transactions.filter(t => inRange(t.at, from, to))), [state.customers, state.transactions, from, to]);
+  const ltv = useMemo(() => calculateLTV(state.customers, transactions), [state.customers, transactions]);
   const supplierPerf = useMemo(() => supplierPerformance(state.purchaseOrders, state.apInvoices, state.deliveries, state.suppliers), [state.purchaseOrders, state.apInvoices, state.deliveries, state.suppliers]);
   const expiryRisk = useMemo(() => expiryAtRisk(state.products, 90), [state.products]);
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center gap-2 rounded-lg border border-mist bg-card p-1">
-        {PRESETS.map((p) => (
-          <button key={p.id} onClick={() => setPreset(p.id)}
-            className={cx("px-2.5 py-1.5 rounded-md text-[11px] font-bold transition-all duration-150",
-              preset === p.id ? "bg-pine-700 text-pine-50 shadow-lift" : "text-inksoft hover:text-ink hover:bg-mist/60")}>
-            {p.label}
-          </button>
-        ))}
-      </div>
-
       {/* LTV Section */}
       <div className="rounded-xl border border-mist bg-card shadow-lift overflow-auto scroll-slim">
         <div className="px-4 py-3 border-b border-mist flex items-center justify-between">

@@ -50,7 +50,7 @@ Inventory/Reports: enter lot/batch → returns patients (customers) who received
 ### W2.3 Multi-terminal X/Z + reconciliation ✦ `feat/terminal-recon` — DONE
 Shift records already carry terminalId: Till/History shift summary gains per-terminal breakdown, expected-vs-counted variance report, end-of-day all-terminals Z. No migration. (terminalId falls back to `state.settings.terminalId` for legacy shifts that lack one.)
 
-### W2.4 Custom report builder ✦ `feat/report-builder`
+### W2.4 Custom report builder ✦ `feat/report-builder` — DONE
 Reports: date-range + filters (category, supplier, cashier, method, Rx/OTC) applied across existing tabs; save/load named views into org settings JSONB (no migration); export respects filters.
 
 ### W2.5 Backups + org export ✦ `feat/backups-org-export`

@@ -789,6 +789,7 @@ export interface OrgSettings {
   autoSnapshotMins: number;        // 0 = off
   terminalId: string;
   hardwareEnabled: boolean;        // Phase E: Web Serial hardware (printer/drawer/scale)
+  savedReportViews: import("./lib/report-filters").SavedReportView[]; // named report-builder views (JSONB via settings tail column — no migration)
 }
 
 export const CURRENCIES = ["USD", "EUR", "GBP", "NGN", "KES", "ZAR", "GHS", "INR", "CAD"];
@@ -806,6 +807,7 @@ export function makeSettings(): OrgSettings {
     autoSnapshotMins: 15,
     terminalId: "T-01",
     hardwareEnabled: false,
+    savedReportViews: [],
   };
 }
 
