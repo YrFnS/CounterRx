@@ -158,6 +158,7 @@ function prescriberFrom(row: Row): Prescriber {
   return {
     id: text(row, "id"), name: text(row, "name"), credentials: text(row, "credentials"), specialty: text(row, "specialty"),
     npi: text(row, "npi"), dea: text(row, "dea"), phone: text(row, "phone"), fax: text(row, "fax"), active: booleanValue(row, "active", true),
+    archived: booleanValue(row, "archived", false),
   };
 }
 
@@ -358,7 +359,7 @@ function rowsFor(data: BackendData): Record<TableName, Row[]> {
       notified_at: nullable(p.notifiedAt), dispensed_at: nullable(p.dispensedAt),
       reminded_at: nullable(p.remindedAt), scan: nullable(p.scan), scan_at: nullable(p.scanAt), transferred_out: nullable(p.transferredOut),
     })),
-    prescribers: data.prescribers.map((p) => ({ id: p.id, name: p.name, credentials: p.credentials, specialty: p.specialty, npi: nullable(p.npi), dea: nullable(p.dea), phone: nullable(p.phone), fax: nullable(p.fax), active: p.active })),
+    prescribers: data.prescribers.map((p) => ({ id: p.id, name: p.name, credentials: p.credentials, specialty: p.specialty, npi: nullable(p.npi), dea: nullable(p.dea), phone: nullable(p.phone), fax: nullable(p.fax), active: p.active, archived: p.archived ?? false })),
     customers: data.customers.map((c) => ({
       id: c.id, name: c.name, phone: c.phone, email: nullable(c.email), created_at_tx: timestamp(c.createdAt), notes: nullable(c.notes), points: c.points,
       allergies: c.allergies ?? [], dob: nullable(c.dob), gender: nullable(c.gender), address: nullable(c.address), blood_type: nullable(c.bloodType),

@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { reducer, seed } from "../store";
 import { makeProducts, makeStaff, makeSettings } from "../data";
-import type { Shift, Supplier, Role } from "../data";
+import type { Shift, Supplier, Role, Prescriber, Prescription } from "../data";
 import type { BackendData } from "../lib/sync";
 
 // reducer state/action types aren't exported from store.tsx; derive them from the reducer signature
@@ -345,6 +345,62 @@ describe("reducer - SUPPLIER CRUD (R5)", () => {
     expect(saveResult.toasts.some((t) => t.kind === "error")).toBe(true);
     const delResult = reducer(initial, { type: "SUPPLIER_DELETE", id: "SUP-01" });
     expect(delResult.suppliers).toHaveLength(2);
+    expect(delResult.toasts.some((t) => t.kind === "error")).toBe(true);
+  });
+});
+
+describe("reducer - PRESCRIBER directory (W1.3)", () => {
+  const pharmacist = makeTestState({ user: { id: "S-P", name: "Pharm", role: "pharmacist" as Role, pinHash: "h", initials: "P", active: true, createdAt: Date.now() } });
+  const cashier = makeTestState({ user: { id: "S-C", name: "Cashier", role: "cashier" as Role, pinHash: "h", initials: "C", active: true, createdAt: Date.now() } });
+  const seedPrescribers = (): Prescriber[] => [
+    { id: "DR-01", name: "Dr. A. One", credentials: "MD", specialty: "Family medicine", npi: "111", dea: "AA0000001", phone: "555", fax: "556", active: true },
+    { id: "DR-02", name: "Dr. B. Two", credentials: "DO", specialty: "Pediatrics", npi: "222", dea: "BB0000002", phone: "557", fax: "558", active: true },
+  ];
+  const newPrescriber = (): Prescriber => ({ id: "", name: "Dr. C. Three", credentials: "MD", specialty: "Cardiology", npi: "333", dea: "CC0000003", phone: "559", fax: "560", active: true });
+  const rxRef = (prescriberId: string): Prescription => ({ id: `RX-${prescriberId}`, patient: "X", age: 30, productId: "amx500", qty: 1, prescriberId, status: "new", createdAt: Date.now() });
+
+  it("creates a prescriber with a generated DR-NN id", () => {
+    const initial = makeTestState({ prescribers: seedPrescribers(), user: pharmacist.user! });
+    const result = reducer(initial, { type: "PRESCRIBER_SAVE", prescriber: newPrescriber() });
+    expect(result.prescribers).toHaveLength(3);
+    const created = result.prescribers.find((p) => p.name === "Dr. C. Three")!;
+    expect(created.id).toBe("DR-03");
+    expect(result.audit[0]?.detail).toContain("Dr. C. Three created");
+    expect(result.toasts.some((t) => t.kind === "success" && t.msg.includes("Dr. C. Three"))).toBe(true);
+  });
+
+  it("updates an existing prescriber by id", () => {
+    const initial = makeTestState({ prescribers: seedPrescribers(), user: pharmacist.user! });
+    const updated: Prescriber = { ...seedPrescribers()[0], name: "Dr. A. One (Retired)", active: false };
+    const result = reducer(initial, { type: "PRESCRIBER_SAVE", prescriber: updated });
+    expect(result.prescribers).toHaveLength(2);
+    expect(result.prescribers[0].name).toBe("Dr. A. One (Retired)");
+    expect(result.prescribers[0].active).toBe(false);
+    expect(result.audit[0]?.detail).toContain("Dr. A. One (Retired) updated");
+  });
+
+  it("deletes an unreferenced prescriber", () => {
+    const initial = makeTestState({ prescribers: seedPrescribers(), prescriptions: [rxRef("DR-02")], user: pharmacist.user! });
+    const result = reducer(initial, { type: "PRESCRIBER_DELETE", id: "DR-01" });
+    expect(result.prescribers).toHaveLength(1);
+    expect(result.prescribers[0].id).toBe("DR-02");
+    expect(result.toasts.some((t) => t.kind === "success")).toBe(true);
+  });
+
+  it("blocks delete when a prescription references the prescriberId", () => {
+    const initial = makeTestState({ prescribers: seedPrescribers(), prescriptions: [rxRef("DR-01")], user: pharmacist.user! });
+    const result = reducer(initial, { type: "PRESCRIBER_DELETE", id: "DR-01" });
+    expect(result.prescribers).toHaveLength(2); // unchanged
+    expect(result.toasts.some((t) => t.kind === "error")).toBe(true);
+  });
+
+  it("rejects save/delete without pharmacist or admin permission", () => {
+    const initial = makeTestState({ prescribers: seedPrescribers(), user: cashier.user! });
+    const saveResult = reducer(initial, { type: "PRESCRIBER_SAVE", prescriber: newPrescriber() });
+    expect(saveResult.prescribers).toHaveLength(2);
+    expect(saveResult.toasts.some((t) => t.kind === "error")).toBe(true);
+    const delResult = reducer(initial, { type: "PRESCRIBER_DELETE", id: "DR-01" });
+    expect(delResult.prescribers).toHaveLength(2);
     expect(delResult.toasts.some((t) => t.kind === "error")).toBe(true);
   });
 });

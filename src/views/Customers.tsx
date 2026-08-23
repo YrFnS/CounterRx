@@ -353,9 +353,9 @@ function ProfileModal({ c, onClose }: { c: Customer; onClose: () => void }) {
         </label>
         <label className="block sm:col-span-2">
           <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-inksoft">Primary prescriber</span>
-          <select value={f.primaryPrescriberId} onChange={(e) => setF({ ...f, primaryPrescriberId: e.target.value })} className={cx(pIn, "mt-1")}>
+            <select value={f.primaryPrescriberId} onChange={(e) => setF({ ...f, primaryPrescriberId: e.target.value })} className={cx(pIn, "mt-1")}>
             <option value="">—</option>
-            {state.prescribers.map((p) => <option key={p.id} value={p.id}>{p.name} · {p.specialty}</option>)}
+            {state.prescribers.filter((p) => !p.archived).map((p) => <option key={p.id} value={p.id}>{p.name} · {p.specialty}</option>)}
           </select>
         </label>
 
