@@ -86,7 +86,7 @@ Build on Deliveries: patient delivery intake from sale (address book reuses cust
 ### W3.4 Promotions engine (beyond coupons) ✦ `feat/promotions` — DONE
 Rules: birthday reward, first-visit, category % off window; stored in settings/promotions table (migration 0018); auto-applies at register with audit + manager override. Builds on coupon apply path.
 
-### W3.5 Vaccination records ✦ `feat/vaccinations`
+### W3.5 Vaccination records ✦ `feat/vaccinations` — DONE
 
 Migration 0019 `vaccinations` (patient, product, lot, dose#, site, administrator, date, next_due); Customers profile tab + due-list report; CDC-style card print.
 
