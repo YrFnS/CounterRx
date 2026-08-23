@@ -1481,6 +1481,118 @@ export function generateZReport(shift: Shift): ZReport | null {
   };
 }
 
+/* ------------------------------------------------------------------ */
+/*  Multi-terminal reconciliation (W2.3) — per-terminal X/Z + all-     */
+/*  terminals end-of-day Z. Shifts already carry terminalId; legacy    */
+/*  shifts missing it fall back to the org's current terminal id.       */
+/* ------------------------------------------------------------------ */
+
+/** Resolve a shift's terminal id, falling back to the org's current
+ *  terminal id when a (legacy) shift has none. */
+export function terminalIdOf(shift: Shift, fallbackTerminalId: string): string {
+  return (shift.terminalId && shift.terminalId.trim()) || fallbackTerminalId;
+}
+
+/** Per-terminal roll-up of one or more shifts. Counted cash uses the
+ *  shift's counted amount when closed, else expected (nothing to
+ *  reconcile yet) → variance is counted − expected. */
+export interface TerminalRecon {
+  terminalId: string;
+  shifts: Shift[];
+  salesTotal: number;
+  refundsTotal: number;
+  cardTotal: number;
+  paidInTotal: number;
+  paidOutTotal: number;
+  expectedCash: number;
+  countedCash: number;
+  overShort: number;
+  transactionCount: number;
+  cashMovements: CashMovement[];
+}
+
+export function groupShiftsByTerminal(shifts: Shift[], fallbackTerminalId: string): TerminalRecon[] {
+  const byTid = new Map<string, Shift[]>();
+  for (const s of shifts) {
+    const tid = terminalIdOf(s, fallbackTerminalId);
+    if (!byTid.has(tid)) byTid.set(tid, []);
+    byTid.get(tid)!.push(s);
+  }
+  const out: TerminalRecon[] = [];
+  for (const [tid, list] of [...byTid.entries()].sort((a, b) => a[0].localeCompare(b[0]))) {
+    const r: TerminalRecon = {
+      terminalId: tid, shifts: list,
+      salesTotal: 0, refundsTotal: 0, cardTotal: 0, paidInTotal: 0, paidOutTotal: 0,
+      expectedCash: 0, countedCash: 0, overShort: 0, transactionCount: 0, cashMovements: [],
+    };
+    for (const s of list) {
+      r.salesTotal += s.salesTotal;
+      r.refundsTotal += s.refundsTotal;
+      r.cardTotal += s.cardTotal;
+      r.paidInTotal += s.paidInTotal;
+      r.paidOutTotal += s.paidOutTotal;
+      r.expectedCash += s.expectedCash;
+      r.transactionCount += s.transactions.filter((t) => t.type !== "void").length;
+      r.cashMovements.push(...s.cashMovements);
+      if (s.status === "closed" && s.countedCash != null) {
+        r.countedCash += s.countedCash;
+        r.overShort += s.overShort ?? 0;
+      } else {
+        r.countedCash += s.expectedCash; // not yet counted → expected (0 variance)
+      }
+    }
+    out.push(r);
+  }
+  return out;
+}
+
+/** Variance for a single terminal: counted drawer minus expected. */
+export const terminalVariance = (expectedCash: number, countedCash: number): number =>
+  Math.round((countedCash - expectedCash) * 100) / 100;
+
+/** End-of-day Z aggregated across every terminal for the given date. */
+export interface AllTerminalsZ {
+  generatedAt: number;
+  date: string;
+  terminals: TerminalRecon[];
+  totalSales: number;
+  totalRefunds: number;
+  totalPaidIn: number;
+  totalPaidOut: number;
+  totalExpectedCash: number;
+  totalCountedCash: number;
+  totalOverShort: number;
+  transactionCount: number;
+  cashMovements: CashMovement[];
+}
+
+export function allTerminalsZReport(shifts: Shift[], day: Date, fallbackTerminalId: string): AllTerminalsZ {
+  const start = new Date(day); start.setHours(0, 0, 0, 0);
+  const from = start.getTime();
+  const to = from + 86_400_000;
+  const dayShifts = shifts.filter((s) => s.openedAt >= from && s.openedAt < to);
+  const terminals = groupShiftsByTerminal(dayShifts, fallbackTerminalId);
+  let totalSales = 0, totalRefunds = 0, totalPaidIn = 0, totalPaidOut = 0;
+  let totalExpectedCash = 0, totalCountedCash = 0, totalOverShort = 0, transactionCount = 0;
+  const cashMovements: CashMovement[] = [];
+  for (const t of terminals) {
+    totalSales += t.salesTotal;
+    totalRefunds += t.refundsTotal;
+    totalPaidIn += t.paidInTotal;
+    totalPaidOut += t.paidOutTotal;
+    totalExpectedCash += t.expectedCash;
+    totalCountedCash += t.countedCash;
+    totalOverShort += t.overShort;
+    transactionCount += t.transactionCount;
+    cashMovements.push(...t.cashMovements);
+  }
+  return {
+    generatedAt: Date.now(), date: start.toISOString().slice(0, 10), terminals,
+    totalSales, totalRefunds, totalPaidIn, totalPaidOut,
+    totalExpectedCash, totalCountedCash, totalOverShort, transactionCount, cashMovements,
+  };
+}
+
 /** Analytics helpers for Phase F — LTV, supplier performance, expiry at-risk */
 export function calculateLTV(customers: Customer[], transactions: Transaction[], now: number = Date.now()): { customerId: string; ltv: number; visits: number; avgBasket: number; lastVisit: number }[] {
   const results: { customerId: string; ltv: number; visits: number; avgBasket: number; lastVisit: number }[] = [];

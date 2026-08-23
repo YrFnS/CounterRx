@@ -4,7 +4,7 @@ import i18n from "../i18n";
 import type { ReactNode } from "react";
 import { usePos, money, clockTime } from "../store";
 import { catLabel } from "../data";
-import { fefoBatches, generateXReport, generateZReport, calculateLTV, supplierPerformance, expiryAtRisk } from "../data";
+import { fefoBatches, generateXReport, generateZReport, calculateLTV, supplierPerformance, expiryAtRisk, groupShiftsByTerminal, terminalVariance, allTerminalsZReport } from "../data";
 import type { Product, TxLine, Transaction, PayMethod, Shift, ZReport, Customer, Supplier, PurchaseOrder, ApInvoice } from "../data";
 import { cx, Badge, Empty, Modal } from "../ui";
 import { ITrendUp, IDownload, IX, IPlus, IBox, ICash, ISearch, ICalendar } from "../icons";
@@ -591,6 +591,8 @@ function TillTab() {
     [state.shifts]);
 
   const xReport = openShift ? generateXReport(openShift) : null;
+  const [eodZ, setEodZ] = useState<Date | null>(null);
+  const hasAnyShift = state.shifts.length > 0;
 
   return (
     <div className="space-y-4">
@@ -684,14 +686,22 @@ function TillTab() {
         </Modal>
       )}
 
+      {/* end-of-day all-terminals Z */}
+      <button onClick={() => setEodZ(new Date())} disabled={!hasAnyShift}
+        className="w-full flex items-center justify-center gap-1.5 px-3.5 py-2.5 rounded-lg border border-ink/20 bg-ink/5 text-xs font-bold text-ink hover:bg-ink/10 transition active:scale-95 disabled:opacity-40">
+        <ICalendar size={14} /> {t("shift.endOfDayAllTerminals")}
+      </button>
+
       {/* X / Z report viewer */}
       {viewShift && <XZReport shift={viewShift} onClose={() => setViewShift(null)} />}
+      {eodZ && <AllTerminalsZModal shifts={state.shifts} fallbackTerminalId={state.settings.terminalId} day={eodZ} onClose={() => setEodZ(null)} />}
     </div>
   );
 }
 
 function XZReport({ shift, onClose }: { shift: Shift; onClose: () => void }) {
   const { t } = useTranslation();
+  const { state } = usePos();
   const r = shift.status === "closed" ? generateZReport(shift) : generateXReport(shift);
   if (!r) return null;
   const isZ = "countedCash" in r;
@@ -740,6 +750,108 @@ function XZReport({ shift, onClose }: { shift: Shift; onClose: () => void }) {
               ))}
             </div>
           </div>
+        )}
+        <TerminalBreakdown shift={shift} fallbackTerminalId={state.settings.terminalId} />
+      </div>
+    </Modal>
+  );
+}
+
+/* Per-terminal breakdown of one shift's cash movements + variance report. */
+function TerminalBreakdown({ shift, fallbackTerminalId }: { shift: Shift; fallbackTerminalId: string }) {
+  const { t } = useTranslation();
+  const terminals = groupShiftsByTerminal([shift], fallbackTerminalId);
+  return (
+    <div className="space-y-2">
+      <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-inksoft">{t("shift.perTerminal")}</p>
+      {terminals.map((tr) => (
+        <div key={tr.terminalId} className="rounded-lg border border-mist px-3 py-2">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-bold text-ink">{t("shift.terminal")} · {tr.terminalId}</span>
+            <span className="num text-[11px] text-inksoft">{tr.transactionCount} {t("shift.transactionCount").toLowerCase()}</span>
+          </div>
+          <div className="mt-1 grid grid-cols-2 gap-x-4 gap-y-0.5 text-[11px]">
+            <div className="flex justify-between"><span className="text-inksoft">{t("shift.salesTotal")}</span><span className="num text-ink">{money(tr.salesTotal)}</span></div>
+            <div className="flex justify-between"><span className="text-inksoft">{t("shift.refundsTotal")}</span><span className="num text-ink">{money(tr.refundsTotal)}</span></div>
+            <div className="flex justify-between"><span className="text-inksoft">{t("shift.paidIn")}</span><span className="num text-pine-700">+{money(tr.paidInTotal)}</span></div>
+            <div className="flex justify-between"><span className="text-inksoft">{t("shift.paidOut")}</span><span className="num text-brick-700">−{money(tr.paidOutTotal)}</span></div>
+          </div>
+        </div>
+      ))}
+      <div className="pt-1">
+        <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-inksoft mb-1">{t("shift.varianceReport")} · {t("shift.expectedVsCounted")}</p>
+        {terminals.map((tr) => {
+          const variance = terminalVariance(tr.expectedCash, tr.countedCash);
+          return (
+            <div key={tr.terminalId} className="flex justify-between items-center text-xs py-1 border-t border-mist/60">
+              <span className="font-semibold text-ink">{tr.terminalId}</span>
+              <span className="num text-inksoft">{t("shift.expected")} {money(tr.expectedCash)} → {t("shift.counted")} {money(tr.countedCash)}</span>
+              <span className={cx("num font-bold", variance >= 0 ? "text-pine-700" : "text-brick-700")}>{variance >= 0 ? "+" : "−"}{money(Math.abs(variance))}</span>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+/* End-of-day Z aggregated across every terminal for the date. */
+function AllTerminalsZModal({ shifts, fallbackTerminalId, day, onClose }: { shifts: Shift[]; fallbackTerminalId: string; day: Date; onClose: () => void }) {
+  const { t } = useTranslation();
+  const z = allTerminalsZReport(shifts, day, fallbackTerminalId);
+  return (
+    <Modal onClose={onClose} width={560} labelledBy="eodz-title">
+      <div className="px-5 py-4 border-b border-mist flex items-center justify-between">
+        <div>
+          <h2 id="eodz-title" className="font-display font-bold text-ink flex items-center gap-2"><ICash size={17} className="text-pine-700" /> {t("shift.allTerminalsZ")}</h2>
+          <p className="text-[11px] text-inksoft mt-0.5 num">{z.date} · {z.terminals.length} {t("shift.terminal").toLowerCase()}{z.terminals.length === 1 ? "" : "s"}</p>
+        </div>
+        <button onClick={onClose} className="p-1.5 rounded-md hover:bg-mist/60 text-inksoft" aria-label="Close"><IX size={14} /></button>
+      </div>
+      <div className="p-5 space-y-4 text-sm">
+        {z.terminals.length === 0 ? (
+          <p className="text-xs text-inksoft">{t("shift.noTerminalData")}</p>
+        ) : (
+          <>
+            <div className="overflow-auto scroll-slim">
+              <table className="w-full text-sm border-collapse">
+                <thead>
+                  <tr className="text-[10px] uppercase tracking-[0.12em] text-inksoft">
+                    <th className="text-start px-2 py-1.5 font-bold">{t("shift.terminal")}</th>
+                    <th className="text-end px-2 py-1.5 font-bold">{t("shift.expected")}</th>
+                    <th className="text-end px-2 py-1.5 font-bold">{t("shift.counted")}</th>
+                    <th className="text-end px-2 py-1.5 font-bold">{t("shift.variance")}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {z.terminals.map((tr) => {
+                    const v = terminalVariance(tr.expectedCash, tr.countedCash);
+                    return (
+                      <tr key={tr.terminalId} className="border-t border-mist/70">
+                        <td className="px-2 py-1.5 font-semibold text-ink">{tr.terminalId}</td>
+                        <td className="num px-2 py-1.5 text-end text-ink">{money(tr.expectedCash)}</td>
+                        <td className="num px-2 py-1.5 text-end text-ink">{money(tr.countedCash)}</td>
+                        <td className={cx("num px-2 py-1.5 text-end font-bold", v >= 0 ? "text-pine-700" : "text-brick-700")}>{v >= 0 ? "+" : "−"}{money(Math.abs(v))}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+                <tfoot>
+                  <tr className="border-t-2 border-ink/20 font-bold">
+                    <td className="px-2 py-2 text-ink">{t("shift.allTerminals")}</td>
+                    <td className="num px-2 py-2 text-end text-ink">{money(z.totalExpectedCash)}</td>
+                    <td className="num px-2 py-2 text-end text-ink">{money(z.totalCountedCash)}</td>
+                    <td className={cx("num px-2 py-2 text-end", z.totalOverShort >= 0 ? "text-pine-700" : "text-brick-700")}>{z.totalOverShort >= 0 ? "+" : "−"}{money(Math.abs(z.totalOverShort))}</td>
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+            <div className="grid grid-cols-3 gap-2">
+              <div className="rounded-lg bg-paper border border-mist px-3 py-2"><p className="text-[9px] font-bold uppercase tracking-wide text-inksoft">{t("shift.totalSales")}</p><p className="num font-bold text-ink">{money(z.totalSales)}</p></div>
+              <div className="rounded-lg bg-paper border border-mist px-3 py-2"><p className="text-[9px] font-bold uppercase tracking-wide text-inksoft">{t("shift.transactionCount")}</p><p className="num font-bold text-ink">{z.transactionCount}</p></div>
+              <div className={cx("rounded-lg border px-3 py-2", z.totalOverShort >= 0 ? "bg-pine-100 border-pine-300" : "bg-brick-100 border-brick-300")}><p className="text-[9px] font-bold uppercase tracking-wide text-inksoft">{t("shift.totalOverShort")}</p><p className="num font-bold">{z.totalOverShort >= 0 ? "+" : "−"}{money(Math.abs(z.totalOverShort))}</p></div>
+            </div>
+          </>
         )}
       </div>
     </Modal>

@@ -502,7 +502,19 @@
     "refundsTotal": "إجمالي الاسترداد",
     "salesTotal": "إجمالي المبيعات",
     "status": "الحالة",
-    "transactions": "المعاملات"
+    "transactions": "المعاملات",
+    "perTerminal": "التفصيل حسب الجهاز",
+    "terminal": "الجهاز",
+    "varianceReport": "تقرير التفاوت",
+    "expectedVsCounted": "المتوقع مقابل المعدود",
+    "variance": "التفاوت",
+    "counted": "المعدود",
+    "expected": "المتوقع",
+    "endOfDayAllTerminals": "نهاية اليوم — كل الأجهزة",
+    "allTerminalsZ": "تقرير Z لكل الأجهزة",
+    "allTerminals": "كل الأجهزة",
+    "totalOverShort": "إجمالي الزيادة/النقص",
+    "noTerminalData": "لا توجد بيانات ورديات لهذا التاريخ"
   },
   "auth": {
     "login": "تسجيل الدخول",
