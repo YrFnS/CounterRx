@@ -238,7 +238,7 @@ function deliveryFrom(row: Row): Delivery {
   return {
     id: text(row, "id"), customerId: text(row, "customer_id"), address: text(row, "address"), lines: jsonValue(row, "lines", []),
     fee: numberValue(row, "fee"), mode: text(row, "mode", "delivery") as Delivery["mode"], status: text(row, "status", "queued") as Delivery["status"],
-    driver: optionalText(row, "driver"), scheduledAt: rowEpoch(row, "scheduled_at"), proof: optionalText(row, "proof"), createdAt: rowEpoch(row, "created_at"),
+    driver: optionalText(row, "driver"), scheduledAt: rowEpoch(row, "scheduled_at"), proof: optionalText(row, "proof"), txId: optionalText(row, "tx_id"), createdAt: rowEpoch(row, "created_at"),
   };
 }
 
@@ -271,6 +271,8 @@ function settingsFrom(row: Row | undefined, fallback: OrgSettings): OrgSettings 
     scanBeep: booleanValue(row, "scan_beep", fallback.scanBeep), idleLockMins: numberValue(row, "idle_lock_mins", fallback.idleLockMins),
     autoSnapshotMins: numberValue(row, "auto_snapshot_mins", fallback.autoSnapshotMins), terminalId: text(row, "terminal_id", fallback.terminalId),
     hardwareEnabled: booleanValue(row, "hardware_enabled", fallback.hardwareEnabled),
+    deliveryFee: numberValue(row, "delivery_fee", fallback.deliveryFee),
+    freeThreshold: numberValue(row, "free_threshold", fallback.freeThreshold),
     savedReportViews: Array.isArray(rawViews) ? (rawViews as OrgSettings["savedReportViews"]) : fallback.savedReportViews,
   };
 }
@@ -392,7 +394,7 @@ export function rowsFor(data: BackendData): Record<TableName, Row[]> {
     purchase_orders: data.purchaseOrders.map((p) => ({ id: p.id, supplier_id: nullable(p.supplierId), lines: p.lines, status: p.status, created_at: p.createdAt, expected_at: p.expectedAt, received_at: nullable(p.receivedAt), invoice_id: nullable(p.invoiceId), note: nullable(p.note) })),
     ap_invoices: data.apInvoices.map((i) => ({ id: i.id, number: i.number, supplier_id: nullable(i.supplierId), po_id: nullable(i.poId), date: i.date, due_days: i.dueDays, total: i.total, payments: i.payments, credits: i.credits })),
     expenses: data.expenses.map((e) => ({ id: e.id, category: e.category, amount: e.amount, date: e.date, payee: e.payee, note: nullable(e.note), recurring: e.recurring ?? false })),
-    deliveries: data.deliveries.map((d) => ({ id: d.id, customer_id: nullable(d.customerId), address: d.address, lines: d.lines, fee: d.fee, mode: d.mode, status: d.status, driver: nullable(d.driver), scheduled_at: d.scheduledAt, proof: nullable(d.proof), created_at: d.createdAt })),
+    deliveries: data.deliveries.map((d) => ({ id: d.id, customer_id: nullable(d.customerId), address: d.address, lines: d.lines, fee: d.fee, mode: d.mode, status: d.status, driver: nullable(d.driver), scheduled_at: d.scheduledAt, proof: nullable(d.proof), tx_id: nullable(d.txId), created_at: d.createdAt })),
     web_orders: data.webOrders.map((o) => ({ id: o.id, customer_name: o.customerName, phone: o.phone, items: o.items, type: o.type, channel: o.channel, pickup: o.pickup, status: o.status, note: nullable(o.note), decline_reason: nullable(o.declineReason), created_at: o.createdAt })),
     time_entries: data.timeEntries.map((t) => ({ id: t.id, staff_id: nullable(t.staffId), in_at: t.inAt, out_at: nullable(t.outAt) })),
     staff: data.staff.map((s) => ({ id: s.id, name: s.name, role: s.role, pin_hash: s.pinHash, initials: s.initials, active: s.active, created_at: timestamp(s.createdAt) })),
