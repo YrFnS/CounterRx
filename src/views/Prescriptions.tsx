@@ -643,9 +643,13 @@ function RxCard({ rx, ghost, overlay }: { rx: Prescription; ghost?: boolean; ove
           </button>
         )}
         {canAttach && (
-          <button onClick={() => dispatch({ type: "RX_TO_CART", id: rx.id })}
+          /* waiting bin → charge-on-pickup (links the Rx so payment dispenses it, W1.4);
+             any other stage just parks the drug on the ticket. */
+          <button onClick={() => dispatch(rx.status === "waiting"
+            ? { type: "CHARGE_RX_PICKUP", rxId: rx.id }
+            : { type: "RX_TO_CART", id: rx.id })}
             className="flex-1 py-1.5 rounded-lg border border-pine-200 bg-pine-50 text-pine-800 text-[11px] font-bold hover:bg-pine-100 transition active:scale-[0.97] flex items-center justify-center gap-1">
-            <IRegister size={11} /> {rx.status === "waiting" ? "Charge at pickup" : "Attach to sale"}
+            <IRegister size={11} /> {rx.status === "waiting" ? t("prescriptions.chargeOnPickup") : t("prescriptions.attachToSale")}
           </button>
         )}
         {canBackorder && (

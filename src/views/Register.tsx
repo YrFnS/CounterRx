@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { usePos, money, relTime, unitPrice, cartTotals, uomFactor } from "../store";
-import { daysUntil, stockOf, nearestExpiry, bulkPct, fefoBatches, findInteractions, allergyConflicts } from "../data";
+import { daysUntil, stockOf, nearestExpiry, bulkPct, fefoBatches, findInteractions, allergyConflicts, genericSubstituteFor, substitutionSaving } from "../data";
 import type { Product } from "../data";
 import { aiClassify } from "../lib/ai";
 import { cartToInteractionPrompt, parseClassifyJson } from "../lib/ai-ui";
@@ -72,28 +72,52 @@ export default function Register() {
   const [scanMiss, setScanMiss] = useState(0);
   const searchRef = useRef<HTMLInputElement>(null);
 
-  /* generic substitution gate (§3 DAW) — offer the cheaper equivalent before a brand goes on the ticket */
-  const [subPrompt, setSubPrompt] = useState<{ brand: Product; gen: Product } | null>(null);
+  /* generic substitution gate (§3 DAW, W1.4) — offer the cheaper equivalent before a brand goes on the ticket,
+     and let the cashier swap an already-on-ticket brand line for its generic. */
+  const [subPrompt, setSubPrompt] = useState<{ brand: Product; gen: Product; uom?: string } | null>(null);
   const [dawChoice, setDawChoice] = useState(1);
+  const preferGeneric = (brand: Product, uom?: string): { gen: Product; offer: boolean } | null => {
+    if (brand.genericOf) return null;
+    const sub = genericSubstituteFor(brand, state.products);
+    if (!sub) return null;
+    /* Once the generic is already on the ticket there's nothing to offer — leave the brand alone. */
+    const genOnTicket = state.cart.some((c) => c.productId === sub.id && (c.uom ?? "") === (uom ?? ""));
+    if (genOnTicket) return null;
+    /* Otherwise prompt: either the brand is already on the ticket (swap in place) or it's
+       new (decide generic vs DAW before it lands on the ticket). */
+    return { gen: sub, offer: true };
+  };
   const tryAdd = (p: Product, uom?: string) => {
-    const gen = state.products.find((x) => x.genericOf === p.id);
-    const alreadyOnTicket = state.cart.some((c) => c.productId === p.id);
-    if (gen && !p.genericOf && !alreadyOnTicket && stockOf(gen) > 0) {
-      setSubPrompt({ brand: p, gen });
-      setDawChoice(1);
+    const hint = preferGeneric(p, uom);
+    if (hint) {
+      if (hint.offer) {
+        setSubPrompt({ brand: p, gen: hint.gen, uom });
+        setDawChoice(1);
+        return;
+      }
+      // stop — brand has a generic but nothing to offer right now (e.g. generic already on ticket)
       return;
     }
     dispatch({ type: "ADD_CART", productId: p.id, uom });
   };
   const acceptGeneric = () => {
     if (!subPrompt) return;
-    dispatch({ type: "ADD_CART", productId: subPrompt.gen.id, substitutedFrom: subPrompt.brand.id });
-    dispatch({ type: "AUDIT_LOG", kind: "rx", detail: `Generic substitution — ${subPrompt.gen.brand} dispensed for ${subPrompt.brand.brand} · patient saves ${money(subPrompt.brand.price - subPrompt.gen.price)}/unit` });
+    const cur = state.cart.find((c) => c.productId === subPrompt.brand.id && (c.uom ?? "") === (subPrompt.uom ?? ""));
+    if (cur) {
+      dispatch({ type: "SUBSTITUTE_GENERIC", brandId: subPrompt.brand.id, genericId: subPrompt.gen.id, uom: subPrompt.uom });
+    } else {
+      dispatch({ type: "ADD_CART", productId: subPrompt.gen.id, substitutedFrom: subPrompt.brand.id, uom: subPrompt.uom });
+    }
+    dispatch({ type: "AUDIT_LOG", kind: "rx", detail: `Generic substitution — ${subPrompt.gen.brand} dispensed for ${subPrompt.brand.brand}${subPrompt.uom ? ` (${subPrompt.uom})` : ""} · patient saves ${money(substitutionSaving(subPrompt.brand, subPrompt.gen))}/unit` });
     setSubPrompt(null);
   };
   const keepBrand = () => {
     if (!subPrompt) return;
-    dispatch({ type: "ADD_CART", productId: subPrompt.brand.id, daw: dawChoice });
+    if (state.cart.some((c) => c.productId === subPrompt.brand.id && (c.uom ?? "") === (subPrompt.uom ?? ""))) {
+      dispatch({ type: "SET_DAW", productId: subPrompt.brand.id, daw: dawChoice, uom: subPrompt.uom });
+    } else {
+      dispatch({ type: "ADD_CART", productId: subPrompt.brand.id, daw: dawChoice, uom: subPrompt.uom });
+    }
     dispatch({ type: "AUDIT_LOG", kind: "rx", detail: `DAW-${dawChoice} documented — ${subPrompt.brand.brand} dispensed as written (${dawChoice === 1 ? "prescriber directed" : "patient requested brand"})` });
     setSubPrompt(null);
   };
@@ -321,15 +345,20 @@ export default function Register() {
         {subPrompt && (
           <div className="mx-4 mt-3 rounded-lg border-2 border-pine-500 bg-pine-100/70 p-3 anim-fade-up shadow-lift">
             <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-pine-800 flex items-center gap-1.5">
-              <IPill size={12} /> Generic available — substitution prompt
+              <IPill size={12} /> {t("pos.genericAvailable")}
             </p>
             <div className="mt-2 flex items-center justify-between gap-2">
               <div className="min-w-0">
-                <p className="text-[12px] font-bold text-ink truncate">{subPrompt.gen.name} <span className="text-pine-700">({subPrompt.gen.brand})</span></p>
+                <p className="text-[12px] font-bold text-ink truncate">{subPrompt.gen.name} <span className="text-pine-700">({subPrompt.gen.brand})</span>
+                  {subPrompt.uom ? <span className="num text-[9px] text-inksoft ml-1.5">/ {state.products.find((p) => p.id === subPrompt.gen.id)?.uoms?.find((u) => u.code === subPrompt.uom)?.label ?? subPrompt.uom}</span> : null}
+                </p>
                 <p className="num text-[11px] text-pine-800 font-semibold">
                   {money(subPrompt.gen.price)} <span className="text-inksoft line-through font-normal">{money(subPrompt.brand.price)}</span>
                   <span className="ms-1.5 text-[10px] font-bold text-pine-700">save {money(subPrompt.brand.price - subPrompt.gen.price)}/unit</span>
                 </p>
+                {state.cart.some((c) => c.productId === subPrompt.brand.id && (c.uom ?? "") === (subPrompt.uom ?? "")) && (
+                  <p className="mt-1 text-[9px] font-semibold text-honey-700">{t("pos.swapLine")}</p>
+                )}
               </div>
               <button onClick={() => setSubPrompt(null)} className="p-1 rounded text-inksoft hover:text-brick-700 transition shrink-0" aria-label="Dismiss">
                 <IX size={12} />
@@ -338,20 +367,20 @@ export default function Register() {
             <div className="mt-2.5 flex gap-1.5">
               <button onClick={acceptGeneric}
                 className="flex-1 py-1.5 rounded-md bg-pine-700 text-pine-50 text-[11px] font-bold hover:bg-pine-600 transition active:scale-[0.97]">
-                Dispense generic
+                {t("pos.dispenseGeneric")}
               </button>
               <select value={dawChoice} onChange={(e) => setDawChoice(Number(e.target.value))}
                 className="px-1.5 rounded-md border border-pine-300 bg-card text-[10px] font-bold text-ink focus:outline-none"
-                aria-label="Dispense-as-written reason">
-                <option value={1}>DAW-1</option>
-                <option value={2}>DAW-2</option>
+                aria-label={t("pos.dawLabel")}>
+                <option value={1}>{t("pos.daw1")}</option>
+                <option value={2}>{t("pos.daw2")}</option>
               </select>
               <button onClick={keepBrand}
                 className="flex-1 py-1.5 rounded-md border border-pine-300 bg-card text-pine-800 text-[11px] font-bold hover:bg-pine-50 transition active:scale-[0.97]">
-                Keep brand
+                {t("pos.keepBrand")}
               </button>
             </div>
-            <p className="mt-1.5 text-[9px] text-pine-700">DAW-1 prescriber directed · DAW-2 patient requested brand — recorded on the receipt</p>
+            <p className="mt-1.5 text-[9px] text-pine-700">{t("pos.dawInfo")}{t("pos.dawNote")}</p>
           </div>
         )}
 
@@ -425,6 +454,7 @@ export default function Register() {
                   {p.restricted && <span className="px-1.5 py-0.5 rounded bg-honey-500 text-pine-950 text-[9px] font-bold tracking-wide">BTC</span>}
                   {line.daw && <span className="px-1.5 py-0.5 rounded bg-brick-100 border border-brick-300/60 text-brick-700 text-[9px] font-bold">DAW-{line.daw}</span>}
                   {line.substitutedFrom && <span className="px-1.5 py-0.5 rounded bg-pine-100 border border-pine-300/60 text-pine-700 text-[9px] font-bold" title={`Generic substitution for ${state.products.find((x) => x.id === line.substitutedFrom)?.brand ?? ""}`}>↪ gen</span>}
+                  {line.rxId && <span className="px-1.5 py-0.5 rounded bg-honey-100 border border-honey-300/60 text-honey-800 text-[9px] font-bold num" title={t("pos.rxPickupLine", { rx: line.rxId })}>⌘ {line.rxId}</span>}
                   {p.coldChain && <span className="px-1.5 py-0.5 rounded bg-sky-100 border border-sky-300/60 text-sky-800 text-[9px] font-bold tracking-wide" title="Cold chain — 2–8 °C"><ICold size={9} /> ❄</span>}
                   {p.uoms && p.uoms.length > 0 && (
                     <select value={line.uom ?? ""} onChange={(e) => dispatch({ type: "SET_LINE_UOM", productId: p.id, uom: e.target.value || undefined })}
@@ -443,6 +473,24 @@ export default function Register() {
                   <ITrash size={13} />
                 </button>
               </div>
+              {/* brand line with a cheaper in-stock generic — offer the swap in place (W1.4) */}
+              {(() => {
+                const sub = genericSubstituteFor(p, state.products);
+                if (!sub || line.substitutedFrom) return null;
+                const saving = substitutionSaving(p, sub) * line.qty;
+                return (
+                  <div className="mt-2 flex items-center gap-1.5 rounded-md border border-pine-300/60 bg-pine-100/50 px-2 py-1">
+                    <IPill size={9} className="text-pine-700 shrink-0" />
+                    <p className="num text-[10px] font-semibold text-pine-800 truncate">
+                      {t("pos.saveWithGeneric", { amount: money(saving) })}
+                    </p>
+                    <button onClick={() => setSubPrompt({ brand: p, gen: sub, uom: line.uom })}
+                      className="ms-auto shrink-0 px-1.5 py-0.5 rounded bg-pine-700 text-pine-50 text-[9px] font-bold hover:bg-pine-600 transition active:scale-95">
+                      {t("pos.review")}
+                    </button>
+                  </div>
+                );
+              })()}
               {noteFor === p.id ? (
                 <input autoFocus defaultValue={line.note ?? ""}
                   placeholder="e.g. take with food — counseling given"
@@ -547,7 +595,7 @@ export default function Register() {
               <div className="flex justify-between text-pine-700 font-semibold anim-fade-up"><span>Points · {state.redeemPoints} pts</span><span className="num">−{money(totals.loyaltyDeduct)}</span></div>
             )}
             <div className="flex justify-between items-baseline pt-1.5 border-t border-dashed border-mist">
-              <span className="font-display font-bold text-ink">Total</span>
+              <span className="font-display font-bold text-ink">{t("pos.total")}</span>
               <span className="num text-[26px] font-bold text-pine-800">{money(total)}</span>
             </div>
           </div>
@@ -574,7 +622,7 @@ export default function Register() {
                 state.cart.length
                   ? "bg-pine-700 text-pine-50 hover:bg-pine-600 active:scale-[0.98] shadow-lift"
                   : "bg-mist text-inksoft/60 cursor-not-allowed")}>
-              Charge {money(total)} <span className="text-pine-200 text-[11px] font-semibold">F8</span>
+              {t("pos.completeSale")} {money(total)} <span className="text-pine-200 text-[11px] font-semibold">F8</span>
             </button>
           </div>
         </div>
@@ -819,6 +867,7 @@ function ProductCard({ p, hl = [], flashing, flashKey, onAdd, colorOf }: {
             out ? "text-brick-700" : low ? "text-honey-700" : "text-pine-600")}>
             <span className={cx("w-1.5 h-1.5 rounded-full", (low || out) && "anim-pulse-dot")}
               style={{ background: out ? "#c24a2e" : low ? "#e0a63c" : "#3b8668" }} />
+            {p.rx && <span className="inline-flex items-center gap-1 text-pine-700 ml-1.5"><IPill size={8} /> {p.genericOf ? t("pos.genericOfDawHint") : t("pos.brandOnly")}</span>}
             {out ? t("pos.outOfStock") : t("pos.available", { count: avail })}
           </p>
         </div>
